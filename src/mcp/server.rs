@@ -75,8 +75,6 @@ pub fn run(project_dir: &Path) -> Result<()> {
     } else {
         None
     };
-    let mut knowledge_synced = false;
-
     // Session store + context manager (reset per conversation)
     let session_store = SessionStore::open(project_dir)?;
     let weights = RelevanceWeights {
@@ -133,16 +131,6 @@ pub fn run(project_dir: &Path) -> Result<()> {
             "tools/call" => {
                 let tool_name = request["params"]["name"].as_str().unwrap_or("");
                 let arguments = &request["params"]["arguments"];
-
-                // Auto-sync knowledge on first search call
-                if !knowledge_synced {
-                    if let Some(ref ks) = knowledge_store {
-                        if tool_name == "bpx_search" || tool_name == "bpx_knowledge_search" {
-                            let _ = auto_sync_knowledge(ks, &config);
-                            knowledge_synced = true;
-                        }
-                    }
-                }
 
                 let result = handle_tool_call(
                     tool_name,
@@ -991,35 +979,6 @@ fn sync_source_with_enrichment(
         .as_ref()
         .map(|f| f.as_ref() as &dyn Fn(&str, &Path) -> serde_json::Value);
     sync::sync_source(ks, source, enrich_ref)
-}
-
-/// Check if a source is stale based on its last_sync timestamp.
-fn is_source_stale(source: &knowledge::KnowledgeSourceInfo, stale_minutes: u64) -> bool {
-    match &source.last_sync {
-        None => true,
-        Some(ts) => {
-            use chrono::NaiveDateTime;
-            match NaiveDateTime::parse_from_str(ts, "%Y-%m-%d %H:%M:%S") {
-                Ok(last) => {
-                    let now = chrono::Utc::now().naive_utc();
-                    let elapsed = now.signed_duration_since(last);
-                    elapsed.num_minutes() as u64 >= stale_minutes
-                }
-                Err(_) => true,
-            }
-        }
-    }
-}
-
-/// Auto-sync stale knowledge sources on first search in a session.
-fn auto_sync_knowledge(ks: &KnowledgeStore, config: &Config) -> Result<()> {
-    let sources = ks.list_sources()?;
-    for source in &sources {
-        if is_source_stale(source, config.knowledge.sync_stale_minutes) {
-            let _ = sync_source_with_enrichment(ks, source);
-        }
-    }
-    Ok(())
 }
 
 fn handle_knowledge_add(args: &Value, ks: &KnowledgeStore, config: &Config) -> Result<String> {
@@ -2433,15 +2392,6 @@ mod tests {
         let v: serde_json::Value = serde_json::from_str(&count_only).unwrap();
         assert_eq!(v["memory_applied"], true);
         assert_eq!(v["sources_matched"], json!(["demo"]));
-    }
-
-    #[test]
-    fn test_is_source_stale_never_synced() {
-        let ks = make_knowledge_store();
-        ks.add_source("stale", "/tmp/stale", None, &[]).unwrap();
-        let source = ks.get_source("stale").unwrap().unwrap();
-
-        assert!(is_source_stale(&source, 60));
     }
 
     #[test]
