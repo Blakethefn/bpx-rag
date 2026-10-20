@@ -17,7 +17,7 @@ For example, a coding agent can search for how a quote API is used and inspect t
 
 Context saving remains available as a supporting feature: large command results, files, and web pages can be indexed and searched on demand. It is no longer the product's primary purpose.
 
-The full content is always available. The agent just doesn't need to hold all of it in memory at once.
+For the supporting context-saving workflows, full content stays searchable while the agent loads only the relevant pieces.
 
 ## Installation
 
