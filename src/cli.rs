@@ -118,6 +118,15 @@ pub enum Commands {
         label_prefix: String,
     },
 
+    /// Analyze direct file references in the project without using an index
+    AnalyzeFile {
+        /// File path to analyze
+        path: PathBuf,
+        /// Project root to scan (defaults to the nearest project marker)
+        #[arg(long)]
+        root: Option<PathBuf>,
+    },
+
     /// Manage persistent knowledge sources
     Knowledge {
         #[command(subcommand)]

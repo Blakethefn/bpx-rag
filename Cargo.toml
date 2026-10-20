@@ -2,6 +2,7 @@
 name = "bpx-rag"
 version = "0.3.0"
 edition = "2021"
+default-run = "bpx-rag"
 description = "Local-first RAG for coding agents with hybrid search and persistent knowledge"
 license = "MIT"
 repository = "https://github.com/Blakethefn/bpx-rag"

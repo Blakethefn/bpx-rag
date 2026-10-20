@@ -108,6 +108,7 @@ bpx-rag context-status
 | `bpx_execute_file` | Read and index a file with optional processing |
 | `bpx_batch_execute` | Run multiple commands + search queries in one call |
 | `bpx_search` | Search session index and knowledge store (BM25, trigram, fuzzy, vector similarity, merged via RRF) |
+| `bpx_file_relationships` | Scan current files for direct imports, module declarations, and Markdown wikilinks without the knowledge database |
 | `bpx_fetch_and_index` | Fetch a URL, convert HTML to markdown, index it |
 | `bpx_index` | Index raw text for later search |
 | `bpx_index_dir` | Index all files in a directory for the current session |
@@ -124,6 +125,22 @@ bpx-rag context-status
 | `bpx_knowledge_sync` | Incrementally re-index changed files across all registered sources |
 | `bpx_knowledge_status` | List registered sources, chunk counts, and last sync time |
 | `bpx_knowledge_remove` | Unregister a knowledge source and delete all its indexed content |
+
+### On-demand file relationships
+
+Use this for exact questions about what a file links to and what files directly reference it. It reads current project files on each request, respects ignore rules, and returns relative paths and line numbers. It does not require indexing or access the persistent knowledge database.
+
+MCP startup is lazy: listing tools or using `bpx_file_relationships` does not open the content/session databases or load the embedding model. Those initialize only when a database-backed tool is called.
+
+```bash
+# Analyze direct imports, module declarations, and reverse references
+bpx-rag analyze-file src/lib/api/quotes.ts --root /path/to/project
+
+# The root can be inferred from a nearby project marker
+bpx-rag analyze-file src/main.rs
+```
+
+The initial analyzer supports Markdown wikilinks, same-crate Rust `mod`/`use` paths, and relative TypeScript/JavaScript imports and re-exports. It does not yet resolve `tsconfig` path aliases or Cargo workspace crate aliases. Results cover direct file relationships; symbol-level calls and transitive runtime effects are not included.
 
 ## Persistent Knowledge Store
 

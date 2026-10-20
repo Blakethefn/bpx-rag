@@ -59,7 +59,7 @@ pub fn tool_definitions() -> Value {
             },
             {
                 "name": "bpx_search",
-                "description": "Primary retrieval tool after indexing. Search indexed content using multi-layer search and use the returned source_id for exact follow-up reads via bpx_read_chunks. When knowledge sources are registered, also searches persistent knowledge index and merges results. REVIEW RULE: bpx_search is for discovery, not for repo-wide claims. Before stating 'no endpoint checks X' or 'all routes do Y', you MUST confirm with exact reads (Read tool or bpx_read_chunks) on the specific files. Search results show where matches exist — absence from results does NOT prove absence from the codebase. Pass count_only: true for a pre-flight size check before committing to a full result set.",
+                "description": "Fuzzy and semantic retrieval over indexed documents and code. For exact imports, wikilinks, modules, or direct file impact, use bpx_file_relationships; it scans current files on demand without the knowledge database.",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
@@ -112,6 +112,24 @@ pub fn tool_definitions() -> Value {
                         }
                     },
                     "required": ["queries"]
+                }
+            },
+            {
+                "name": "bpx_file_relationships",
+                "description": "Analyze direct file relationships from the current filesystem. Finds outgoing Markdown wikilinks, same-crate Rust module/import references, and relative TypeScript/JavaScript imports, plus files that directly reference the selected file. Returns paths and line numbers. Does not require or query the persistent knowledge database.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "path": {
+                            "type": "string",
+                            "description": "File path to analyze. May be absolute or relative to root/current directory."
+                        },
+                        "root": {
+                            "type": "string",
+                            "description": "Optional project root to scan. Defaults to the nearest recognized project root."
+                        }
+                    },
+                    "required": ["path"]
                 }
             },
             {
@@ -381,4 +399,26 @@ pub fn tool_definitions() -> Value {
             }
         ]
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn file_relationship_tool_is_listed_with_required_path_and_optional_root() {
+        let definitions = tool_definitions();
+        let tools = definitions["tools"].as_array().unwrap();
+        let tool = tools
+            .iter()
+            .find(|tool| tool["name"] == "bpx_file_relationships")
+            .expect("file relationship tool should be exposed over MCP");
+
+        assert_eq!(tool["inputSchema"]["required"][0], "path");
+        assert!(tool["inputSchema"]["properties"]["root"].is_object());
+        assert!(tool["description"]
+            .as_str()
+            .unwrap()
+            .contains("query the persistent knowledge database"));
+    }
 }

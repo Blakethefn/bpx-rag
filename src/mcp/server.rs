@@ -24,71 +24,94 @@ use crate::stats;
 use crate::store::ContentStore;
 use crate::truncate;
 
+struct RuntimeState {
+    store: ContentStore,
+    session_store: SessionStore,
+    knowledge_store: Option<KnowledgeStore>,
+    ctx_mgr: ContextManager,
+}
+
+impl RuntimeState {
+    fn open(config: &Config, project_dir: &Path) -> Result<Self> {
+        let mut store = ContentStore::open(project_dir)?;
+
+        let shared_embedder: Option<Arc<dyn Embed>> = if config.embeddings.enabled {
+            let model_dir =
+                PathBuf::from(&config.embeddings.model_dir).join(&config.embeddings.model);
+            match Embedder::new(&model_dir) {
+                Ok(embedder) => {
+                    let arc: Arc<dyn Embed> = Arc::new(embedder);
+                    store.set_embedder(Arc::clone(&arc));
+                    Some(arc)
+                }
+                Err(error) => {
+                    eprintln!(
+                        "[bpx-rag] embedder unavailable, falling back to keyword search: {error}"
+                    );
+                    None
+                }
+            }
+        } else {
+            None
+        };
+
+        let knowledge_store = if config.knowledge.enabled {
+            match KnowledgeStore::open() {
+                Ok(mut knowledge_store) => {
+                    if let Some(ref embedder) = shared_embedder {
+                        knowledge_store.set_embedder(Arc::clone(embedder));
+                    }
+                    for source in &config.knowledge.sources {
+                        if knowledge_store
+                            .get_source(&source.label)
+                            .unwrap_or(None)
+                            .is_none()
+                        {
+                            let _ = knowledge_store.add_source(
+                                &source.label,
+                                &source.path,
+                                source.glob.as_deref(),
+                                &source.enrichments,
+                            );
+                        }
+                    }
+                    Some(knowledge_store)
+                }
+                Err(error) => {
+                    eprintln!("[bpx-rag] knowledge store unavailable: {error}");
+                    None
+                }
+            }
+        } else {
+            None
+        };
+
+        let session_store = SessionStore::open(project_dir)?;
+        let weights = RelevanceWeights {
+            recency: config.context.recency_weight,
+            frequency: config.context.frequency_weight,
+            staleness: config.context.staleness_weight,
+        };
+        let mut ctx_mgr = ContextManager::new(
+            config.context.budget_tokens,
+            config.context.stale_threshold_minutes,
+            weights,
+        );
+        ctx_mgr.reset(session_store.conn())?;
+
+        Ok(Self {
+            store,
+            session_store,
+            knowledge_store,
+            ctx_mgr,
+        })
+    }
+}
+
 /// Run the MCP server loop over stdio
 pub fn run(project_dir: &Path) -> Result<()> {
     let config = Config::load()?;
-    let mut store = ContentStore::open(project_dir)?;
-
-    // Shared embedder — used by both session and knowledge stores
-    let shared_embedder: Option<Arc<dyn Embed>> = if config.embeddings.enabled {
-        let model_dir = PathBuf::from(&config.embeddings.model_dir).join(&config.embeddings.model);
-        match Embedder::new(&model_dir) {
-            Ok(embedder) => {
-                let arc: Arc<dyn Embed> = Arc::new(embedder);
-                store.set_embedder(Arc::clone(&arc));
-                Some(arc)
-            }
-            Err(e) => {
-                eprintln!("[bpx-rag] embedder unavailable, falling back to keyword search: {e}");
-                None
-            }
-        }
-    } else {
-        None
-    };
-
-    // Knowledge store (persistent, cross-session)
-    let knowledge_store: Option<KnowledgeStore> = if config.knowledge.enabled {
-        match KnowledgeStore::open() {
-            Ok(mut ks) => {
-                if let Some(ref emb) = shared_embedder {
-                    ks.set_embedder(Arc::clone(emb));
-                }
-                // Register config-defined sources idempotently
-                for src_cfg in &config.knowledge.sources {
-                    if ks.get_source(&src_cfg.label).unwrap_or(None).is_none() {
-                        let _ = ks.add_source(
-                            &src_cfg.label,
-                            &src_cfg.path,
-                            src_cfg.glob.as_deref(),
-                            &src_cfg.enrichments,
-                        );
-                    }
-                }
-                Some(ks)
-            }
-            Err(e) => {
-                eprintln!("[bpx-rag] knowledge store unavailable: {e}");
-                None
-            }
-        }
-    } else {
-        None
-    };
-    // Session store + context manager (reset per conversation)
-    let session_store = SessionStore::open(project_dir)?;
-    let weights = RelevanceWeights {
-        recency: config.context.recency_weight,
-        frequency: config.context.frequency_weight,
-        staleness: config.context.staleness_weight,
-    };
-    let mut ctx_mgr = ContextManager::new(
-        config.context.budget_tokens,
-        config.context.stale_threshold_minutes,
-        weights,
-    );
-    // Reset ledger at session start (per-conversation reset)
-    ctx_mgr.reset(session_store.conn())?;
+    let mut runtime: Option<RuntimeState> = None;
 
     let stdin = io::stdin();
     let mut reader = BufReader::new(stdin.lock());
@@ -131,38 +154,51 @@ pub fn run(project_dir: &Path) -> Result<()> {
             "tools/call" => {
                 let tool_name = request["params"]["name"].as_str().unwrap_or("");
                 let arguments = &request["params"]["arguments"];
+                let result = (|| -> Result<String> {
+                    if tool_name == "bpx_file_relationships" {
+                        return handle_file_relationships(arguments, project_dir);
+                    }
 
-                let result = handle_tool_call(
-                    tool_name,
-                    arguments,
-                    &config,
-                    &store,
-                    project_dir,
-                    &session_store,
-                    knowledge_store.as_ref(),
-                );
+                    if runtime.is_none() {
+                        runtime = Some(RuntimeState::open(&config, project_dir)?);
+                    }
+                    let runtime = runtime
+                        .as_mut()
+                        .ok_or_else(|| anyhow::anyhow!("MCP runtime failed to initialize"))?;
+                    let mut content = handle_tool_call(
+                        tool_name,
+                        arguments,
+                        &config,
+                        &runtime.store,
+                        project_dir,
+                        &runtime.session_store,
+                        runtime.knowledge_store.as_ref(),
+                    )?;
+                    let label = tool_label(tool_name, arguments);
+                    let _ =
+                        runtime
+                            .ctx_mgr
+                            .record(runtime.session_store.conn(), &label, content.len());
+                    if let Ok(Some(alert)) =
+                        runtime.ctx_mgr.check_alert(runtime.session_store.conn())
+                    {
+                        content.push_str("\n\n---\n");
+                        content.push_str(&alert);
+                    }
+                    Ok(content)
+                })();
 
                 match result {
-                    Ok(mut content) => {
-                        // Record what was returned and check for context alerts
-                        let label = tool_label(tool_name, arguments);
-                        let _ = ctx_mgr.record(session_store.conn(), &label, content.len());
-                        if let Ok(Some(alert)) = ctx_mgr.check_alert(session_store.conn()) {
-                            content.push_str("\n\n---\n");
-                            content.push_str(&alert);
+                    Ok(content) => Some(json!({
+                        "jsonrpc": "2.0",
+                        "id": id,
+                        "result": {
+                            "content": [{
+                                "type": "text",
+                                "text": content
+                            }]
                         }
-
-                        Some(json!({
-                            "jsonrpc": "2.0",
-                            "id": id,
-                            "result": {
-                                "content": [{
-                                    "type": "text",
-                                    "text": content
-                                }]
-                            }
-                        }))
-                    }
+                    })),
                     Err(e) => Some(json!({
                         "jsonrpc": "2.0",
                         "id": id,
@@ -216,6 +252,7 @@ fn handle_tool_call(
         "bpx_execute" => handle_execute(args, config, store),
         "bpx_batch_execute" => handle_batch_execute(args, config, store),
         "bpx_search" => handle_search(args, config, store, session_store, knowledge_store),
+        "bpx_file_relationships" => handle_file_relationships(args, project_dir),
         "bpx_execute_file" => handle_execute_file(args, config, store),
         "bpx_read_chunks" => {
             handle_read_chunks(args, config, store, session_store, knowledge_store)
@@ -259,6 +296,22 @@ fn handle_tool_call(
         }
         _ => anyhow::bail!("Unknown tool: {tool_name}"),
     }
+}
+
+fn handle_file_relationships(args: &Value, project_dir: &Path) -> Result<String> {
+    let path = args["path"]
+        .as_str()
+        .filter(|path| !path.trim().is_empty())
+        .ok_or_else(|| anyhow::anyhow!("path is required"))?;
+    let root = args["root"].as_str().map(Path::new);
+    let requested_path = Path::new(path);
+    let path = if requested_path.is_absolute() || root.is_some() {
+        requested_path.to_path_buf()
+    } else {
+        project_dir.join(requested_path)
+    };
+    let analysis = crate::relationships::analyze_file(&path, root)?;
+    Ok(crate::relationships::format_analysis(&analysis))
 }
 
 fn search_weights(config: &Config) -> crate::store::search::SearchWeights {
@@ -1310,6 +1363,11 @@ fn tool_label(tool_name: &str, args: &Value) -> String {
             .to_string(),
         "bpx_read_chunks" => args["label"].as_str().unwrap_or("read-chunks").to_string(),
         "bpx_search" => "search".to_string(),
+        "bpx_file_relationships" => args["path"]
+            .as_str()
+            .and_then(|path| Path::new(path).file_name().and_then(|name| name.to_str()))
+            .map(|name| format!("file-relationships:{name}"))
+            .unwrap_or_else(|| "file-relationships".to_string()),
         "bpx_batch_execute" => "batch".to_string(),
         "bpx_fetch_and_index" => args["label"]
             .as_str()
@@ -1349,6 +1407,31 @@ mod tests {
     use std::fs;
     use std::path::{Path, PathBuf};
     use tempfile::tempdir;
+
+    #[test]
+    fn file_relationship_mcp_handler_returns_live_file_evidence() {
+        let dir = tempdir().unwrap();
+        std::fs::write(dir.path().join("alpha.md"), "See [[beta]].\n").unwrap();
+        std::fs::write(dir.path().join("beta.md"), "Back [[alpha]].\n").unwrap();
+
+        let response = handle_file_relationships(
+            &json!({"path": "alpha.md", "root": dir.path().to_string_lossy()}),
+            dir.path(),
+        )
+        .unwrap();
+
+        assert!(response.contains("Outgoing (1)"));
+        assert!(response.contains("Incoming (1)"));
+        assert!(response.contains("beta.md"));
+        assert!(response.contains("line 1"));
+    }
+
+    #[test]
+    fn file_relationship_mcp_handler_requires_path() {
+        let dir = tempdir().unwrap();
+        let error = handle_file_relationships(&json!({}), dir.path()).unwrap_err();
+        assert!(error.to_string().contains("path is required"));
+    }
 
     fn reset_stats() {
         stats::reset();

@@ -100,9 +100,7 @@ pub fn knowledge_search(
                 merge_results(&mut all_results, &vector, weights.vector_weight, "vector");
             }
             Err(e) => {
-                eprintln!(
-                    "[bpx-rag] knowledge query embedding failed, skipping vector layer: {e}"
-                );
+                eprintln!("[bpx-rag] knowledge query embedding failed, skipping vector layer: {e}");
             }
         }
     }

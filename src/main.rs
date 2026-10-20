@@ -10,6 +10,7 @@ mod indexdir;
 mod knowledge;
 mod mcp;
 mod promote;
+mod relationships;
 mod retrieval;
 mod search_memory;
 mod search_model;
@@ -468,6 +469,12 @@ fn main() -> Result<()> {
             Ok(())
         }
 
+        Some(Commands::AnalyzeFile { path, root }) => {
+            let analysis = relationships::analyze_file(&path, root.as_deref())?;
+            println!("{}", relationships::format_analysis(&analysis));
+            Ok(())
+        }
+
         Some(Commands::Knowledge { action }) => {
             let config = Config::load()?;
             if !config.knowledge.enabled {
@@ -643,10 +650,7 @@ fn main() -> Result<()> {
 
         None => {
             // Default: show stats
-            println!(
-                "{}",
-                "bpx-rag - Local-first RAG for coding agents".bold()
-            );
+            println!("{}", "bpx-rag - Local-first RAG for coding agents".bold());
             println!("Run 'bpx-rag --help' for usage.");
             Ok(())
         }

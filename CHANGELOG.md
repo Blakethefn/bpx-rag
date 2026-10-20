@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased]
+
+### Added
+
+- On-demand `analyze-file` CLI and `bpx_file_relationships` MCP tool for direct Markdown wikilinks, Rust module/import paths, and TypeScript/JavaScript imports.
+- Lazy MCP runtime initialization so relationship-only sessions do not open local databases or load embeddings.
+
 ## [0.1.0] - 2025-04-02
 
 ### Added
