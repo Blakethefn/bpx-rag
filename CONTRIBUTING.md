@@ -1,4 +1,4 @@
-# Contributing to bpcontext
+# Contributing to bpx-rag
 
 Thanks for your interest in contributing!
 
@@ -18,8 +18,8 @@ Thanks for your interest in contributing!
 
 ```bash
 # Clone
-git clone https://github.com/YOUR_USERNAME/bpcontext.git
-cd bpcontext
+git clone https://github.com/YOUR_USERNAME/bpx-rag.git
+cd bpx-rag
 
 # Build
 cargo build

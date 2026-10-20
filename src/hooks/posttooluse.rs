@@ -118,7 +118,7 @@ fn write_through_inner(paths: &[PathBuf], store: &KnowledgeStore) -> usize {
 
         if let Err(e) = sync::reindex_file(store, &source, path, enrich_ref) {
             eprintln!(
-                "bpcontext: knowledge write-through failed for {}: {}",
+                "bpx-rag: knowledge write-through failed for {}: {}",
                 path.display(),
                 e
             );

@@ -1,30 +1,21 @@
-# bpcontext
+# bpx-rag
 
-**Context window optimizer for AI coding agents.**
+**Local-first RAG for coding agents.**
 
-LLM coding agents burn through their context window reading large files, command output, and web pages. bpcontext sits between the agent and those sources — it captures the full content, indexes it into a local SQLite FTS5 database, and returns only a compact preview. The agent can then search the indexed content on demand, pulling back exactly the chunks it needs instead of holding everything in context.
+bpx-rag builds persistent, searchable knowledge indexes over code and documentation, then returns relevant chunks with file paths, line ranges, and ranking evidence to an MCP-connected coding agent. The agent uses that evidence to answer questions about a project. Search combines full-text, trigram, fuzzy, vector, metadata-filter, and graph signals in a local SQLite store.
 
-In practice, this cuts context usage by 50-80% for file reads, command output, and web fetches — without losing access to any of the content.
+The goal is to make project knowledge useful across sessions: ask about a file, API, feature, or design decision and retrieve the source material that supports the answer. bpx-rag runs locally and uses local embeddings, so the index does not require a hosted vector database or embedding API.
 
-**v2** adds semantic search (local embeddings via Candle) and a smart context manager that tracks utilization and surfaces optimization advice inline.
+## What it does
 
-## The Problem
+1. **Indexes project knowledge** — Source files, notes, and docs are chunked and stored in a persistent knowledge database.
+2. **Finds evidence** — Hybrid search combines lexical matching, local vector similarity, filters, and available knowledge links.
+3. **Returns traceable results** — Results include source paths and line ranges so the agent can inspect the original material.
+4. **Supports agent workflows** — MCP tools let coding agents search the index and read selected chunks across sessions.
 
-A typical Claude Code session might:
-- Read a 2,600-line file → **55k tokens** into context
-- Run `git log --oneline -100` → thousands of tokens for a quick lookup
-- Fetch API docs from a URL → entire page dumped into context
+For example, a coding agent can search for how a quote API is used and inspect the files that mention its types, endpoints, or symbols. Reliable answers about all direct and indirect file interactions require explicit code relationship indexing; the current search index does not yet build a complete dependency graph.
 
-These add up fast. By the time you're doing real work, half your context window is occupied by reference material you've already read.
-
-## How bpcontext Solves It
-
-1. **Capture** — Command output, file content, or web pages are captured in full
-2. **Chunk** — Content is split into semantically meaningful sections
-3. **Index** — Chunks are stored in SQLite with FTS5 full-text indexing
-4. **Preview** — A truncated head/tail preview is returned to the agent (configurable ratio)
-5. **Search** — The agent retrieves specific chunks on demand via multi-layer search (BM25 + trigram + fuzzy + vector similarity)
-6. **Track** — A context ledger tracks what's been returned and alerts when utilization crosses thresholds
+Context saving remains available as a supporting feature: large command results, files, and web pages can be indexed and searched on demand. It is no longer the product's primary purpose.
 
 The full content is always available. The agent just doesn't need to hold all of it in memory at once.
 
@@ -38,17 +29,17 @@ cargo build --release
 cargo build --release --features cuda
 ```
 
-The binary is at `target/release/bpcontext`. Generate a default config:
+The primary binary is `target/release/bpx-rag`. A `bpcontext` compatibility launcher is also built for existing scripts; it forwards the same arguments to `bpx-rag`. Generate a default config:
 
 ```bash
-bpcontext --init
+bpx-rag --init
 ```
 
-Config location: `~/.config/bpcontext/config.toml`
+Config location remains `~/.config/bpcontext/config.toml` so existing installations keep working.
 
 ### First-run model download
 
-On first use, bpcontext downloads the `all-MiniLM-L6-v2` embedding model (~80MB) from Hugging Face to `~/.local/share/bpcontext/models/`. This is a one-time download — no API keys or accounts needed. If the download fails (e.g., no internet), search falls back to keyword-only mode.
+On first use, bpx-rag downloads the `all-MiniLM-L6-v2` embedding model (~80MB) from Hugging Face to `~/.local/share/bpcontext/models/`. This is a one-time download — no API keys or accounts needed. If the download fails (e.g., no internet), search falls back to keyword-only mode. The legacy data directory is retained to reuse existing indexes and models.
 
 ## Quick Start
 
@@ -59,18 +50,18 @@ Add to your Claude Code `.mcp.json`:
 ```json
 {
   "mcpServers": {
-    "bpcontext": {
-      "command": "/path/to/bpcontext",
+    "bpx-rag": {
+      "command": "/path/to/bpx-rag",
       "args": ["serve"]
     }
   }
 }
 ```
 
-Then configure Claude Code to prefer bpcontext tools over built-in tools. Add to your `CLAUDE.md`:
+Then configure Claude Code to use bpx-rag for project retrieval. Add to your `CLAUDE.md`:
 
 ```markdown
-# bpcontext Tool Routing
+# bpx-rag Retrieval
 
 - **`bpx_execute`** instead of `Bash` for commands producing >20 lines
 - **`bpx_execute_file`** instead of `Read` when analyzing a file (not editing it)
@@ -82,31 +73,31 @@ Then configure Claude Code to prefer bpcontext tools over built-in tools. Add to
 
 ```bash
 # Run a command and index its output
-bpcontext execute "git log --oneline -50"
+bpx-rag execute "git log --oneline -50"
 
 # Search indexed content
-bpcontext search "authentication"
+bpx-rag search "authentication"
 
 # Filter by source or content type
-bpcontext search "error" --source "git log" --content-type code --limit 5
+bpx-rag search "error" --source "git log" --content-type code --limit 5
 
 # Index raw text from stdin
-echo "some notes" | bpcontext index "my-notes"
+echo "some notes" | bpx-rag index "my-notes"
 
 # Fetch and index a web page
-bpcontext fetch https://docs.rs/some-crate
+bpx-rag fetch https://docs.rs/some-crate
 
 # Check context savings
-bpcontext stats
+bpx-rag stats
 
 # List what's been indexed this session
-bpcontext sources
+bpx-rag sources
 
 # Backfill embeddings for previously indexed content
-bpcontext embed-backfill
+bpx-rag embed-backfill
 
 # Show context budget and per-source breakdown
-bpcontext context-status
+bpx-rag context-status
 ```
 
 ## MCP Tools
@@ -134,7 +125,7 @@ bpcontext context-status
 | `bpx_knowledge_status` | List registered sources, chunk counts, and last sync time |
 | `bpx_knowledge_remove` | Unregister a knowledge source and delete all its indexed content |
 
-## Knowledge Store (RAG)
+## Persistent Knowledge Store
 
 The knowledge store is a persistent RAG layer that survives across sessions. Unlike the session-scoped index (which is rebuilt each time), the knowledge store registers directories as durable sources and only re-indexes files that have changed (incremental sync via SHA-256 content hash).
 
@@ -144,28 +135,28 @@ This means you can register your project's source directory once and search it i
 
 ```bash
 # Register a directory as a knowledge source
-bpcontext knowledge add /path/to/project/src --label myproject
+bpx-rag knowledge add /path/to/project/src --label myproject
 
 # Filter by file type
-bpcontext knowledge add /path/to/docs --label mydocs --glob "**/*.md"
+bpx-rag knowledge add /path/to/docs --label mydocs --glob "**/*.md"
 
 # Enable enrichments (for Obsidian vaults)
-bpcontext knowledge add /path/to/vault --label vault --enrichments frontmatter,wikilinks,folder_tags
+bpx-rag knowledge add /path/to/vault --label vault --enrichments frontmatter,wikilinks,folder_tags
 
 # Re-sync all sources (re-indexes changed files only)
-bpcontext knowledge sync
+bpx-rag knowledge sync
 
 # Re-sync a specific source
-bpcontext knowledge sync --label myproject
+bpx-rag knowledge sync --label myproject
 
 # Check status
-bpcontext knowledge status
+bpx-rag knowledge status
 
 # Search
-bpcontext knowledge search "authentication flow"
+bpx-rag knowledge search "authentication flow"
 
 # Remove a source
-bpcontext knowledge remove --label myproject
+bpx-rag knowledge remove --label myproject
 ```
 
 ### Session index vs. knowledge store
@@ -173,7 +164,7 @@ bpcontext knowledge remove --label myproject
 | | Session index | Knowledge store |
 |---|---|---|
 | Lifetime | Current session only | Persistent across sessions |
-| How populated | `bpx_execute`, `bpx_index`, `bpx_index_dir` | `bpx_knowledge_add` / `bpcontext knowledge add` |
+| How populated | `bpx_execute`, `bpx_index`, `bpx_index_dir` | `bpx_knowledge_add` / `bpx-rag knowledge add` |
 | Re-index cost | Full re-index every session | Incremental — only changed files |
 | Use case | One-off exploration | Frequently referenced codebases and docs |
 
@@ -199,7 +190,7 @@ The knowledge store uses a single global database separate from per-session cont
 
 ## Claude Code Hooks
 
-bpcontext can also run as Claude Code hooks to automatically intercept tool output:
+bpx-rag can also run as Claude Code hooks to automatically intercept tool output:
 
 - **pretooluse** — Intercepts before tool execution
 - **posttooluse** — Processes and compresses tool output after execution
@@ -207,7 +198,7 @@ bpcontext can also run as Claude Code hooks to automatically intercept tool outp
 
 ## Semantic Search
 
-bpcontext v2 adds a fourth search layer: vector similarity using local embeddings.
+bpx-rag adds vector similarity using local embeddings alongside lexical search.
 
 - **Model:** `sentence-transformers/all-MiniLM-L6-v2` (384 dimensions, ~80MB)
 - **Inference:** [Candle](https://github.com/huggingface/candle) (Rust ML framework) — runs on CPU by default, CUDA optional
@@ -215,7 +206,9 @@ bpcontext v2 adds a fourth search layer: vector similarity using local embedding
 - **At search time:** the query is embedded and compared against all stored vectors via dot product (brute-force, <1ms for typical session sizes)
 - **Fusion:** vector results are merged into the existing RRF (Reciprocal Rank Fusion) pipeline alongside BM25, trigram, and fuzzy results
 
-This means `bpx_search(["authentication flow"])` will find chunks about "login session", "JWT validation", and "token refresh" — even though none of those words appear in the query.
+This lets `bpx_search` find conceptually related chunks even when they do not share the query's exact wording. It is retrieval evidence for the connected agent; generation and answer grounding are handled by that agent.
+
+The current index is chunk- and metadata-based. It does not yet construct a complete static dependency graph for questions such as “which files directly and indirectly interact with this source file?” That requires code relationship indexing in addition to RAG search.
 
 Weights are configurable:
 ```toml
@@ -226,7 +219,7 @@ keyword_weight = 1.0   # multiplier for keyword results
 
 ## Context Manager
 
-bpcontext tracks what it returns to the agent and surfaces optimization advice inline — no extra tool calls needed.
+bpx-rag tracks returned content and can surface context-budget advice inline as a supporting feature.
 
 **How it works:** after every tool response, the context ledger checks utilization against the configured budget. When a threshold is crossed, an alert is appended to the response:
 
@@ -259,7 +252,7 @@ cache_ttl_hours = 24        # cache fetched URLs
 
 [embeddings]
 model = "all-MiniLM-L6-v2"
-model_dir = "~/.local/share/bpcontext/models"
+model_dir = "~/.local/share/bpcontext/models" # legacy-compatible data directory
 batch_size = 32
 enabled = true              # set to false to disable embeddings entirely
 
@@ -301,11 +294,11 @@ src/
 
 All runtime data is stored under XDG-standard directories:
 
-- **Content DBs:** `~/.local/share/bpcontext/content/{hash}.db` — per-project FTS5 indexes + embeddings (session-scoped)
+- **Content DBs:** `~/.local/share/bpcontext/content/{hash}.db` — per-project FTS5 indexes + embeddings (session-scoped; legacy-compatible path)
 - **Session DBs:** `~/.local/share/bpcontext/sessions/{hash}.db` — events + context ledger
-- **Knowledge DB:** `~/.local/share/bpcontext/knowledge.db` — persistent knowledge store (source registry, file hashes, chunks, embeddings)
+- **Knowledge DB:** `~/.local/share/bpcontext/knowledge.db` — persistent knowledge store (source registry, file hashes, chunks, embeddings; legacy-compatible path)
 - **Models:** `~/.local/share/bpcontext/models/` — downloaded embedding weights
-- **Config:** `~/.config/bpcontext/config.toml`
+- **Config:** `~/.config/bpcontext/config.toml` — retained for compatibility
 
 ## Requirements
 

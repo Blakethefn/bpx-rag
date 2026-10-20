@@ -1,13 +1,13 @@
 [package]
-name = "bpcontext"
+name = "bpx-rag"
 version = "0.3.0"
 edition = "2021"
-description = "Context window optimization CLI and MCP server for Claude Code"
+description = "Local-first RAG for coding agents with hybrid search and persistent knowledge"
 license = "MIT"
-repository = "https://github.com/Blakethefn/bpcontext"
-homepage = "https://github.com/Blakethefn/bpcontext"
+repository = "https://github.com/Blakethefn/bpx-rag"
+homepage = "https://github.com/Blakethefn/bpx-rag"
 authors = ["Blake Paulson"]
-keywords = ["context", "llm", "mcp", "indexing", "claude"]
+keywords = ["rag", "code-search", "llm", "mcp", "knowledge"]
 categories = ["command-line-utilities", "development-tools"]
 
 [features]

@@ -232,7 +232,7 @@ fn main() -> Result<()> {
             let db_path = db::content_db_path(&project_dir())?;
             let db_size = std::fs::metadata(&db_path).map(|m| m.len()).unwrap_or(0);
 
-            println!("{}", "bpcontext Stats".bold());
+            println!("{}", "bpx-rag Stats".bold());
             println!();
             println!("{}", "Session:".bold());
             println!("  Commands executed:  {}", session_stats.commands_executed);
@@ -645,9 +645,9 @@ fn main() -> Result<()> {
             // Default: show stats
             println!(
                 "{}",
-                "bpcontext - Context window optimization for Claude Code".bold()
+                "bpx-rag - Local-first RAG for coding agents".bold()
             );
-            println!("Run 'bpcontext --help' for usage.");
+            println!("Run 'bpx-rag --help' for usage.");
             Ok(())
         }
     }

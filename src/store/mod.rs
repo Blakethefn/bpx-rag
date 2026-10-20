@@ -66,7 +66,7 @@ impl ContentStore {
             self.embedder_warned.set(true);
             Some(
                 "[bpx: semantic search unavailable — model not downloaded. \
-                 bpcontext will fall back to keyword search until the model is available.]"
+                 bpx-rag will fall back to keyword search until the model is available.]"
                     .to_string(),
             )
         } else {
@@ -141,7 +141,7 @@ impl ContentStore {
                         }
                     }
                     Err(e) => {
-                        eprintln!("[bpcontext] embedding failed, skipping: {e}");
+                        eprintln!("[bpx-rag] embedding failed, skipping: {e}");
                     }
                 }
             }

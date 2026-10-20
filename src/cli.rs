@@ -2,8 +2,8 @@ use clap::{Parser, Subcommand, ValueHint};
 use std::path::PathBuf;
 
 #[derive(Parser)]
-#[command(name = "bpcontext")]
-#[command(about = "Context window optimization CLI and MCP server for Claude Code")]
+#[command(name = "bpx-rag")]
+#[command(about = "Local-first RAG for coding agents")]
 #[command(version)]
 pub struct Cli {
     /// Initialize default config

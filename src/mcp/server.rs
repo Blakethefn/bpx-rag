@@ -39,7 +39,7 @@ pub fn run(project_dir: &Path) -> Result<()> {
                 Some(arc)
             }
             Err(e) => {
-                eprintln!("[bpcontext] embedder unavailable, falling back to keyword search: {e}");
+                eprintln!("[bpx-rag] embedder unavailable, falling back to keyword search: {e}");
                 None
             }
         }
@@ -68,7 +68,7 @@ pub fn run(project_dir: &Path) -> Result<()> {
                 Some(ks)
             }
             Err(e) => {
-                eprintln!("[bpcontext] knowledge store unavailable: {e}");
+                eprintln!("[bpx-rag] knowledge store unavailable: {e}");
                 None
             }
         }
@@ -111,7 +111,7 @@ pub fn run(project_dir: &Path) -> Result<()> {
                 "result": {
                     "protocolVersion": "2024-11-05",
                     "serverInfo": {
-                        "name": "bpcontext",
+                        "name": "bpx-rag",
                         "version": env!("CARGO_PKG_VERSION")
                     },
                     "capabilities": {
@@ -827,7 +827,7 @@ fn handle_stats(
     let db_size = std::fs::metadata(&db_path).map(|m| m.len()).unwrap_or(0);
 
     let mut output = format!(
-        "## bpcontext Stats\n\n\
+        "## bpx-rag Stats\n\n\
          **Session:**\n\
         - Commands executed: {}\n\
         - Searches performed: {}\n\

@@ -131,7 +131,7 @@ pub fn multi_layer_search(
                 );
             }
             Err(e) => {
-                eprintln!("[bpcontext] query embedding failed, skipping vector layer: {e}");
+                eprintln!("[bpx-rag] query embedding failed, skipping vector layer: {e}");
             }
         }
     }

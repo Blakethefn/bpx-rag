@@ -77,7 +77,7 @@ fn ensure_model_downloaded(model_dir: &Path) -> Result<PathBuf> {
         return Ok(model_dir.to_path_buf());
     }
 
-    eprintln!("[bpcontext] Downloading all-MiniLM-L6-v2 model (~80MB, one-time)...");
+    eprintln!("[bpx-rag] Downloading all-MiniLM-L6-v2 model (~80MB, one-time)...");
 
     let api = hf_hub::api::sync::Api::new().context("failed to initialize hf-hub API")?;
     let repo = api.model("sentence-transformers/all-MiniLM-L6-v2".to_string());
@@ -99,7 +99,7 @@ fn ensure_model_downloaded(model_dir: &Path) -> Result<PathBuf> {
         }
     }
 
-    eprintln!("[bpcontext] Model downloaded successfully.");
+    eprintln!("[bpx-rag] Model downloaded successfully.");
     Ok(model_dir.to_path_buf())
 }
 

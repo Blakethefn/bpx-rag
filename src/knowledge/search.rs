@@ -101,7 +101,7 @@ pub fn knowledge_search(
             }
             Err(e) => {
                 eprintln!(
-                    "[bpcontext] knowledge query embedding failed, skipping vector layer: {e}"
+                    "[bpx-rag] knowledge query embedding failed, skipping vector layer: {e}"
                 );
             }
         }
