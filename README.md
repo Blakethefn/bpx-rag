@@ -46,9 +46,22 @@ Example model configuration:
 [embeddings]
 model = "jina-embeddings-v2-base-code"
 enabled = true
+device = "cpu"
 ```
 
 Embedding batches default to 16 chunks and ONNX uses the available logical CPUs; set `batch_size` or `intra_threads` to tune memory use and throughput. These fields have defaults when omitted from an existing config. The model cache defaults to the local application data directory. `HF_HOME`, when set, selects the Hugging Face cache location.
+
+### Optional NVIDIA CUDA inference
+
+CPU is the default. To enable CUDA, build with `--features gpu-cuda`, set `embeddings.device = "cuda"`, and make the CUDA and cuDNN runtime libraries discoverable by the process. The CUDA execution provider is configured to fail clearly when it cannot register. Reports from `evaluate embeddings` and `evaluate retrieval` record the selected device.
+
+The pinned ONNX Runtime CUDA provider requires CUDA 13.2 or newer and cuDNN 9.23 or newer. Set `ORT_CACHE_DIR` to a location on the desired data drive when building. On this workstation, the ignored local `.cargo/config.toml` points it to `/media/blakethefn/2000HDD1/dev/project-assets/bpcontext/ort-cache`. Run CUDA-enabled commands through `scripts/bpx-rag-cuda`; it exposes the local CUDA/cuDNN libraries from the same HDD path. Existing configurations without a `device` field continue to use CPU.
+
+Build the optional provider with:
+
+```sh
+cargo build --release --features gpu-cuda
+```
 
 ## CLI
 

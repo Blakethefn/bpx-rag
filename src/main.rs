@@ -221,11 +221,12 @@ fn run_models(action: ModelsAction) -> Result<()> {
         ModelsAction::Status => println!("{}", rag_app::embedding_model_status(&config)),
         ModelsAction::Download => {
             let model_dir = rag_app::model_directory(&config);
-            embedder::Embedder::new(
+            embedder::Embedder::new_with_device(
                 &model_dir,
                 &config.embeddings.model,
                 config.embeddings.batch_size,
                 config.embeddings.intra_threads,
+                config.embeddings.device,
             )?;
             println!(
                 "Downloaded and loaded {} at {}.",

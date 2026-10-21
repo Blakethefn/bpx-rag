@@ -1,3 +1,4 @@
+use crate::config::EmbeddingDevice;
 use anyhow::{anyhow, Context, Result};
 use fastembed::{EmbeddingModel, TextEmbedding, TextInitOptions};
 use hf_hub::{api::sync::ApiBuilder, Cache};
@@ -56,22 +57,24 @@ pub struct Embedder {
 
 impl Embedder {
     /// Explicitly download the selected model, then load it from local cache.
-    pub fn new(
+    pub fn new_with_device(
         model_dir: &Path,
         model_name: &str,
         batch_size: usize,
         intra_threads: usize,
+        device: EmbeddingDevice,
     ) -> Result<Self> {
         Self::download_model(model_dir, model_name)?;
-        Self::load_cached(model_dir, model_name, batch_size, intra_threads)
+        Self::load_cached_with_device(model_dir, model_name, batch_size, intra_threads, device)
     }
 
     /// Load only a complete local cache entry. This never attempts a network request.
-    pub fn load_cached(
+    pub fn load_cached_with_device(
         model_dir: &Path,
         model_name: &str,
         batch_size: usize,
         intra_threads: usize,
+        device: EmbeddingDevice,
     ) -> Result<Self> {
         let model = resolve_model(model_name)?;
         let model_info = TextEmbedding::get_model_info(&model)
@@ -92,6 +95,23 @@ impl Embedder {
             .with_intra_threads(intra_threads.clamp(1, 256))
             .with_environment(shared_ort_environment()?)
             .with_show_download_progress(false);
+        let options = match device {
+            EmbeddingDevice::Cpu => options,
+            EmbeddingDevice::Cuda => {
+                #[cfg(feature = "gpu-cuda")]
+                {
+                    options.with_execution_providers(vec![ort::ep::CUDA::default()
+                        .build()
+                        .error_on_failure()])
+                }
+                #[cfg(not(feature = "gpu-cuda"))]
+                {
+                    anyhow::bail!(
+                        "CUDA was selected, but this binary lacks CUDA support; rebuild with `--features gpu-cuda`"
+                    );
+                }
+            }
+        };
         let inner = TextEmbedding::try_new(options)
             .map_err(|error| anyhow!("failed to load cached embedding model: {error}"))?;
         Ok(Self {

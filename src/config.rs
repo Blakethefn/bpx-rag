@@ -3,6 +3,23 @@ use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum EmbeddingDevice {
+    #[default]
+    Cpu,
+    Cuda,
+}
+
+impl EmbeddingDevice {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Cpu => "cpu",
+            Self::Cuda => "cuda",
+        }
+    }
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Config {
     pub general: GeneralConfig,
@@ -106,6 +123,8 @@ pub struct EmbeddingsConfig {
     /// ONNX Runtime intra-op CPU threads (default: available logical CPUs).
     #[serde(default = "default_embedding_threads")]
     pub intra_threads: usize,
+    /// Inference provider. CUDA requires a `gpu-cuda` build and compatible runtime libraries.
+    pub device: EmbeddingDevice,
     /// Enable/disable embedding generation (default true)
     pub enabled: bool,
 }
@@ -133,6 +152,7 @@ impl Default for EmbeddingsConfig {
             model_dir,
             batch_size: 16,
             intra_threads: default_embedding_threads(),
+            device: EmbeddingDevice::Cpu,
             enabled: true,
         }
     }

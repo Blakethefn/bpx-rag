@@ -91,6 +91,7 @@ pub struct QualityMetrics {
 pub struct RetrievalEvalReport {
     pub model_name: String,
     pub model_id: String,
+    pub embedding_device: String,
     pub dataset_name: String,
     pub corpus_root_name: String,
     pub embedding_dimension: usize,
@@ -211,6 +212,7 @@ pub struct ScalingEvalReport {
 pub struct EmbeddingBenchmarkReport {
     pub model_name: String,
     pub model_id: String,
+    pub embedding_device: String,
     pub corpus_root_name: String,
     pub host_threads: usize,
     pub files_scanned: usize,
@@ -443,11 +445,12 @@ pub fn run_embedding_benchmark(
     for intra_threads in thread_counts {
         for &batch_size in batch_sizes {
             let load_start = Instant::now();
-            let model = Embedder::load_cached(
+            let model = Embedder::load_cached_with_device(
                 &model_dir,
                 &config.embeddings.model,
                 batch_size,
                 intra_threads,
+                config.embeddings.device,
             )?;
             let model_load_ms = load_start.elapsed().as_secs_f64() * 1000.0;
 
@@ -493,6 +496,7 @@ pub fn run_embedding_benchmark(
     Ok(EmbeddingBenchmarkReport {
         model_name: config.embeddings.model,
         model_id,
+        embedding_device: config.embeddings.device.as_str().to_string(),
         corpus_root_name: corpus_root
             .file_name()
             .and_then(|name| name.to_str())
@@ -537,11 +541,12 @@ pub fn generate_judgment_pool(
             model_dir.display()
         );
     }
-    let model = Embedder::load_cached(
+    let model = Embedder::load_cached_with_device(
         &model_dir,
         &config.embeddings.model,
         config.embeddings.batch_size,
         config.embeddings.intra_threads,
+        config.embeddings.device,
     )?;
     let model_id = model.model_id().to_string();
 
@@ -1179,11 +1184,12 @@ pub fn run_retrieval_evaluation(
     }
 
     let model_start = Instant::now();
-    let embedder = Embedder::load_cached(
+    let embedder = Embedder::load_cached_with_device(
         &model_dir,
         &config.embeddings.model,
         config.embeddings.batch_size,
         config.embeddings.intra_threads,
+        config.embeddings.device,
     )?;
     let model_load_ms = model_start.elapsed().as_secs_f64() * 1000.0;
     let model_id = embedder.model_id().to_string();
@@ -1470,6 +1476,7 @@ pub fn run_retrieval_evaluation(
     Ok(RetrievalEvalReport {
         model_name: config.embeddings.model,
         model_id,
+        embedding_device: config.embeddings.device.as_str().to_string(),
         dataset_name: data_dir
             .file_name()
             .and_then(|name| name.to_str())

@@ -13,6 +13,7 @@ categories = ["command-line-utilities", "development-tools"]
 
 [features]
 default = []
+gpu-cuda = ["ort/cuda", "ort/copy-dylibs"]
 
 [dependencies]
 anyhow = "1"

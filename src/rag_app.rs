@@ -497,29 +497,17 @@ impl RagApp {
     }
 
     pub fn embedding_model_status(&self) -> String {
-        let model_dir = model_directory(&self.config);
-        if embedder::model_files_present(&model_dir, &self.config.embeddings.model) {
-            format!(
-                "{} model files cached at {} (integrity is checked when loaded)",
-                self.config.embeddings.model,
-                model_dir.display()
-            )
-        } else {
-            format!(
-                "{} is not installed at {}; run `bpx-rag models download`",
-                self.config.embeddings.model,
-                model_dir.display()
-            )
-        }
+        embedding_model_status(&self.config)
     }
 
     pub fn download_embedding_model(&mut self) -> Result<String> {
         let model_dir = model_directory(&self.config);
-        let embedder = Embedder::new(
+        let embedder = Embedder::new_with_device(
             &model_dir,
             &self.config.embeddings.model,
             self.config.embeddings.batch_size,
             self.config.embeddings.intra_threads,
+            self.config.embeddings.device,
         )?;
         self.install_embedder(embedder);
         Ok(format!(
@@ -554,11 +542,12 @@ impl RagApp {
             ));
             return;
         }
-        match Embedder::load_cached(
+        match Embedder::load_cached_with_device(
             &model_dir,
             &self.config.embeddings.model,
             self.config.embeddings.batch_size,
             self.config.embeddings.intra_threads,
+            self.config.embeddings.device,
         ) {
             Ok(embedder) => self.install_embedder(embedder),
             Err(error) => {
@@ -629,15 +618,28 @@ pub fn model_directory(config: &Config) -> PathBuf {
 
 pub fn embedding_model_status(config: &Config) -> String {
     let path = model_directory(config);
+    let device = match config.embeddings.device {
+        crate::config::EmbeddingDevice::Cpu => "cpu".to_string(),
+        crate::config::EmbeddingDevice::Cuda => {
+            #[cfg(feature = "gpu-cuda")]
+            {
+                "cuda".to_string()
+            }
+            #[cfg(not(feature = "gpu-cuda"))]
+            {
+                "cuda requested, but this binary was built without `gpu-cuda`".to_string()
+            }
+        }
+    };
     if embedder::model_files_present(&path, &config.embeddings.model) {
         format!(
-            "{} model files cached at {} (integrity is checked when loaded)",
+            "{} model files cached at {} (integrity is checked when loaded); device: {device}",
             config.embeddings.model,
             path.display()
         )
     } else {
         format!(
-            "{} not installed at {}",
+            "{} not installed at {}; device: {device}",
             config.embeddings.model,
             path.display()
         )
