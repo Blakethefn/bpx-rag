@@ -4,6 +4,7 @@ mod db;
 mod embedder;
 mod eval;
 mod knowledge;
+mod language;
 mod mcp;
 mod rag_app;
 mod relationships;

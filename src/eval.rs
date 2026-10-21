@@ -1373,8 +1373,12 @@ pub fn run_retrieval_evaluation(
 
         if let Some(expected_language) = &query.expected_language {
             for result in &results {
-                let actual = result.metadata["frontmatter"]["language"].as_str();
-                if actual != Some(expected_language.as_str()) {
+                let frontmatter_language = result.metadata["frontmatter"]["language"].as_str();
+                if !crate::language::matches_language(
+                    expected_language,
+                    Path::new(&result.file_path),
+                    frontmatter_language,
+                ) {
                     filter_leaks += 1;
                 }
             }

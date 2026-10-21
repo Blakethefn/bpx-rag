@@ -368,6 +368,7 @@ impl KnowledgeStore {
                 "SELECT ke.chunk_rowid
                  FROM knowledge_embeddings ke
                  JOIN knowledge_chunk_meta kcm ON kcm.chunk_rowid = ke.chunk_rowid
+                 JOIN knowledge_files kf ON kf.id = kcm.file_id
                  WHERE ke.model_id = ?1{metadata_clause}"
             );
             let mut params: Vec<Box<dyn rusqlite::types::ToSql>> =

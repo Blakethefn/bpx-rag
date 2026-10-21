@@ -59,6 +59,8 @@ bpx-rag analyze-file <path> [--root <project>]
 
 `knowledge read` accepts a relative path and an overlapping 1-based line range from a search citation. This lets agents expand a specific result instead of receiving only the first chunks from a source.
 
+The `language:<name>` filter matches source-file extensions for common languages as well as an optional YAML frontmatter `language` value. For example, `--filter language:rust` works on ordinary `.rs` files without requiring frontmatter or reindexing existing sources. Registered aliases include names such as `c++`/`cpp` and `c#`/`csharp`; unregistered safe names such as `nix` or `tf` match that extension. `.h` is intentionally included in both C and C++ filters because the extension is ambiguous.
+
 ## MCP
 
 ```json
