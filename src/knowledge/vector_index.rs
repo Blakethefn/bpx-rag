@@ -244,6 +244,12 @@ fn apply_incremental_changes(
         return Ok(None);
     }
 
+    if index.capacity() < expected_size {
+        index
+            .reserve(expected_size)
+            .map_err(|error| anyhow!("failed to grow HNSW capacity to {expected_size}: {error}"))?;
+    }
+
     let rowids = {
         let mut statement = conn.prepare(
             "SELECT DISTINCT chunk_rowid FROM knowledge_embedding_changes
