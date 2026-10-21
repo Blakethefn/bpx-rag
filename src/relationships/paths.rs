@@ -1,7 +1,11 @@
 use anyhow::{Context, Result};
 use std::path::{Path, PathBuf};
 
-pub(super) const SOURCE_EXTENSIONS: &[&str] = &["md", "rs", "ts", "tsx", "js", "jsx", "mjs", "cjs"];
+pub(super) const SOURCE_EXTENSIONS: &[&str] = &[
+    "md", "rs", "ts", "tsx", "js", "jsx", "mjs", "cjs", "c", "h", "cc", "hh", "cpp", "hpp", "cxx",
+    "hxx", "cs", "go", "java", "py", "pyi", "php", "phtml", "rb", "rake", "sh", "bash", "lua",
+    "dart", "swift", "kt", "kts",
+];
 
 pub(super) fn infer_root(target: &Path) -> Result<PathBuf> {
     let parent = target.parent().context("file has no parent directory")?;

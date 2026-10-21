@@ -5,6 +5,7 @@ use std::path::Path;
 
 use super::markdown::markdown_references;
 use super::paths::{display_relative, infer_root, is_excluded_directory, is_supported};
+use super::polyglot::polyglot_references;
 use super::rust::rust_references;
 use super::script::script_references;
 use super::types::{FileAnalysis, FileRelationship, RawReference, SourceFile};
@@ -195,6 +196,11 @@ fn extract_references(source: &SourceFile, root: &Path, files: &[SourceFile]) ->
         Some("md") => markdown_references(source, root, files),
         Some("rs") => rust_references(source, root),
         Some("ts" | "tsx" | "js" | "jsx" | "mjs" | "cjs") => script_references(source, root),
+        Some(
+            "c" | "h" | "cc" | "hh" | "cpp" | "hpp" | "cxx" | "hxx" | "cs" | "go" | "java" | "py"
+            | "pyi" | "php" | "phtml" | "rb" | "rake" | "sh" | "bash" | "lua" | "dart" | "swift"
+            | "kt" | "kts",
+        ) => polyglot_references(source, root, files),
         _ => Vec::new(),
     }
 }

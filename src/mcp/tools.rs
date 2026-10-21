@@ -4,7 +4,7 @@ pub fn tool_definitions() -> Value {
     json!({
         "tools": [{
             "name": "bpx_file_relationships",
-            "description": "Analyze a file from the current filesystem. Finds outgoing Markdown wikilinks, same-crate Rust module/import references, relative TypeScript/JavaScript imports, and files that directly refer to the selected file. Returns project-relative paths and line evidence. No index, database, or embeddings are used.",
+            "description": "Analyze a file from the current filesystem. Finds direct Markdown, Rust, TypeScript/JavaScript, C/C++, C#, Go, Java/Kotlin, Python, PHP, Ruby, Bash, Lua, Dart, and Swift import/include references where they map to project files. Returns project-relative paths and line evidence. No index, database, or runtime parser downloads are used.",
             "inputSchema": {
                 "type": "object",
                 "properties": {

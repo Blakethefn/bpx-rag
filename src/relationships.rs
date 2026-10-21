@@ -2,6 +2,7 @@ mod format;
 mod lexer;
 mod markdown;
 mod paths;
+mod polyglot;
 mod rust;
 mod scan;
 mod script;
