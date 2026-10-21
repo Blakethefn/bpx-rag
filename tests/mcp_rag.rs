@@ -147,6 +147,35 @@ fn knowledge_cli_add_sync_search_and_read_work_without_auto_downloading_model() 
         stdout(&read)
     );
 
+    let focused_read = run_cli(
+        &project,
+        &config_home,
+        &data_home,
+        &cache_home,
+        &[
+            "knowledge",
+            "read",
+            "atlas",
+            "--path",
+            "guide.md",
+            "--line-start",
+            "1",
+            "--line-end",
+            "20",
+        ],
+    );
+    assert!(focused_read.status.success());
+    assert!(stdout(&focused_read).contains("amethyst compass"));
+
+    let unsafe_read = run_cli(
+        &project,
+        &config_home,
+        &data_home,
+        &cache_home,
+        &["knowledge", "read", "atlas", "--path", "../outside.md"],
+    );
+    assert!(!unsafe_read.status.success());
+
     let updated_search = run_cli(
         &project,
         &config_home,
