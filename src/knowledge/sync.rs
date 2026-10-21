@@ -70,7 +70,7 @@ impl SensitiveIndexScrubReport {
 struct PreparedFile {
     rel_path: String,
     abs_path: PathBuf,
-    content: String,
+    size_bytes: i64,
     hash: String,
     file_id: Option<i64>,
     metadata: String,
@@ -152,28 +152,28 @@ pub fn sync_source(
     // corpus-wide call, avoiding one model invocation per file.
     let mut prepared_files = Vec::with_capacity(files_added + files_updated);
     let mut embedding_texts = Vec::new();
-    for (rel_path, abs_path, content, hash) in &to_add {
+    for (rel_path, abs_path, content, hash) in to_add {
         prepared_files.push(prepare_file(
-            rel_path.clone(),
-            abs_path.clone(),
-            content.clone(),
-            hash.clone(),
+            rel_path,
+            abs_path,
+            content,
+            hash,
             None,
             enrichment_fn,
         ));
     }
-    for (file_id, abs_path, content, hash) in &to_update {
+    for (file_id, abs_path, content, hash) in to_update {
         let rel_path = abs_path
             .strip_prefix(base_path)
-            .unwrap_or(abs_path)
+            .unwrap_or(&abs_path)
             .to_string_lossy()
             .to_string();
         prepared_files.push(prepare_file(
             rel_path,
-            abs_path.clone(),
-            content.clone(),
-            hash.clone(),
-            Some(*file_id),
+            abs_path,
+            content,
+            hash,
+            Some(file_id),
             enrichment_fn,
         ));
     }
@@ -266,7 +266,7 @@ pub fn sync_source(
                     conn.execute(
                         "INSERT INTO knowledge_files (source_id, rel_path, content_hash, size_bytes)
                          VALUES (?1, ?2, ?3, ?4)",
-                        params![source.id, file.rel_path, file.hash, file.content.len() as i64],
+                        params![source.id, file.rel_path, file.hash, file.size_bytes],
                     )?;
                     conn.last_insert_rowid()
                 }
@@ -993,6 +993,7 @@ fn prepare_file(
     file_id: Option<i64>,
     enrichment_fn: Option<&dyn Fn(&str, &Path) -> serde_json::Value>,
 ) -> PreparedFile {
+    let size_bytes = content.len() as i64;
     let metadata = match enrichment_fn {
         Some(f) => f(&content, &abs_path),
         None => serde_json::json!({}),
@@ -1002,7 +1003,7 @@ fn prepare_file(
     PreparedFile {
         rel_path,
         abs_path,
-        content,
+        size_bytes,
         hash,
         file_id,
         metadata: metadata.to_string(),
@@ -1071,7 +1072,7 @@ fn index_prepared_file(
          WHERE id = ?5",
         params![
             file.hash,
-            file.content.len() as i64,
+            file.size_bytes,
             file.chunks.len() as i64,
             file.chunker_version,
             file_id
