@@ -40,6 +40,18 @@ fn language_for(grammar: Grammar) -> Option<Language> {
         Grammar::Dart => tree_sitter_dart::LANGUAGE.into(),
         Grammar::Swift => tree_sitter_swift::LANGUAGE.into(),
         Grammar::Kotlin => tree_sitter_kotlin_ng::LANGUAGE.into(),
+        Grammar::Sql => tree_sitter_sequel::LANGUAGE.into(),
+        Grammar::Scala => tree_sitter_scala::LANGUAGE.into(),
+        Grammar::Haskell => tree_sitter_haskell::LANGUAGE.into(),
+        Grammar::Elixir => tree_sitter_elixir::LANGUAGE.into(),
+        Grammar::Erlang => tree_sitter_erlang::LANGUAGE.into(),
+        Grammar::R => tree_sitter_r::LANGUAGE.into(),
+        Grammar::Julia => tree_sitter_julia::LANGUAGE.into(),
+        Grammar::Perl => tree_sitter_perl::LANGUAGE.into(),
+        Grammar::PowerShell => tree_sitter_powershell::LANGUAGE.into(),
+        Grammar::Solidity => tree_sitter_solidity::LANGUAGE.into(),
+        Grammar::Html => tree_sitter_html::LANGUAGE.into(),
+        Grammar::Css => tree_sitter_css::LANGUAGE.into(),
         Grammar::Markdown => return None,
     };
     Some(language)

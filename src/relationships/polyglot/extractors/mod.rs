@@ -35,7 +35,19 @@ pub(super) fn extract_specifiers(
         | Grammar::Rust
         | Grammar::JavaScript
         | Grammar::TypeScript
-        | Grammar::Tsx => Vec::new(),
+        | Grammar::Tsx
+        | Grammar::Sql
+        | Grammar::Scala
+        | Grammar::Haskell
+        | Grammar::Elixir
+        | Grammar::Erlang
+        | Grammar::R
+        | Grammar::Julia
+        | Grammar::Perl
+        | Grammar::PowerShell
+        | Grammar::Solidity
+        | Grammar::Html
+        | Grammar::Css => Vec::new(),
     }
 }
 

@@ -40,7 +40,10 @@ pub(super) fn extract(
         return Vec::new();
     };
     let mut imports = vec![("import", module_text.to_string())];
-    for child_index in 0..node.child_count() {
+    let Ok(child_count) = u32::try_from(node.child_count()) else {
+        return imports;
+    };
+    for child_index in 0..child_count {
         if node.field_name_for_child(child_index) != Some("name") {
             continue;
         }

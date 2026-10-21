@@ -32,7 +32,20 @@ pub(super) fn resolve_specifier(
         Grammar::Dart => &["dart"][..],
         Grammar::Swift => &["swift"][..],
         Grammar::Kotlin => &["kt", "kts"][..],
-        Grammar::Markdown | Grammar::Rust => &[][..],
+        Grammar::Markdown
+        | Grammar::Rust
+        | Grammar::Sql
+        | Grammar::Scala
+        | Grammar::Haskell
+        | Grammar::Elixir
+        | Grammar::Erlang
+        | Grammar::R
+        | Grammar::Julia
+        | Grammar::Perl
+        | Grammar::PowerShell
+        | Grammar::Solidity
+        | Grammar::Html
+        | Grammar::Css => &[][..],
     };
     let normalized = match grammar {
         Grammar::Python => resolvers::python_module_path(source, specifier),

@@ -20,6 +20,18 @@ pub(crate) enum Grammar {
     Dart,
     Swift,
     Kotlin,
+    Sql,
+    Scala,
+    Haskell,
+    Elixir,
+    Erlang,
+    R,
+    Julia,
+    Perl,
+    PowerShell,
+    Solidity,
+    Html,
+    Css,
 }
 
 const LANGUAGE_EXTENSIONS: &[(&[&str], Grammar)] = &[
@@ -41,6 +53,18 @@ const LANGUAGE_EXTENSIONS: &[(&[&str], Grammar)] = &[
     (&["dart"], Grammar::Dart),
     (&["swift"], Grammar::Swift),
     (&["kt", "kts"], Grammar::Kotlin),
+    (&["sql"], Grammar::Sql),
+    (&["scala", "sc"], Grammar::Scala),
+    (&["hs", "lhs"], Grammar::Haskell),
+    (&["ex", "exs"], Grammar::Elixir),
+    (&["erl", "hrl"], Grammar::Erlang),
+    (&["r"], Grammar::R),
+    (&["jl"], Grammar::Julia),
+    (&["pl", "pm", "t"], Grammar::Perl),
+    (&["ps1", "psm1", "psd1"], Grammar::PowerShell),
+    (&["sol"], Grammar::Solidity),
+    (&["html", "htm"], Grammar::Html),
+    (&["css"], Grammar::Css),
 ];
 
 pub(crate) fn grammar_for_path(path: &Path) -> Option<Grammar> {

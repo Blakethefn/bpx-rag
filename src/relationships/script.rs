@@ -30,8 +30,8 @@ pub(super) fn script_references(
                 });
             }
         }
-        for index in (0..node.child_count()).rev() {
-            if let Some(child) = node.child(index) {
+        for index in (0..node.named_child_count() as u32).rev() {
+            if let Some(child) = node.named_child(index) {
                 pending.push(child);
             }
         }
