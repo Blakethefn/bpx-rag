@@ -84,11 +84,15 @@ fn run_evaluation(action: EvalAction) -> Result<()> {
                 corpus_root.as_deref(),
             )?;
             println!("{}", serde_json::to_string_pretty(&report)?);
-            if report.filter_leaks > 0 || report.citation_validity < 1.0 {
+            if report.filter_leaks > 0
+                || report.citation_validity < 1.0
+                || !report.citation_content_mismatches.is_empty()
+            {
                 return Err(anyhow!(
-                    "retrieval evaluation found {} filter leaks and citation validity {:.3}",
+                    "retrieval evaluation found {} filter leaks, citation validity {:.3}, and {} snippet/source mismatches",
                     report.filter_leaks,
-                    report.citation_validity
+                    report.citation_validity,
+                    report.citation_content_mismatches.len()
                 ));
             }
         }

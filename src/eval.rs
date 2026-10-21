@@ -131,6 +131,11 @@ pub struct RetrievalEvalReport {
     pub cases: Vec<EvalCaseReport>,
     pub by_category: BTreeMap<String, QualityMetrics>,
     pub by_language: BTreeMap<String, QualityMetrics>,
+    /// Fraction of snippets whose text matches the whitespace-normalized prefix of
+    /// cited source lines.
+    pub citation_content_validity: Option<f64>,
+    pub citation_content_matches: usize,
+    pub citation_content_mismatches: Vec<CitationIssue>,
     pub citation_validity: f64,
     pub citation_count: usize,
     pub invalid_citations: Vec<CitationIssue>,
@@ -1172,7 +1177,7 @@ pub fn run_retrieval_evaluation(
     }
     let queries_sha256 = sha256_file(&query_path)?;
     let qrels_sha256 = sha256_file(&qrels_path)?;
-    let corpus_manifest_sha256 = corpus_manifest_sha256(&corpus_dir)?;
+    let corpus_manifest_hash = corpus_manifest_sha256(&corpus_dir)?;
     let positive_judgment_count = qrels
         .values()
         .flat_map(|judgments| judgments.values())
@@ -1229,6 +1234,8 @@ pub fn run_retrieval_evaluation(
     let mut citations_checked = 0usize;
     let mut valid_citations = 0usize;
     let mut invalid_citations = Vec::new();
+    let mut citation_content_matches = 0usize;
+    let mut citation_content_mismatches = Vec::new();
     let mut filter_leaks = 0usize;
 
     for query in &queries {
@@ -1375,7 +1382,13 @@ pub fn run_retrieval_evaluation(
 
         for result in &results {
             citations_checked += 1;
-            if citation_is_valid(&corpus_dir, &result.file_path, &result.lines)? {
+            let (citation_valid, content_matches) = citation_quality(
+                &corpus_dir,
+                &result.file_path,
+                &result.lines,
+                &result.snippet,
+            )?;
+            if citation_valid {
                 valid_citations += 1;
             } else {
                 invalid_citations.push(CitationIssue {
@@ -1384,7 +1397,23 @@ pub fn run_retrieval_evaluation(
                     lines: result.lines.clone(),
                 });
             }
+            if content_matches {
+                citation_content_matches += 1;
+            } else {
+                citation_content_mismatches.push(CitationIssue {
+                    query_id: query.query_id.clone(),
+                    path: result.file_path.clone(),
+                    lines: result.lines.clone(),
+                });
+            }
         }
+    }
+
+    if sha256_file(&query_path)? != queries_sha256 || sha256_file(&qrels_path)? != qrels_sha256 {
+        anyhow::bail!("retrieval evaluation dataset changed while it was running; retry");
+    }
+    if corpus_manifest_sha256(&corpus_dir)? != corpus_manifest_hash {
+        anyhow::bail!("retrieval corpus changed while evaluation was running; retry");
     }
 
     latencies.sort_by(duration_cmp);
@@ -1413,7 +1442,7 @@ pub fn run_retrieval_evaluation(
         candidate_oversample_factor: knowledge::search::CANDIDATE_OVERSAMPLE_FACTOR,
         queries_sha256,
         qrels_sha256,
-        corpus_manifest_sha256,
+        corpus_manifest_sha256: corpus_manifest_hash,
         positive_judgment_count,
         explicit_negative_judgment_count,
         judgment_sources,
@@ -1451,6 +1480,10 @@ pub fn run_retrieval_evaluation(
             .into_iter()
             .map(|(key, sums)| (key, sums.average()))
             .collect(),
+        citation_content_validity: (citations_checked > 0)
+            .then_some(citation_content_matches as f64 / citations_checked as f64),
+        citation_content_matches,
+        citation_content_mismatches,
         citation_validity: if citations_checked == 0 {
             1.0
         } else {
@@ -1942,26 +1975,44 @@ fn dcg(grades: impl Iterator<Item = u8>) -> f64 {
         .sum()
 }
 
-fn citation_is_valid(corpus_dir: &Path, file_path: &str, range: &str) -> Result<bool> {
+fn citation_quality(
+    corpus_dir: &Path,
+    file_path: &str,
+    range: &str,
+    snippet: &str,
+) -> Result<(bool, bool)> {
     let path = Path::new(file_path);
     if path.is_absolute()
         || path
             .components()
             .any(|component| !matches!(component, std::path::Component::Normal(_)))
     {
-        return Ok(false);
+        return Ok((false, false));
     }
     let file_path = corpus_dir.join(path);
     let content = fs::read_to_string(&file_path)
         .with_context(|| format!("search result cited a missing file {}", file_path.display()))?;
-    let line_count = content.lines().count() as u32;
     let Some((start, end)) = range.split_once('-') else {
-        return Ok(false);
+        return Ok((false, false));
     };
     let (Ok(start), Ok(end)) = (start.parse::<u32>(), end.parse::<u32>()) else {
-        return Ok(false);
+        return Ok((false, false));
     };
-    Ok(start > 0 && end >= start && end <= line_count)
+    let lines = content.lines().collect::<Vec<_>>();
+    if start == 0 || end < start || end > lines.len() as u32 {
+        return Ok((false, false));
+    }
+    let cited_lines = lines[(start - 1) as usize..end as usize].join("\n");
+    let snippet = snippet.strip_suffix("...").unwrap_or(snippet);
+    let normalized_citation = normalize_citation_text(&cited_lines);
+    let normalized_snippet = normalize_citation_text(snippet);
+    let content_matches =
+        !normalized_snippet.is_empty() && normalized_citation.starts_with(&normalized_snippet);
+    Ok((true, content_matches))
+}
+
+fn normalize_citation_text(text: &str) -> String {
+    text.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
 fn in_memory_database_bytes(conn: &rusqlite::Connection) -> Result<u64> {
