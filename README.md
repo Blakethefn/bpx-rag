@@ -20,7 +20,7 @@ bpx-rag knowledge read my-project --path src/quotes/repository.ts --line-start 3
 bpx-rag knowledge sync --label my-project
 ```
 
-Sources are persisted in a local SQLite knowledge database and incrementally synced using content hashes. Search works immediately with BM25/trigram/fuzzy retrieval. Semantic search becomes available after an embedding model has been downloaded and indexed.
+Sources are persisted in a local SQLite knowledge database and incrementally synced using content hashes. Search works immediately with BM25/trigram/fuzzy retrieval. Semantic search becomes available after an embedding model has been downloaded and indexed. The source walker skips common credential-store directories (`.aws`, `.azure`, `.gnupg`, `.kube`, `.ssh`, `.terraform`, `credentials`, `secrets`), common credential files, `.env` files other than names ending in `.example`, `.sample`, `.template`, `.dist`, or `.defaults`, key/certificate containers (`.key`, `.pem`, `.p12`, `.pfx`, `.jks`, `.keystore`), and Terraform state—even when those paths are not in `.gitignore`. Sample-file exceptions are based on the filename suffix and still require placeholder contents; benign `.npmrc`, `.pypirc`, or PEM certificate files are also excluded by this conservative rule. These are path/name safeguards, not secret scanning; arbitrarily named credentials may still be indexed.
 
 ## Embedding models
 

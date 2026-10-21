@@ -69,7 +69,7 @@ pub fn sync_source(
     let embedder = store.embedder();
     let base_path = Path::new(&source.path);
 
-    // 1. Walk directory (respects .gitignore, skips binary/empty files)
+    // 1. Walk directory (respects .gitignore and skips binary/empty/sensitive files)
     let disk_files = walk_source_dir(base_path, source.glob.as_deref())?;
 
     // 2. Load existing file records from DB
@@ -315,15 +315,40 @@ pub fn reindex_file(
     let conn = store.conn();
     let embedder = store.embedder();
     let base_path = Path::new(&source.path);
-
-    let rel_path = abs_path
-        .strip_prefix(base_path)
+    let canonical_root = base_path
+        .canonicalize()
+        .with_context(|| format!("could not resolve knowledge source {}", base_path.display()))?;
+    if is_sensitive_source_root(&canonical_root) {
+        anyhow::bail!("refusing to reindex a local credential-store directory");
+    }
+    let canonical_path = abs_path
+        .canonicalize()
+        .with_context(|| format!("could not resolve source file {}", abs_path.display()))?;
+    if !canonical_path.starts_with(&canonical_root) {
+        anyhow::bail!("file path resolves outside the knowledge source directory");
+    }
+    let requested_relative_path = abs_path
+        .strip_prefix(&canonical_root)
+        .ok()
+        .map(|path| path.to_string_lossy().to_string());
+    let rel_path = canonical_path
+        .strip_prefix(&canonical_root)
         .context("file path is not inside the source directory")?
         .to_string_lossy()
         .to_string();
 
-    let bytes =
-        fs::read(abs_path).with_context(|| format!("failed to read {}", abs_path.display()))?;
+    if is_sensitive_path(&canonical_root, &canonical_path) {
+        remove_sensitive_indexed_file(conn, source.id, &rel_path)?;
+        if let Some(requested_path) = requested_relative_path {
+            if requested_path != rel_path {
+                remove_sensitive_indexed_file(conn, source.id, &requested_path)?;
+            }
+        }
+        return Ok(());
+    }
+
+    let bytes = fs::read(&canonical_path)
+        .with_context(|| format!("failed to read {}", canonical_path.display()))?;
     let content =
         String::from_utf8(bytes).context("file content is not valid UTF-8 for reindex")?;
     let hash = sha256_hex(content.as_bytes());
@@ -346,7 +371,7 @@ pub fn reindex_file(
 
     let mut prepared = prepare_file(
         rel_path.clone(),
-        abs_path.to_path_buf(),
+        canonical_path.clone(),
         content.clone(),
         hash.clone(),
         existing.as_ref().map(|(file_id, _)| *file_id),
@@ -375,8 +400,8 @@ pub fn reindex_file(
         }
     }
 
-    let current_content =
-        fs::read(abs_path).with_context(|| format!("failed to recheck {}", abs_path.display()))?;
+    let current_content = fs::read(&canonical_path)
+        .with_context(|| format!("failed to recheck {}", canonical_path.display()))?;
     if sha256_hex(&current_content) != hash {
         anyhow::bail!(
             "source file changed while embeddings were being prepared: {}; retry reindex",
@@ -449,7 +474,7 @@ pub fn reindex_file(
 // ── Internal helpers ────────────────────────────────────────────────────────
 
 /// Walk a knowledge source directory, returning files keyed by relative path.
-/// Respects .gitignore, skips binary/empty files, and applies the glob filter.
+/// Respects .gitignore, skips binary/empty/sensitive files, and applies the glob filter.
 /// Any traversal or inspection error aborts the sync so reconciliation cannot
 /// mistake an incomplete scan for deleted files.
 pub(crate) fn walk_source_dir(
@@ -461,6 +486,12 @@ pub(crate) fn walk_source_dir(
             "knowledge source path is not a directory: {}",
             base_path.display()
         ));
+    }
+    let canonical_root = base_path
+        .canonicalize()
+        .with_context(|| format!("could not resolve knowledge source {}", base_path.display()))?;
+    if is_sensitive_source_root(&canonical_root) {
+        anyhow::bail!("refusing to index a local credential-store directory");
     }
 
     let mut builder = WalkBuilder::new(base_path);
@@ -486,6 +517,9 @@ pub(crate) fn walk_source_dir(
         }
 
         let abs_path = entry.path().to_path_buf();
+        if is_sensitive_path(base_path, &abs_path) {
+            continue;
+        }
 
         // Skip binary files (null byte in first 1KB)
         if is_binary(&abs_path)
@@ -511,6 +545,158 @@ pub(crate) fn walk_source_dir(
     }
 
     Ok(files)
+}
+
+fn is_sensitive_path(source_root: &Path, path: &Path) -> bool {
+    const SENSITIVE_DIRECTORIES: &[&str] = &[
+        ".aws",
+        ".azure",
+        ".gnupg",
+        ".kube",
+        ".ssh",
+        ".terraform",
+        "credentials",
+        "secrets",
+    ];
+    const SAFE_ENV_TEMPLATES: &[&str] = &["example", "sample", "template", "dist", "defaults"];
+    const SENSITIVE_BASENAMES: &[&str] = &[
+        ".envrc",
+        ".git-credentials",
+        ".netrc",
+        ".npmrc",
+        ".pypirc",
+        "application_default_credentials.json",
+        "credentials",
+        "credentials.json",
+        "credentials.yaml",
+        "credentials.yml",
+        "id_dsa",
+        "id_ecdsa",
+        "id_ed25519",
+        "id_rsa",
+        "id_xmss",
+        "kubeconfig",
+        "sa-key.json",
+        "secret",
+        "secret.json",
+        "secret.yaml",
+        "secret.yml",
+        "secrets",
+        "secrets.json",
+        "secrets.yaml",
+        "secrets.yml",
+        "service-account-key.json",
+        "service-account.json",
+        "service_account.json",
+        "token.json",
+    ];
+    const SENSITIVE_EXTENSIONS: &[&str] = &["env", "jks", "keystore", "key", "p12", "pem", "pfx"];
+
+    let relative_path = path.strip_prefix(source_root).unwrap_or(path);
+    if relative_path.components().any(|component| {
+        let value = component.as_os_str().to_string_lossy();
+        SENSITIVE_DIRECTORIES
+            .iter()
+            .any(|directory| value.eq_ignore_ascii_case(directory))
+    }) {
+        return true;
+    }
+
+    let Some(file_name) = path.file_name().and_then(|name| name.to_str()) else {
+        return false;
+    };
+    let normalized_name = file_name.to_ascii_lowercase();
+    if normalized_name == ".env" {
+        return true;
+    }
+    if let Some(suffix) = normalized_name.strip_prefix(".env.") {
+        let template_suffix = suffix.rsplit('.').next().unwrap_or_default();
+        if !SAFE_ENV_TEMPLATES.contains(&template_suffix) {
+            return true;
+        }
+    }
+    let private_key_file = ["id_rsa.", "id_ed25519.", "id_ecdsa.", "id_dsa.", "id_xmss."]
+        .iter()
+        .any(|prefix| normalized_name.starts_with(prefix) && !normalized_name.ends_with(".pub"));
+    let extensionless_private_key = path.extension().is_none()
+        && (normalized_name.contains("private_key")
+            || normalized_name.contains("private-key")
+            || normalized_name.contains("privatekey")
+            || (normalized_name.starts_with("ssh_host_") && normalized_name.ends_with("_key")));
+    if SENSITIVE_BASENAMES.contains(&normalized_name.as_str())
+        || SENSITIVE_EXTENSIONS.iter().any(|extension| {
+            path.extension()
+                .and_then(|extension| extension.to_str())
+                .is_some_and(|actual| actual.eq_ignore_ascii_case(extension))
+        })
+        || normalized_name.contains(".tfstate")
+        || private_key_file
+        || extensionless_private_key
+    {
+        return true;
+    }
+    false
+}
+
+fn is_sensitive_source_root(path: &Path) -> bool {
+    const SENSITIVE_STORE_DIRECTORIES: &[&str] =
+        &[".aws", ".azure", ".gnupg", ".kube", ".ssh", ".terraform"];
+    let sensitive_name = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .is_some_and(|name| {
+            ["credentials", "secrets"]
+                .iter()
+                .any(|sensitive| name.eq_ignore_ascii_case(sensitive))
+        });
+    sensitive_name
+        || path.components().any(|component| {
+            let value = component.as_os_str().to_string_lossy();
+            SENSITIVE_STORE_DIRECTORIES
+                .iter()
+                .any(|directory| value.eq_ignore_ascii_case(directory))
+        })
+}
+
+fn remove_sensitive_indexed_file(
+    conn: &rusqlite::Connection,
+    source_id: i64,
+    relative_path: &str,
+) -> Result<()> {
+    conn.execute_batch("BEGIN IMMEDIATE")?;
+    let result = (|| -> Result<()> {
+        let file_id = conn
+            .query_row(
+                "SELECT id FROM knowledge_files WHERE source_id = ?1 AND rel_path = ?2",
+                params![source_id, relative_path],
+                |row| row.get::<_, i64>(0),
+            )
+            .optional()?;
+        if let Some(file_id) = file_id {
+            delete_file_chunks(conn, file_id)?;
+            conn.execute(
+                "DELETE FROM knowledge_files WHERE id = ?1 AND source_id = ?2",
+                params![file_id, source_id],
+            )?;
+            conn.execute(
+                "UPDATE knowledge_sources SET
+                    file_count = (SELECT COUNT(*) FROM knowledge_files WHERE source_id = ?1),
+                    chunk_count = (SELECT COUNT(*) FROM knowledge_chunk_meta WHERE source_id = ?1)
+                 WHERE id = ?1",
+                params![source_id],
+            )?;
+        }
+        Ok(())
+    })();
+
+    match result {
+        Ok(()) => conn.execute_batch("COMMIT")?,
+        Err(error) => {
+            let _ = conn.execute_batch("ROLLBACK");
+            return Err(error);
+        }
+    }
+    Ok(())
 }
 
 /// Compute SHA-256 hex digest of bytes.
