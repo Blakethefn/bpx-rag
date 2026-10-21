@@ -25,6 +25,8 @@ use super::{KnowledgeSourceInfo, KnowledgeStore};
 pub struct SyncResult {
     pub source_label: String,
     pub files_scanned: usize,
+    /// Files reached by this scan that were excluded by the sensitive-path policy.
+    pub sensitive_files_skipped: usize,
     pub files_added: usize,
     pub files_updated: usize,
     pub files_removed: usize,
@@ -70,7 +72,9 @@ pub fn sync_source(
     let base_path = Path::new(&source.path);
 
     // 1. Walk directory (respects .gitignore and skips binary/empty/sensitive files)
-    let disk_files = walk_source_dir(base_path, source.glob.as_deref())?;
+    let walk = walk_source_dir_with_report(base_path, source.glob.as_deref())?;
+    let disk_files = walk.files;
+    let sensitive_files_skipped = walk.sensitive_files_skipped;
 
     // 2. Load existing file records from DB
     let db_files = load_db_files(conn, source.id)?;
@@ -272,6 +276,7 @@ pub fn sync_source(
     Ok(SyncResult {
         source_label: source.label.clone(),
         files_scanned,
+        sensitive_files_skipped,
         files_added,
         files_updated,
         files_removed,
@@ -481,6 +486,18 @@ pub(crate) fn walk_source_dir(
     base_path: &Path,
     glob_pattern: Option<&str>,
 ) -> Result<HashMap<String, PathBuf>> {
+    Ok(walk_source_dir_with_report(base_path, glob_pattern)?.files)
+}
+
+pub(crate) struct SourceWalkReport {
+    pub files: HashMap<String, PathBuf>,
+    pub sensitive_files_skipped: usize,
+}
+
+pub(crate) fn walk_source_dir_with_report(
+    base_path: &Path,
+    glob_pattern: Option<&str>,
+) -> Result<SourceWalkReport> {
     if !base_path.is_dir() {
         return Err(anyhow::anyhow!(
             "knowledge source path is not a directory: {}",
@@ -508,6 +525,7 @@ pub(crate) fn walk_source_dir(
     }
 
     let mut files = HashMap::new();
+    let mut sensitive_files_skipped = 0;
 
     for entry in builder.build() {
         let entry = entry.context("failed while traversing knowledge source")?;
@@ -518,6 +536,7 @@ pub(crate) fn walk_source_dir(
 
         let abs_path = entry.path().to_path_buf();
         if is_sensitive_path(base_path, &abs_path) {
+            sensitive_files_skipped += 1;
             continue;
         }
 
@@ -544,7 +563,10 @@ pub(crate) fn walk_source_dir(
         files.insert(rel_path, abs_path);
     }
 
-    Ok(files)
+    Ok(SourceWalkReport {
+        files,
+        sensitive_files_skipped,
+    })
 }
 
 fn is_sensitive_path(source_root: &Path, path: &Path) -> bool {
