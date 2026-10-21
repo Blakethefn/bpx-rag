@@ -151,6 +151,9 @@ pub enum EvalAction {
     Embeddings {
         #[arg(long, value_hint = ValueHint::DirPath)]
         corpus_root: PathBuf,
+        /// Optional glob scope, matching a registered source's configured glob.
+        #[arg(long)]
+        glob: Option<String>,
         /// ONNX intra-op CPU thread counts to compare.
         /// Defaults to roughly one-third, two-thirds, and all available CPUs.
         #[arg(long, value_delimiter = ',')]

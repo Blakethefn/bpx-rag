@@ -213,6 +213,7 @@ pub struct EmbeddingBenchmarkReport {
     pub model_name: String,
     pub model_id: String,
     pub embedding_device: String,
+    pub source_glob: Option<String>,
     pub corpus_root_name: String,
     pub host_threads: usize,
     pub files_scanned: usize,
@@ -328,6 +329,7 @@ pub struct JudgmentPoolGenerationReport {
 /// the same ignore rules and chunker used by persistent knowledge indexing.
 pub fn run_embedding_benchmark(
     corpus_root: &Path,
+    glob_pattern: Option<&str>,
     thread_counts: &[usize],
     batch_sizes: &[usize],
     repetitions: usize,
@@ -373,7 +375,7 @@ pub fn run_embedding_benchmark(
         );
     }
 
-    let walk = crate::knowledge::sync::walk_source_dir_with_report(corpus_root, None)?;
+    let walk = crate::knowledge::sync::walk_source_dir_with_report(corpus_root, glob_pattern)?;
     let sensitive_files_skipped = walk.sensitive_files_skipped;
     let mut files = walk.files.into_iter().collect::<Vec<_>>();
     files.sort_by(|left, right| left.0.cmp(&right.0));
@@ -497,6 +499,7 @@ pub fn run_embedding_benchmark(
         model_name: config.embeddings.model,
         model_id,
         embedding_device: config.embeddings.device.as_str().to_string(),
+        source_glob: glob_pattern.map(str::to_string),
         corpus_root_name: corpus_root
             .file_name()
             .and_then(|name| name.to_str())

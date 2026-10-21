@@ -110,6 +110,7 @@ fn run_evaluation(action: EvalAction) -> Result<()> {
         }
         EvalAction::Embeddings {
             corpus_root,
+            glob,
             threads,
             batch_sizes,
             repetitions,
@@ -117,6 +118,7 @@ fn run_evaluation(action: EvalAction) -> Result<()> {
         } => {
             let report = eval::run_embedding_benchmark(
                 &corpus_root,
+                glob.as_deref(),
                 threads.as_deref().unwrap_or(&[]),
                 &batch_sizes,
                 repetitions,
