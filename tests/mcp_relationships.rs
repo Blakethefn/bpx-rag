@@ -65,8 +65,23 @@ fn mcp_relationship_tool_scans_files_without_creating_runtime_state() {
         .map(|line| serde_json::from_str::<Value>(line).unwrap())
         .collect::<Vec<_>>();
     let tool_list = &parsed[1]["result"]["tools"];
-    assert_eq!(tool_list.as_array().unwrap().len(), 1);
-    assert_eq!(tool_list[0]["name"], "bpx_file_relationships");
+    let tool_names = tool_list
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|tool| tool["name"].as_str())
+        .collect::<Vec<_>>();
+    for expected in [
+        "bpx_search",
+        "bpx_knowledge_add",
+        "bpx_knowledge_sync",
+        "bpx_knowledge_status",
+        "bpx_knowledge_read",
+        "bpx_embeddings",
+        "bpx_file_relationships",
+    ] {
+        assert!(tool_names.contains(&expected), "missing tool {expected}");
+    }
 
     let result_text = parsed[2]["result"]["content"][0]["text"].as_str().unwrap();
     assert!(result_text.contains("Incoming (1)"), "{result_text}");
@@ -138,7 +153,7 @@ fn cli_analyze_file_scans_current_files_without_creating_runtime_state() {
 }
 
 #[test]
-fn cli_exposes_only_analyze_file_and_mcp_server_commands() {
+fn cli_exposes_rag_commands_alongside_file_analysis_and_mcp_server() {
     let executable = std::env::var("CARGO_BIN_EXE_bpx-rag").unwrap();
     let output = Command::new(executable).arg("--help").output().unwrap();
 
@@ -146,14 +161,11 @@ fn cli_exposes_only_analyze_file_and_mcp_server_commands() {
     let help = String::from_utf8(output.stdout).unwrap();
     assert!(help.contains("analyze-file"));
     assert!(help.contains("serve"));
-    let command_lines = help
-        .lines()
-        .filter_map(|line| line.trim().split_once(' '))
-        .map(|(command, _)| command)
-        .collect::<Vec<_>>();
-    assert!(!command_lines.contains(&"knowledge"));
-    assert!(!command_lines.contains(&"search"));
-    assert!(!command_lines.contains(&"index"));
+    assert!(help.contains("search"));
+    assert!(help.contains("knowledge"));
+    assert!(help.contains("models"));
+    assert!(help.contains("analyze-file"));
+    assert!(help.contains("serve"));
 }
 
 #[test]
@@ -163,6 +175,8 @@ fn bpcontext_compatibility_launcher_forwards_to_bpx_rag() {
 
     assert!(output.status.success());
     let help = String::from_utf8(output.stdout).unwrap();
-    assert!(help.contains("Filesystem-first file relationship analysis"));
+    assert!(help.contains("Local-first hybrid retrieval for code and project knowledge"));
     assert!(help.contains("analyze-file"));
+    assert!(help.contains("knowledge"));
+    assert!(help.contains("search"));
 }
