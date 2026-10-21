@@ -477,6 +477,25 @@ impl RagApp {
         Ok(report)
     }
 
+    pub fn scrub_sensitive_index(
+        &self,
+        source_label: Option<&str>,
+    ) -> Result<knowledge::sync::SensitiveIndexScrubReport> {
+        let source_id = match source_label {
+            Some(label) if label.trim().is_empty() => {
+                return Err(anyhow!("source label must not be empty"));
+            }
+            Some(label) => Some(
+                self.knowledge
+                    .get_source(label)?
+                    .ok_or_else(|| anyhow!("knowledge source '{label}' was not found"))?
+                    .id,
+            ),
+            None => None,
+        };
+        knowledge::sync::scrub_sensitive_indexed_files(&self.knowledge, source_id)
+    }
+
     pub fn embedding_model_status(&self) -> String {
         let model_dir = model_directory(&self.config);
         if embedder::model_files_present(&model_dir, &self.config.embeddings.model) {

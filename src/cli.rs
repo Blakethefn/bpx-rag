@@ -90,6 +90,12 @@ pub enum KnowledgeAction {
         #[arg(long)]
         label: Option<String>,
     },
+    /// Remove previously indexed files matched by the sensitive path/content policy.
+    ScrubSensitive {
+        /// Restrict cleanup to one registered source label. Omit to scan all stored index rows.
+        #[arg(long)]
+        label: Option<String>,
+    },
     /// Read indexed chunks for a source in original order.
     Read {
         label: String,

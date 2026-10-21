@@ -9,7 +9,7 @@ use ignore::overrides::OverrideBuilder;
 use ignore::WalkBuilder;
 use rusqlite::{params, OptionalExtension};
 use sha2::{Digest, Sha256};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::time::Instant;
@@ -52,6 +52,21 @@ pub struct SyncResult {
     pub duration_ms: u64,
 }
 
+#[derive(Debug, Default)]
+pub struct SensitiveIndexScrubReport {
+    pub files_removed: usize,
+    pub chunks_removed: usize,
+}
+
+impl SensitiveIndexScrubReport {
+    pub fn summary(&self) -> String {
+        format!(
+            "Sensitive index scrub: removed {} files and {} chunks.",
+            self.files_removed, self.chunks_removed
+        )
+    }
+}
+
 struct PreparedFile {
     rel_path: String,
     abs_path: PathBuf,
@@ -82,7 +97,7 @@ pub fn sync_source(
     // 1. Walk directory (respects .gitignore and skips binary/empty/sensitive files)
     let walk = walk_source_dir_with_report(base_path, source.glob.as_deref())?;
     let disk_files = walk.files;
-    let sensitive_files_skipped = walk.sensitive_files_skipped;
+    let mut sensitive_files_skipped = walk.sensitive_files_skipped;
 
     // 2. Load existing file records from DB
     let db_files = load_db_files(conn, source.id)?;
@@ -91,6 +106,7 @@ pub fn sync_source(
     let mut to_add: Vec<(String, PathBuf, String, String)> = Vec::new(); // (rel, abs, content, hash)
     let mut to_update: Vec<(i64, PathBuf, String, String)> = Vec::new(); // (file_id, abs, content, hash)
     let mut to_remove: Vec<i64> = Vec::new();
+    let mut sensitive_content_paths = HashSet::new();
     let mut unchanged: usize = 0;
 
     for (rel_path, abs_path) in &disk_files {
@@ -101,6 +117,11 @@ pub fn sync_source(
         // Silently skipping it can leave stale indexed content behind.
         let content = String::from_utf8(bytes)
             .with_context(|| format!("file is not valid UTF-8: {}", abs_path.display()))?;
+        if contains_google_api_key(&content) {
+            sensitive_files_skipped += 1;
+            sensitive_content_paths.insert(rel_path.clone());
+            continue;
+        }
         let hash = sha256_hex(content.as_bytes());
 
         let chunker_version = chunker_version_for_path(Path::new(rel_path));
@@ -116,7 +137,7 @@ pub fn sync_source(
     }
 
     for (rel_path, (file_id, _, _)) in &db_files {
-        if !disk_files.contains_key(rel_path) {
+        if !disk_files.contains_key(rel_path) || sensitive_content_paths.contains(rel_path) {
             to_remove.push(*file_id);
         }
     }
@@ -320,6 +341,142 @@ pub fn sync_source(
     })
 }
 
+/// Remove already-indexed VCS metadata and files containing a recognized
+/// Google API-key signature. This reads only stored index rows and never walks
+/// source directories or prints paths/content.
+pub fn scrub_sensitive_indexed_files(
+    store: &KnowledgeStore,
+    source_id: Option<i64>,
+) -> Result<SensitiveIndexScrubReport> {
+    let conn = store.conn();
+    let mut candidates = HashMap::<i64, i64>::new();
+    {
+        let mut statement = conn.prepare(
+            "SELECT id, source_id, rel_path FROM knowledge_files
+             WHERE (?1 IS NULL OR source_id = ?1)",
+        )?;
+        let rows = statement.query_map(params![source_id], |row| {
+            Ok((
+                row.get::<_, i64>(0)?,
+                row.get::<_, i64>(1)?,
+                row.get::<_, String>(2)?,
+            ))
+        })?;
+        for row in rows {
+            let (file_id, file_source_id, rel_path) = row?;
+            if is_sensitive_relative_path(Path::new(&rel_path)) {
+                candidates.insert(file_id, file_source_id);
+            }
+        }
+    }
+
+    {
+        let mut statement = conn.prepare(
+            "SELECT kf.id, kf.source_id, kc.content
+             FROM knowledge_files kf
+             JOIN knowledge_chunk_meta m ON m.file_id = kf.id
+             JOIN knowledge_chunks kc ON kc.rowid = m.chunk_rowid
+             WHERE (?1 IS NULL OR kf.source_id = ?1)
+               AND instr(kc.content, 'AIza') > 0",
+        )?;
+        let rows = statement.query_map(params![source_id], |row| {
+            Ok((
+                row.get::<_, i64>(0)?,
+                row.get::<_, i64>(1)?,
+                row.get::<_, String>(2)?,
+            ))
+        })?;
+        for row in rows {
+            let (file_id, file_source_id, content) = row?;
+            if contains_google_api_key(&content) {
+                candidates.insert(file_id, file_source_id);
+            }
+        }
+    }
+
+    if candidates.is_empty() {
+        return Ok(SensitiveIndexScrubReport::default());
+    }
+
+    conn.execute_batch("BEGIN IMMEDIATE")?;
+    let transaction_result = (|| -> Result<SensitiveIndexScrubReport> {
+        let mut report = SensitiveIndexScrubReport::default();
+        let mut affected_sources = HashSet::new();
+
+        for (file_id, file_source_id) in candidates {
+            let relative_path: Option<String> = conn
+                .query_row(
+                    "SELECT rel_path FROM knowledge_files WHERE id = ?1 AND source_id = ?2",
+                    params![file_id, file_source_id],
+                    |row| row.get(0),
+                )
+                .optional()?;
+            let Some(relative_path) = relative_path else {
+                continue;
+            };
+
+            let mut sensitive = is_sensitive_relative_path(Path::new(&relative_path));
+            if !sensitive {
+                let mut statement = conn.prepare(
+                    "SELECT kc.content FROM knowledge_chunk_meta m
+                     JOIN knowledge_chunks kc ON kc.rowid = m.chunk_rowid
+                     WHERE m.file_id = ?1",
+                )?;
+                let rows = statement.query_map(params![file_id], |row| row.get::<_, String>(0))?;
+                for row in rows {
+                    if contains_google_api_key(&row?) {
+                        sensitive = true;
+                        break;
+                    }
+                }
+            }
+            if !sensitive {
+                continue;
+            }
+
+            let chunk_count: i64 = conn.query_row(
+                "SELECT COUNT(*) FROM knowledge_chunk_meta WHERE file_id = ?1",
+                params![file_id],
+                |row| row.get(0),
+            )?;
+            delete_file_chunks(conn, file_id)?;
+            let deleted = conn.execute(
+                "DELETE FROM knowledge_files WHERE id = ?1 AND source_id = ?2",
+                params![file_id, file_source_id],
+            )?;
+            if deleted == 0 {
+                continue;
+            }
+            report.files_removed += 1;
+            report.chunks_removed += chunk_count.max(0) as usize;
+            affected_sources.insert(file_source_id);
+        }
+
+        for file_source_id in affected_sources {
+            conn.execute(
+                "UPDATE knowledge_sources SET
+                    file_count = (SELECT COUNT(*) FROM knowledge_files WHERE source_id = ?1),
+                    chunk_count = (SELECT COUNT(*) FROM knowledge_chunk_meta WHERE source_id = ?1)
+                 WHERE id = ?1",
+                params![file_source_id],
+            )?;
+        }
+
+        Ok(report)
+    })();
+
+    match transaction_result {
+        Ok(report) => {
+            conn.execute_batch("COMMIT")?;
+            Ok(report)
+        }
+        Err(error) => {
+            let _ = conn.execute_batch("ROLLBACK");
+            Err(error)
+        }
+    }
+}
+
 /// Sync all registered knowledge sources.
 pub fn sync_all(
     store: &KnowledgeStore,
@@ -380,6 +537,15 @@ pub fn reindex_file(
         .with_context(|| format!("failed to read {}", canonical_path.display()))?;
     let content =
         String::from_utf8(bytes).context("file content is not valid UTF-8 for reindex")?;
+    if contains_google_api_key(&content) {
+        remove_sensitive_indexed_file(conn, source.id, &rel_path)?;
+        if let Some(requested_path) = requested_relative_path {
+            if requested_path != rel_path {
+                remove_sensitive_indexed_file(conn, source.id, &requested_path)?;
+            }
+        }
+        return Ok(());
+    }
     let hash = sha256_hex(content.as_bytes());
 
     // Check if file exists and hash matches — skip early if unchanged
@@ -595,12 +761,19 @@ pub(crate) fn walk_source_dir_with_report(
 }
 
 fn is_sensitive_path(source_root: &Path, path: &Path) -> bool {
+    is_sensitive_relative_path(path.strip_prefix(source_root).unwrap_or(path))
+}
+
+fn is_sensitive_relative_path(path: &Path) -> bool {
     const SENSITIVE_DIRECTORIES: &[&str] = &[
         ".aws",
         ".azure",
+        ".git",
         ".gnupg",
+        ".hg",
         ".kube",
         ".ssh",
+        ".svn",
         ".terraform",
         "credentials",
         "secrets",
@@ -639,8 +812,7 @@ fn is_sensitive_path(source_root: &Path, path: &Path) -> bool {
     ];
     const SENSITIVE_EXTENSIONS: &[&str] = &["env", "jks", "keystore", "key", "p12", "pem", "pfx"];
 
-    let relative_path = path.strip_prefix(source_root).unwrap_or(path);
-    if relative_path.components().any(|component| {
+    if path.components().any(|component| {
         let value = component.as_os_str().to_string_lossy();
         SENSITIVE_DIRECTORIES
             .iter()
@@ -685,9 +857,46 @@ fn is_sensitive_path(source_root: &Path, path: &Path) -> bool {
     false
 }
 
+fn contains_google_api_key(content: &str) -> bool {
+    const PREFIX: &[u8] = b"AIza";
+    const KEY_LENGTH: usize = 39;
+    let bytes = content.as_bytes();
+    bytes
+        .windows(PREFIX.len())
+        .enumerate()
+        .any(|(start, candidate)| {
+            if candidate != PREFIX {
+                return false;
+            }
+            let end = start + KEY_LENGTH;
+            if end > bytes.len()
+                || (start > 0 && is_google_api_key_byte(bytes[start - 1]))
+                || (end < bytes.len() && is_google_api_key_byte(bytes[end]))
+            {
+                return false;
+            }
+            bytes[start + PREFIX.len()..end]
+                .iter()
+                .all(|byte| is_google_api_key_byte(*byte))
+        })
+}
+
+fn is_google_api_key_byte(byte: u8) -> bool {
+    byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-')
+}
+
 fn is_sensitive_source_root(path: &Path) -> bool {
-    const SENSITIVE_STORE_DIRECTORIES: &[&str] =
-        &[".aws", ".azure", ".gnupg", ".kube", ".ssh", ".terraform"];
+    const SENSITIVE_STORE_DIRECTORIES: &[&str] = &[
+        ".aws",
+        ".azure",
+        ".git",
+        ".gnupg",
+        ".hg",
+        ".kube",
+        ".ssh",
+        ".svn",
+        ".terraform",
+    ];
     let sensitive_name = path
         .file_name()
         .and_then(|name| name.to_str())

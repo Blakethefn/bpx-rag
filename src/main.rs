@@ -195,6 +195,10 @@ fn run_knowledge(action: KnowledgeAction, project_dir: &std::path::Path) -> Resu
             let report = app.backfill_embeddings(label.as_deref())?;
             println!("{}", report.summary());
         }
+        KnowledgeAction::ScrubSensitive { label } => {
+            let report = app.scrub_sensitive_index(label.as_deref())?;
+            println!("{}", report.summary());
+        }
         KnowledgeAction::Read {
             label,
             max_chunks,
