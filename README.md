@@ -116,4 +116,6 @@ For manual review, open `eval/review-pool.html` in a browser and select the anno
 
 The citation-content check matched all 331 returned excerpts against their cited source lines in the 34-query multilingual fixture. Its report is `eval/results/retrieval-citation-content-multilingual-2026-10-21.json`.
 
+The current Rust source run matched all 250/250 returned excerpts against their cited lines across 55 files / 630 chunks. Its 25-query qrels remain self-authored with 22.4% judged coverage@10, so the ranking scores are development evidence only. Report: `eval/results/bpx-rag-rust-citation-content-2026-10-21.json`.
+
 The `bpcontext` executable remains as a compatibility launcher for older scripts.
