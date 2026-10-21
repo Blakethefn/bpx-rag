@@ -241,9 +241,17 @@ impl Embed for Embedder {
             .inner
             .lock()
             .map_err(|_| anyhow!("embedding model lock was poisoned"))?;
-        inner
-            .embed(texts, Some(self.batch_size))
-            .map_err(|error| anyhow!("embedding generation failed: {error}"))
+        let mut embeddings = Vec::with_capacity(texts.len());
+        for batch in texts.chunks(self.batch_size) {
+            // FastEmbed retains raw ONNX outputs for every internal batch until
+            // `embed` finishes. Keep each call to one configured batch so a
+            // large source cannot accumulate corpus-wide activation tensors.
+            let batch_embeddings = inner
+                .embed(batch, Some(self.batch_size))
+                .map_err(|error| anyhow!("embedding generation failed: {error}"))?;
+            embeddings.extend(batch_embeddings);
+        }
+        Ok(embeddings)
     }
 
     fn dim(&self) -> usize {
