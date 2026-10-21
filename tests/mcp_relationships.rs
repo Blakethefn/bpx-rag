@@ -4,20 +4,21 @@ use std::process::{Command, Stdio};
 use tempfile::tempdir;
 
 #[test]
-fn mcp_relationship_tool_scans_files_without_opening_any_database() {
+fn mcp_relationship_tool_scans_files_without_creating_runtime_state() {
     let project = tempdir().unwrap();
-    let config_dir = project.path().join("runtime-config");
-    let data_dir = project.path().join("runtime-data");
-    let cache_dir = project.path().join("runtime-cache");
-    std::fs::create_dir_all(project.path().join("src/lib/api")).unwrap();
-    std::fs::create_dir_all(project.path().join("src/hooks")).unwrap();
+    let project_root = project.path().join("project");
+    let config_dir = project_root.join("runtime-config");
+    let data_dir = project_root.join("runtime-data");
+    let cache_dir = project_root.join("runtime-cache");
+    std::fs::create_dir_all(project_root.join("src/lib/api")).unwrap();
+    std::fs::create_dir_all(project_root.join("src/hooks")).unwrap();
     std::fs::write(
-        project.path().join("src/lib/api/quotes.ts"),
+        project_root.join("src/lib/api/quotes.ts"),
         "export function getQuotes() {}\n",
     )
     .unwrap();
     std::fs::write(
-        project.path().join("src/hooks/useQuotes.ts"),
+        project_root.join("src/hooks/useQuotes.ts"),
         "import { getQuotes } from '../lib/api/quotes';\n",
     )
     .unwrap();
@@ -45,7 +46,7 @@ fn mcp_relationship_tool_scans_files_without_opening_any_database() {
             "method":"tools/call",
             "params":{
                 "name":"bpx_file_relationships",
-                "arguments":{"path":"src/lib/api/quotes.ts","root":project.path()}
+                "arguments":{"path":"src/lib/api/quotes.ts","root":"project"}
             }
         }),
     ];
@@ -68,12 +69,12 @@ fn mcp_relationship_tool_scans_files_without_opening_any_database() {
     assert_eq!(tool_list[0]["name"], "bpx_file_relationships");
 
     let result_text = parsed[2]["result"]["content"][0]["text"].as_str().unwrap();
-    assert!(result_text.contains("Incoming (1)"));
+    assert!(result_text.contains("Incoming (1)"), "{result_text}");
     assert!(result_text.contains("src/hooks/useQuotes.ts"));
     assert!(result_text.contains("line 1"));
     assert!(
         !data_dir.exists(),
-        "relationship-only MCP call must not create a database directory"
+        "relationship-only MCP call must not create runtime data"
     );
     assert!(
         !config_dir.exists(),
@@ -86,7 +87,7 @@ fn mcp_relationship_tool_scans_files_without_opening_any_database() {
 }
 
 #[test]
-fn cli_analyze_file_uses_the_same_database_free_relationship_scan() {
+fn cli_analyze_file_scans_current_files_without_creating_runtime_state() {
     let project = tempdir().unwrap();
     let config_dir = project.path().join("runtime-config");
     let data_dir = project.path().join("runtime-data");
@@ -124,7 +125,7 @@ fn cli_analyze_file_uses_the_same_database_free_relationship_scan() {
     assert!(stdout.contains("src/useQuotes.ts"));
     assert!(
         !data_dir.exists(),
-        "CLI relationship scan must not create a database directory"
+        "CLI relationship scan must not create runtime data"
     );
     assert!(
         !config_dir.exists(),

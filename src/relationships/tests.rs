@@ -20,7 +20,7 @@ fn markdown_wikilinks_return_outgoing_and_incoming_line_evidence() {
 }
 
 #[test]
-fn typescript_relative_imports_find_incoming_files_without_a_database() {
+fn typescript_relative_imports_find_incoming_files_from_the_current_filesystem() {
     let dir = tempdir().unwrap();
     fs::create_dir_all(dir.path().join("src/lib/api")).unwrap();
     fs::create_dir_all(dir.path().join("src/hooks")).unwrap();

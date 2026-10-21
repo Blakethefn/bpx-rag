@@ -8,9 +8,9 @@ Thanks for your interest in contributing!
 2. Clone your fork
 3. Create a feature branch: `git checkout -b my-feature`
 4. Make your changes
-5. Run tests: `cargo test`
-6. Run clippy: `cargo clippy`
-7. Format code: `cargo fmt`
+5. Format code: `cargo fmt`
+6. Run tests: `cargo test`
+7. Run Clippy: `cargo clippy --all-targets -- -D warnings`
 8. Commit and push
 9. Open a pull request
 
@@ -18,7 +18,7 @@ Thanks for your interest in contributing!
 
 ```bash
 # Clone
-git clone https://github.com/YOUR_USERNAME/bpx-rag.git
+git clone https://github.com/Blakethefn/bpx-rag.git
 cd bpx-rag
 
 # Build
@@ -27,8 +27,11 @@ cargo build
 # Run tests
 cargo test
 
-# Run with clippy warnings
-cargo clippy -- -W warnings
+# Check formatting
+cargo fmt --check
+
+# Run Clippy across binaries and tests
+cargo clippy --all-targets -- -D warnings
 ```
 
 ## Guidelines

@@ -82,7 +82,7 @@ pub fn analyze_file(path: &Path, root: Option<&Path>) -> Result<FileAnalysis> {
                 continue;
             }
         };
-        if !entry.file_type().map_or(false, |kind| kind.is_file()) || !is_supported(entry.path()) {
+        if !entry.file_type().is_some_and(|kind| kind.is_file()) || !is_supported(entry.path()) {
             continue;
         }
         if entry.path() == target {

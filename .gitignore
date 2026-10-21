@@ -1,5 +1,4 @@
 /target
-Cargo.lock
 docs/
 # Local cargo config (contains machine-specific paths)
 .cargo/config.toml
@@ -18,16 +17,3 @@ Thumbs.db
 # Environment
 .env
 .env.local
-
-# Database files (runtime)
-*.db
-*.db-wal
-*.db-shm
-
-# Model weights (downloaded at runtime via hf-hub)
-models/
-*.safetensors
-*.bin
-*.ot
-*.onnx
-tokenizer.json
