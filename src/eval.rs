@@ -53,6 +53,18 @@ struct EvalQuery {
     expected_language: Option<String>,
     #[serde(default)]
     judgment_source: Option<String>,
+    #[serde(default)]
+    answerability: QueryAnswerability,
+    #[serde(default)]
+    answerability_evidence: Option<String>,
+}
+
+#[derive(Debug, Default, Deserialize, Serialize, Clone, Copy, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum QueryAnswerability {
+    #[default]
+    Answerable,
+    UnanswerableInCorpus,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -95,6 +107,8 @@ pub struct RetrievalEvalReport {
     pub architecture: String,
     pub host_threads: usize,
     pub query_count: usize,
+    pub answerable_query_count: usize,
+    pub unanswerable_query_count: usize,
     pub corpus_file_count: usize,
     pub chunk_count: usize,
     pub repetitions: usize,
@@ -111,6 +125,9 @@ pub struct RetrievalEvalReport {
     pub overall: QualityMetrics,
     pub lexical_only: QualityMetrics,
     pub vector_only: QualityMetrics,
+    pub unanswerable_hybrid: UnanswerableMetrics,
+    pub unanswerable_lexical_only: UnanswerableMetrics,
+    pub unanswerable_vector_only: UnanswerableMetrics,
     pub cases: Vec<EvalCaseReport>,
     pub by_category: BTreeMap<String, QualityMetrics>,
     pub by_language: BTreeMap<String, QualityMetrics>,
@@ -125,13 +142,26 @@ pub struct EvalCaseReport {
     pub query_id: String,
     pub category: String,
     pub language: String,
-    pub hybrid: QualityMetrics,
-    pub lexical_only: QualityMetrics,
-    pub vector_only: QualityMetrics,
+    pub answerability: QueryAnswerability,
+    pub answerability_evidence: Option<String>,
+    pub hybrid: Option<QualityMetrics>,
+    pub lexical_only: Option<QualityMetrics>,
+    pub vector_only: Option<QualityMetrics>,
+    pub unanswerable_hybrid: Option<UnanswerableMetrics>,
     pub distinct_files_at_10: usize,
     pub top_paths: Vec<String>,
     pub lexical_top_paths: Vec<String>,
     pub vector_top_paths: Vec<String>,
+}
+
+#[derive(Debug, Default, Clone, Serialize)]
+pub struct UnanswerableMetrics {
+    pub query_count: usize,
+    /// Fraction of top-10 returned files explicitly judged nonrelevant.
+    pub explicit_negative_share_at_10: f64,
+    pub judged_coverage_at_10: f64,
+    /// Fraction of queries for which retrieval returned no files.
+    pub empty_result_rate: f64,
 }
 
 #[derive(Debug, Serialize)]
@@ -946,6 +976,64 @@ struct MetricSums {
     count: usize,
 }
 
+#[derive(Clone, Copy, Default)]
+struct UnanswerableMetricSums {
+    explicit_negative_share_at_10: f64,
+    judged_coverage_at_10: f64,
+    empty_result_rate: f64,
+    count: usize,
+}
+
+impl UnanswerableMetricSums {
+    fn push(&mut self, ranked_paths: &[String], judgments: &BTreeMap<String, u8>) {
+        let metrics = measure_unanswerable_query(ranked_paths, judgments);
+        self.explicit_negative_share_at_10 += metrics.explicit_negative_share_at_10;
+        self.judged_coverage_at_10 += metrics.judged_coverage_at_10;
+        self.empty_result_rate += metrics.empty_result_rate;
+        self.count += 1;
+    }
+
+    fn average(self) -> UnanswerableMetrics {
+        let count = self.count.max(1) as f64;
+        UnanswerableMetrics {
+            query_count: self.count,
+            explicit_negative_share_at_10: self.explicit_negative_share_at_10 / count,
+            judged_coverage_at_10: self.judged_coverage_at_10 / count,
+            empty_result_rate: self.empty_result_rate / count,
+        }
+    }
+}
+
+fn measure_unanswerable_query(
+    ranked_paths: &[String],
+    judgments: &BTreeMap<String, u8>,
+) -> UnanswerableMetrics {
+    let top_paths = unique_paths(ranked_paths, TOP_K);
+    let returned = top_paths.len();
+    let explicitly_negative = top_paths
+        .iter()
+        .filter(|path| judgments.get(path.as_str()) == Some(&0))
+        .count();
+    let judged = top_paths
+        .iter()
+        .filter(|path| judgments.contains_key(path.as_str()))
+        .count();
+    UnanswerableMetrics {
+        query_count: 1,
+        explicit_negative_share_at_10: if returned == 0 {
+            0.0
+        } else {
+            explicitly_negative as f64 / returned as f64
+        },
+        judged_coverage_at_10: if returned == 0 {
+            0.0
+        } else {
+            judged as f64 / returned as f64
+        },
+        empty_result_rate: (returned == 0) as u8 as f64,
+    }
+}
+
 impl MetricSums {
     fn push(&mut self, metrics: &QualityMetrics) {
         self.recall_at_5 += metrics.recall_at_5;
@@ -1081,6 +1169,9 @@ pub fn run_retrieval_evaluation(
     let mut vector_only = MetricSums::default();
     let mut categories: BTreeMap<String, MetricSums> = BTreeMap::new();
     let mut languages: BTreeMap<String, MetricSums> = BTreeMap::new();
+    let mut unanswerable_hybrid = UnanswerableMetricSums::default();
+    let mut unanswerable_lexical = UnanswerableMetricSums::default();
+    let mut unanswerable_vector = UnanswerableMetricSums::default();
     let mut cases = Vec::with_capacity(queries.len());
     let mut latencies = Vec::with_capacity(queries.len() * repetitions);
     let mut citations_checked = 0usize;
@@ -1161,24 +1252,48 @@ pub fn run_retrieval_evaluation(
                 .collect::<Vec<_>>(),
             judgments,
         );
-        overall.push(&metrics);
-        lexical_only.push(&lexical_metrics);
-        vector_only.push(&vector_metrics);
-        categories
-            .entry(query.category.clone())
-            .or_default()
-            .push(&metrics);
-        languages
-            .entry(query.language.clone())
-            .or_default()
-            .push(&metrics);
+        let no_answer_metrics = if query.answerability == QueryAnswerability::UnanswerableInCorpus {
+            unanswerable_hybrid.push(&ranked_paths, judgments);
+            unanswerable_lexical.push(
+                &lexical_results
+                    .iter()
+                    .map(|result| result.file_path.clone())
+                    .collect::<Vec<_>>(),
+                judgments,
+            );
+            unanswerable_vector.push(
+                &vector_results
+                    .iter()
+                    .map(|result| result.file_path.clone())
+                    .collect::<Vec<_>>(),
+                judgments,
+            );
+            Some(measure_unanswerable_query(&ranked_paths, judgments))
+        } else {
+            overall.push(&metrics);
+            lexical_only.push(&lexical_metrics);
+            vector_only.push(&vector_metrics);
+            categories
+                .entry(query.category.clone())
+                .or_default()
+                .push(&metrics);
+            languages
+                .entry(query.language.clone())
+                .or_default()
+                .push(&metrics);
+            None
+        };
+        let is_answerable = query.answerability == QueryAnswerability::Answerable;
         cases.push(EvalCaseReport {
             query_id: query.query_id.clone(),
             category: query.category.clone(),
             language: query.language.clone(),
-            hybrid: metrics.clone(),
-            lexical_only: lexical_metrics,
-            vector_only: vector_metrics,
+            answerability: query.answerability,
+            answerability_evidence: query.answerability_evidence.clone(),
+            hybrid: is_answerable.then_some(metrics.clone()),
+            lexical_only: is_answerable.then_some(lexical_metrics),
+            vector_only: is_answerable.then_some(vector_metrics),
+            unanswerable_hybrid: no_answer_metrics,
             distinct_files_at_10: unique_paths(&ranked_paths, TOP_K).len(),
             top_paths: unique_paths(&ranked_paths, TOP_K),
             lexical_top_paths: unique_paths(
@@ -1254,6 +1369,8 @@ pub fn run_retrieval_evaluation(
         architecture: std::env::consts::ARCH.to_string(),
         host_threads: std::thread::available_parallelism().map_or(1, usize::from),
         query_count: queries.len(),
+        answerable_query_count: overall.count,
+        unanswerable_query_count: unanswerable_hybrid.count,
         corpus_file_count: sync.files_scanned,
         chunk_count: sync.chunks_total,
         repetitions,
@@ -1270,6 +1387,9 @@ pub fn run_retrieval_evaluation(
         overall: overall.average(),
         lexical_only: lexical_only.average(),
         vector_only: vector_only.average(),
+        unanswerable_hybrid: unanswerable_hybrid.average(),
+        unanswerable_lexical_only: unanswerable_lexical.average(),
+        unanswerable_vector_only: unanswerable_vector.average(),
         cases,
         by_category: categories
             .into_iter()
@@ -1595,13 +1715,28 @@ fn validate_qrels(
         anyhow::bail!("relevance judgments reference unknown query {query_id}");
     }
     for query in queries {
-        if qrels.get(&query.query_id).map_or(true, |judgments| {
-            !judgments.values().any(|grade| *grade > 0)
-        }) {
-            anyhow::bail!(
-                "query {} has no positive relevance judgments",
+        let judgments = qrels.get(&query.query_id);
+        let has_positive =
+            judgments.is_some_and(|judgments| judgments.values().any(|grade| *grade > 0));
+        match query.answerability {
+            QueryAnswerability::Answerable if !has_positive => anyhow::bail!(
+                "answerable query {} has no positive relevance judgments",
                 query.query_id
-            );
+            ),
+            QueryAnswerability::UnanswerableInCorpus if has_positive => anyhow::bail!(
+                "unanswerable query {} has a positive relevance judgment",
+                query.query_id
+            ),
+            QueryAnswerability::UnanswerableInCorpus
+                if !judgments
+                    .is_some_and(|judgments| judgments.values().any(|grade| *grade == 0)) =>
+            {
+                anyhow::bail!(
+                    "unanswerable query {} requires at least one explicit grade-0 judgment",
+                    query.query_id
+                );
+            }
+            _ => {}
         }
     }
     let canonical_root = corpus_dir.canonicalize().with_context(|| {
@@ -1648,6 +1783,17 @@ fn validate_queries(queries: &[EvalQuery]) -> Result<std::collections::HashSet<S
         }
         if !query_ids.insert(query.query_id.clone()) {
             anyhow::bail!("duplicate evaluation query ID: {}", query.query_id);
+        }
+        if query.answerability == QueryAnswerability::UnanswerableInCorpus
+            && query
+                .answerability_evidence
+                .as_deref()
+                .is_none_or(|evidence| evidence.trim().is_empty())
+        {
+            anyhow::bail!(
+                "unanswerable query {} requires answerability_evidence describing exhaustive corpus review",
+                query.query_id
+            );
         }
     }
     Ok(query_ids)
@@ -1856,6 +2002,8 @@ mod tests {
             filter: None,
             expected_language: None,
             judgment_source: None,
+            answerability: QueryAnswerability::Answerable,
+            answerability_evidence: None,
         };
         let unknown = HashMap::from([(
             "unknown".to_string(),
@@ -1889,6 +2037,8 @@ mod tests {
             filter: None,
             expected_language: None,
             judgment_source: None,
+            answerability: QueryAnswerability::Answerable,
+            answerability_evidence: None,
         };
         let qrels = HashMap::from([(
             "known".to_string(),
