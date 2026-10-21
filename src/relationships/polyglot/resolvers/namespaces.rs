@@ -12,6 +12,7 @@ pub(in crate::relationships::polyglot::resolve) fn jvm_targets(
 ) -> Vec<PathBuf> {
     let suffix_paths = match grammar {
         Grammar::Java => vec![path.with_extension("java")],
+        Grammar::Scala => vec![path.with_extension("scala"), path.with_extension("sc")],
         _ => vec![path.with_extension("kt"), path.with_extension("kts")],
     };
     files

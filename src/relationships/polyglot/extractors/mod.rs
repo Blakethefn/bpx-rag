@@ -2,6 +2,7 @@ mod c_family;
 mod modules;
 mod python;
 mod scripting;
+mod web;
 
 use std::path::Path;
 
@@ -22,32 +23,32 @@ pub(super) fn extract_specifiers(
     match grammar {
         Grammar::C | Grammar::Cpp => c_family::extract(grammar, node, &source.content),
         Grammar::Python => python::extract(node, source, root, files, metadata),
-        Grammar::Go | Grammar::Java | Grammar::CSharp | Grammar::Kotlin => {
-            modules::extract(grammar, node, &source.content)
-        }
+        Grammar::Go
+        | Grammar::Java
+        | Grammar::CSharp
+        | Grammar::Kotlin
+        | Grammar::Scala
+        | Grammar::Haskell
+        | Grammar::Erlang
+        | Grammar::Solidity => modules::extract(grammar, node, &source.content),
         Grammar::Php
         | Grammar::Ruby
         | Grammar::Bash
         | Grammar::Lua
         | Grammar::Dart
-        | Grammar::Swift => scripting::extract(grammar, node, &source.content),
+        | Grammar::Swift
+        | Grammar::Elixir
+        | Grammar::R
+        | Grammar::Julia
+        | Grammar::Perl
+        | Grammar::PowerShell => scripting::extract(grammar, node, &source.content),
+        Grammar::Html | Grammar::Css => web::extract(grammar, node, &source.content),
         Grammar::Markdown
         | Grammar::Rust
         | Grammar::JavaScript
         | Grammar::TypeScript
         | Grammar::Tsx
-        | Grammar::Sql
-        | Grammar::Scala
-        | Grammar::Haskell
-        | Grammar::Elixir
-        | Grammar::Erlang
-        | Grammar::R
-        | Grammar::Julia
-        | Grammar::Perl
-        | Grammar::PowerShell
-        | Grammar::Solidity
-        | Grammar::Html
-        | Grammar::Css => Vec::new(),
+        | Grammar::Sql => Vec::new(),
     }
 }
 

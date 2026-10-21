@@ -99,9 +99,9 @@ RAG tools include `bpx_search`, `bpx_knowledge_add`, `bpx_knowledge_sync`, `bpx_
 bpx-rag analyze-file src/lib/api/quotes.ts --root /path/to/project
 ```
 
-The analyzer reports direct Markdown wikilinks, imports, includes, and module references with line evidence for Rust, TypeScript/JavaScript, C/C++, C#, Go, Java, Kotlin, Python, PHP, Ruby, Bash, Lua, Dart, and Swift. Static analysis resolves local paths conservatively; it does not infer runtime behavior, symbol-level calls, or build-specific aliases.
+The analyzer reports direct Markdown wikilinks, imports, includes, and module references with line evidence for Rust, TypeScript/JavaScript, C/C++, C#, Go, Java, Kotlin, Scala, Haskell, Erlang, Elixir, R, Julia, Perl, PowerShell, Solidity, Python, PHP, Ruby, Bash, Lua, Dart, Swift, HTML, and CSS. SQL has syntax-aware RAG chunking but no file-import extraction. Static analysis resolves local paths conservatively; it does not infer runtime behavior, symbol-level calls, or build-specific aliases. External packages and web URLs are not treated as local files.
 
-Tree-sitter chunking supports additional languages beyond the direct relationship analyzer. For languages outside the analyzer list, the RAG still indexes and semantically searches their syntax-aware chunks, but `analyze-file` does not yet extract their import/module edges.
+Syntax-aware Tree-sitter chunking supports 29 source grammars. Parse-error and oversized files retain the existing chunker.
 
 ## Build and tests
 
