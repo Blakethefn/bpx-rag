@@ -81,6 +81,66 @@ fn typescript_import_meta_does_not_create_a_false_import_edge() {
 }
 
 #[test]
+fn javascript_extension_imports_resolve_to_typescript_and_prefer_javascript_files() {
+    let dir = tempdir().unwrap();
+    write_file(dir.path(), "package.json", "{}\n");
+    write_file(dir.path(), "src/model.ts", "export const model = 1;\n");
+    write_file(
+        dir.path(),
+        "src/consumer-ts.ts",
+        "import { model } from './model.js';\n",
+    );
+
+    let typescript = analyze_file(&dir.path().join("src/model.ts"), Some(dir.path())).unwrap();
+    assert!(incoming_from(
+        &typescript,
+        "src/consumer-ts.ts",
+        "./model.js",
+        "import"
+    ));
+
+    write_file(dir.path(), "src/model.js", "export const model = 2;\n");
+    write_file(
+        dir.path(),
+        "src/consumer-js.js",
+        "import { model } from './model.js';\n",
+    );
+    let javascript = analyze_file(&dir.path().join("src/model.js"), Some(dir.path())).unwrap();
+    let typescript_with_javascript =
+        analyze_file(&dir.path().join("src/model.ts"), Some(dir.path())).unwrap();
+
+    assert!(!incoming_from(
+        &typescript_with_javascript,
+        "src/consumer-js.js",
+        "./model.js",
+        "import"
+    ));
+    assert!(incoming_from(
+        &javascript,
+        "src/consumer-js.js",
+        "./model.js",
+        "import"
+    ));
+}
+
+#[test]
+fn python_imported_symbols_do_not_match_unrelated_same_named_files() {
+    let dir = tempdir().unwrap();
+    write_file(dir.path(), "pkg/__init__.py", "def helper(): pass\n");
+    write_file(dir.path(), "helper.py", "def helper(): pass\n");
+    write_file(dir.path(), "consumer.py", "from pkg import helper\n");
+
+    let result = analyze_file(&dir.path().join("helper.py"), Some(dir.path())).unwrap();
+
+    assert!(!incoming_from(
+        &result,
+        "consumer.py",
+        "pkg.helper",
+        "import"
+    ));
+}
+
+#[test]
 fn rust_module_declarations_find_the_declared_file() {
     let dir = tempdir().unwrap();
     fs::create_dir_all(dir.path().join("src/api")).unwrap();
@@ -632,6 +692,20 @@ fn project_markers_infer_roots_for_go_java_dart_and_csharp() {
             "csharp",
             "Sample.csproj",
             "<Project />\n",
+            "src/Main.cs",
+            "class Main {}\n",
+        ),
+        (
+            "csharp directory props",
+            "Directory.Build.props",
+            "<Project />\n",
+            "src/Main.cs",
+            "class Main {}\n",
+        ),
+        (
+            "csharp slnx",
+            "Sample.slnx",
+            "<Solution />\n",
             "src/Main.cs",
             "class Main {}\n",
         ),

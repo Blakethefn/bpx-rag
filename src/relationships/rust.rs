@@ -1,126 +1,114 @@
 use std::path::{Component, Path, PathBuf};
 
-use super::lexer::{lex_code, LexMode, Token, TokenKind};
+use super::parsers::ParserCache;
 use super::paths::canonical_file_under;
 use super::types::{RawReference, SourceFile};
+use tree_sitter::Node;
 
-pub(super) fn rust_references(source: &SourceFile, root: &Path) -> Vec<RawReference> {
-    let tokens = lex_code(&source.content, LexMode::Rust);
+pub(super) fn rust_references(
+    source: &SourceFile,
+    root: &Path,
+    parsers: &mut ParserCache,
+) -> Vec<RawReference> {
+    let Some(tree) = parsers.parse(super::languages::Grammar::Rust, &source.content) else {
+        return Vec::new();
+    };
+    let mut pending = vec![tree.root_node()];
     let mut references = Vec::new();
-    let mut index = 0usize;
-    while index < tokens.len() {
-        if tokens[index].value == "mod" {
-            if let Some(name) = tokens
-                .get(index + 1)
-                .filter(|token| token.kind == TokenKind::Ident)
-            {
-                let terminator = tokens[index + 2..]
-                    .iter()
-                    .find(|token| token.value == ";" || token.value == "{");
-                if terminator.map(|token| token.value.as_str()) == Some(";") {
-                    let target = resolve_rust_mod(&source.path, &name.value, root);
-                    if target.is_some() {
-                        references.push(RawReference {
-                            kind: "module",
-                            specifier: name.value.clone(),
-                            line: tokens[index].line,
-                            target,
-                        });
-                    }
+    while let Some(node) = pending.pop() {
+        if node.kind() == "mod_item" && node.child_by_field_name("body").is_none() {
+            if let Some(name) = node.child_by_field_name("name") {
+                if let Ok(specifier) = name.utf8_text(source.content.as_bytes()) {
+                    references.push(RawReference {
+                        kind: "module",
+                        specifier: specifier.to_string(),
+                        line: node.start_position().row + 1,
+                        target: resolve_rust_mod(&source.path, specifier, root),
+                    });
                 }
             }
-        }
-
-        if tokens[index].value == "use" {
-            let statement = tokens[index + 1..]
-                .iter()
-                .take_while(|token| token.value != ";")
-                .cloned()
-                .collect::<Vec<_>>();
-            for path_segments in rust_use_paths(&statement) {
-                let specifier = path_segments.join("::");
-                if let Some(target) = resolve_rust_use(&source.path, &path_segments, root) {
+        } else if node.kind() == "use_declaration" {
+            if let Some(argument) = node.child_by_field_name("argument") {
+                for path_segments in rust_use_paths(argument, &source.content) {
+                    let specifier = path_segments.join("::");
                     references.push(RawReference {
                         kind: "import",
+                        target: resolve_rust_use(&source.path, &path_segments, root),
                         specifier,
-                        line: tokens[index].line,
-                        target: Some(target),
+                        line: node.start_position().row + 1,
                     });
                 }
             }
         }
-        index += 1;
+        for index in (0..node.child_count()).rev() {
+            if let Some(child) = node.child(index) {
+                pending.push(child);
+            }
+        }
     }
     references
 }
 
-fn rust_use_paths(tokens: &[Token]) -> Vec<Vec<String>> {
-    fn collect(tokens: &[Token], prefix: &[String], output: &mut Vec<Vec<String>>) {
-        let group_start = tokens.iter().position(|token| token.value == "{");
-        let path_tokens = &tokens[..group_start.unwrap_or(tokens.len())];
-        let mut current = prefix.to_vec();
-        current.extend(rust_path_segments(path_tokens));
-        let Some(open) = group_start else {
-            if !current.is_empty() {
-                output.push(current);
-            }
-            return;
-        };
+fn rust_use_paths(argument: Node<'_>, content: &str) -> Vec<Vec<String>> {
+    fn path_segments(node: Node<'_>, content: &str) -> Vec<String> {
+        node.utf8_text(content.as_bytes())
+            .unwrap_or_default()
+            .split("::")
+            .map(str::trim)
+            .filter(|segment| !segment.is_empty() && *segment != "*")
+            .map(|segment| segment.strip_prefix("r#").unwrap_or(segment).to_string())
+            .collect()
+    }
 
-        let mut depth = 1usize;
-        let mut close = open + 1;
-        while close < tokens.len() && depth > 0 {
-            match tokens[close].value.as_str() {
-                "{" => depth += 1,
-                "}" => depth -= 1,
-                _ => {}
-            }
-            close += 1;
-        }
-        if depth != 0 {
-            return;
-        }
-        let body = &tokens[open + 1..close - 1];
-        let mut start = 0usize;
-        let mut nested_depth = 0usize;
-        for (index, token) in body.iter().enumerate() {
-            match token.value.as_str() {
-                "{" => nested_depth += 1,
-                "}" => nested_depth = nested_depth.saturating_sub(1),
-                "," if nested_depth == 0 => {
-                    collect(&body[start..index], &current, output);
-                    start = index + 1;
+    fn collect(node: Node<'_>, prefix: &[String], content: &str, output: &mut Vec<Vec<String>>) {
+        match node.kind() {
+            "scoped_use_list" => {
+                let mut current = prefix.to_vec();
+                if let Some(path) = node.child_by_field_name("path") {
+                    current.extend(path_segments(path, content));
                 }
-                _ => {}
+                if let Some(list) = node.child_by_field_name("list") {
+                    collect(list, &current, content, output);
+                }
             }
-        }
-        if start < body.len() {
-            collect(&body[start..], &current, output);
+            "use_list" => {
+                for index in 0..node.named_child_count() {
+                    if let Some(child) = node.named_child(index as u32) {
+                        collect(child, prefix, content, output);
+                    }
+                }
+            }
+            "use_as_clause" => {
+                if let Some(path) = node.child_by_field_name("path") {
+                    let mut current = prefix.to_vec();
+                    current.extend(path_segments(path, content));
+                    if !current.is_empty() {
+                        output.push(current);
+                    }
+                }
+            }
+            "use_wildcard" => {
+                let mut current = prefix.to_vec();
+                if let Some(path) = node.named_child(0) {
+                    current.extend(path_segments(path, content));
+                }
+                if !current.is_empty() {
+                    output.push(current);
+                }
+            }
+            _ => {
+                let mut current = prefix.to_vec();
+                current.extend(path_segments(node, content));
+                if !current.is_empty() {
+                    output.push(current);
+                }
+            }
         }
     }
 
     let mut output = Vec::new();
-    collect(tokens, &[], &mut output);
+    collect(argument, &[], content, &mut output);
     output
-}
-
-fn rust_path_segments(tokens: &[Token]) -> Vec<String> {
-    let mut segments = Vec::new();
-    let mut expect_ident = true;
-    for token in tokens {
-        if token.kind == TokenKind::Ident && expect_ident {
-            if token.value == "as" {
-                break;
-            }
-            segments.push(token.value.clone());
-            expect_ident = false;
-        } else if token.value == "::" {
-            expect_ident = true;
-        } else if token.value == "*" || token.value == "," {
-            break;
-        }
-    }
-    segments
 }
 
 fn resolve_rust_use(source: &Path, segments: &[String], root: &Path) -> Option<PathBuf> {

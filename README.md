@@ -22,10 +22,10 @@ The selected file and project root must be inside the same project. Scanning res
 - Markdown wikilinks, including aliases and headings.
 - Same-crate Rust `mod` and `use` paths.
 - Relative TypeScript and JavaScript imports, re-exports, dynamic imports, and `require()` calls.
-- C/C++ quoted includes, C# namespace imports, Go imports, Java/Kotlin imports, Python imports, PHP includes/requires, Ruby requires, Bash `source`, Lua `require`, Dart imports/exports, and Swift module imports. Most use statically linked Tree-sitter grammars; Kotlin uses the existing comment-aware lexer.
+- C/C++ quoted includes, C# namespace imports, Go imports, Java/Kotlin imports, Python imports, PHP includes/requires, Ruby requires, Bash `source`, Lua `require`, Dart imports/exports, and Swift module imports. Programming-language files use statically linked Tree-sitter grammars.
 - Direct incoming references as well as outgoing references from the selected file.
 
-The added language grammars are linked into the binary; analysis does not download parsers at runtime. Results cover direct file relationships. Package imports are linked only when they map conservatively to files under the project root. TypeScript `tsconfig` aliases, Cargo cross-crate aliases, compiler-specific module maps, symbol-level calls, and transitive runtime effects are not resolved.
+All programming-language grammars are linked into the binary and parser instances are reused during each scan; analysis does not download parsers at runtime. Results cover direct file relationships. Package imports are linked only when they map conservatively to files under the project root. TypeScript `tsconfig` aliases, Cargo cross-crate aliases, compiler-specific module maps, symbol-level calls, and transitive runtime effects are not resolved.
 
 ## MCP
 
@@ -58,6 +58,16 @@ The server exposes one tool, `bpx_file_relationships`:
 ```bash
 cargo build --release
 cargo test
+```
+
+## Performance measurement
+
+Build a release binary, then measure end-to-end scan latency and binary size on a generated 17-language project fixture:
+
+```bash
+python3 scripts/benchmark-analysis.py /path/to/bpx-rag --runs 25 --files-per-language 8
+# Optional: compare with a binary built from an earlier commit on the same fixture.
+python3 scripts/benchmark-analysis.py /path/to/current-bpx-rag --compare /path/to/baseline-bpx-rag
 ```
 
 The `bpcontext` executable remains as a compatibility launcher for older scripts. It forwards arguments to `bpx-rag`.

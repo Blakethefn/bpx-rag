@@ -1,6 +1,8 @@
 mod format;
-mod lexer;
+mod languages;
 mod markdown;
+mod metadata;
+mod parsers;
 mod paths;
 mod polyglot;
 mod rust;

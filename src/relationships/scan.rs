@@ -3,7 +3,10 @@ use ignore::WalkBuilder;
 use std::fs;
 use std::path::Path;
 
+use super::languages::{grammar_for_path, Grammar};
 use super::markdown::markdown_references;
+use super::metadata::ProjectMetadata;
+use super::parsers::ParserCache;
 use super::paths::{display_relative, infer_root, is_excluded_directory, is_supported};
 use super::polyglot::polyglot_references;
 use super::rust::rust_references;
@@ -137,9 +140,11 @@ pub fn analyze_file(path: &Path, root: Option<&Path>) -> Result<FileAnalysis> {
     let mut incoming = Vec::new();
     let scanned_files = files.len();
     let relative_target = display_relative(&target, &root)?;
+    let metadata = ProjectMetadata::read(&root);
+    let mut parsers = ParserCache::default();
 
     for source in &files {
-        for reference in extract_references(source, &root, &files) {
+        for reference in extract_references(source, &root, &files, &metadata, &mut parsers) {
             let relation = FileRelationship {
                 from: display_relative(&source.path, &root)?,
                 to: reference
@@ -186,21 +191,20 @@ pub(super) fn sort_relationships(relationships: &mut [FileRelationship]) {
     });
 }
 
-fn extract_references(source: &SourceFile, root: &Path, files: &[SourceFile]) -> Vec<RawReference> {
-    let extension = source
-        .path
-        .extension()
-        .and_then(|extension| extension.to_str())
-        .map(str::to_ascii_lowercase);
-    match extension.as_deref() {
-        Some("md") => markdown_references(source, root, files),
-        Some("rs") => rust_references(source, root),
-        Some("ts" | "tsx" | "js" | "jsx" | "mjs" | "cjs") => script_references(source, root),
-        Some(
-            "c" | "h" | "cc" | "hh" | "cpp" | "hpp" | "cxx" | "hxx" | "cs" | "go" | "java" | "py"
-            | "pyi" | "php" | "phtml" | "rb" | "rake" | "sh" | "bash" | "lua" | "dart" | "swift"
-            | "kt" | "kts",
-        ) => polyglot_references(source, root, files),
-        _ => Vec::new(),
+fn extract_references(
+    source: &SourceFile,
+    root: &Path,
+    files: &[SourceFile],
+    metadata: &ProjectMetadata,
+    parsers: &mut ParserCache,
+) -> Vec<RawReference> {
+    match grammar_for_path(&source.path) {
+        Some(Grammar::Markdown) => markdown_references(source, root, files),
+        Some(Grammar::Rust) => rust_references(source, root, parsers),
+        Some(Grammar::JavaScript | Grammar::TypeScript | Grammar::Tsx) => {
+            script_references(source, root, parsers)
+        }
+        Some(grammar) => polyglot_references(grammar, source, root, files, metadata, parsers),
+        None => Vec::new(),
     }
 }
