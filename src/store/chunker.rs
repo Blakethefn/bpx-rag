@@ -433,18 +433,13 @@ fn flush_chunk_with_lines(
 
     let mut current = String::new();
     let mut part = 0u32;
-    // Track which line within content we're at for distributing line ranges
-    let mut para_line_offset: u32 = 0;
+    let mut paragraph_line_start = line_start;
     let mut part_line_start = line_start;
 
-    for para in &paragraphs {
-        let para_line_count = para.lines().count() as u32;
-
+    for (paragraph_index, para) in paragraphs.iter().enumerate() {
         if current.len() + para.len() + 2 > MAX_CHUNK_BYTES && !current.is_empty() {
             part += 1;
-            let part_line_end = (line_start + para_line_offset)
-                .saturating_sub(1)
-                .max(part_line_start);
+            let part_line_end = paragraph_line_start.saturating_sub(1).max(part_line_start);
             let taken = std::mem::take(&mut current);
             if taken.len() > MAX_CHUNK_BYTES {
                 split_at_newlines_with_lines(
@@ -463,13 +458,15 @@ fn flush_chunk_with_lines(
                     line_end: part_line_end,
                 });
             }
-            part_line_start = line_start + para_line_offset;
+            part_line_start = paragraph_line_start;
         }
         if !current.is_empty() {
             current.push_str("\n\n");
         }
         current.push_str(para);
-        para_line_offset += para_line_count + 2; // +2 for \n\n
+        if paragraph_index + 1 < paragraphs.len() {
+            paragraph_line_start += para.matches('\n').count() as u32 + 2;
+        }
     }
 
     if !current.is_empty() {
@@ -869,5 +866,39 @@ mod tests {
             last.line_end,
             total_lines
         );
+    }
+
+    #[test]
+    fn oversized_paragraph_chunks_keep_ordered_source_line_ranges() {
+        let paragraph = "x".repeat(2500);
+        let content = format!("{paragraph}\n\n{paragraph}\n\n{paragraph}");
+        let mut chunks = Vec::new();
+
+        flush_chunk_with_lines(&mut chunks, "large", &content, 100, 104);
+
+        assert_eq!(chunks.len(), 3);
+        assert_eq!(chunks[0].line_start, 100);
+        assert_eq!(chunks[0].line_end, 101);
+        assert_eq!(chunks[1].line_start, 102);
+        assert_eq!(chunks[1].line_end, 103);
+        assert_eq!(chunks[2].line_start, 104);
+        assert_eq!(chunks[2].line_end, 104);
+        assert!(chunks
+            .iter()
+            .all(|chunk| chunk.line_start <= chunk.line_end));
+    }
+
+    #[test]
+    fn oversized_paragraph_chunks_preserve_extra_blank_lines_in_ranges() {
+        let paragraph = "x".repeat(2500);
+        let content = format!("{paragraph}\n\n\n{paragraph}\n\n\n{paragraph}");
+        let mut chunks = Vec::new();
+
+        flush_chunk_with_lines(&mut chunks, "large", &content, 100, 106);
+
+        assert_eq!(chunks.len(), 3);
+        assert_eq!((chunks[0].line_start, chunks[0].line_end), (100, 101));
+        assert_eq!((chunks[1].line_start, chunks[1].line_end), (102, 104));
+        assert_eq!((chunks[2].line_start, chunks[2].line_end), (105, 106));
     }
 }

@@ -562,30 +562,59 @@ fn apply_proximity_boost(results: &mut [SearchResult], query: &str) {
 
 /// Sanitize a query for FTS5 MATCH syntax
 fn sanitize_fts_query(query: &str) -> String {
-    let mut result = String::with_capacity(query.len());
+    let mut cleaned = String::with_capacity(query.len());
     let mut last_was_space = true;
 
-    for c in query.chars() {
-        if c.is_alphanumeric() || c == '_' || c == '-' {
-            result.push(c);
+    for character in query.chars() {
+        if character.is_alphanumeric() || character == '_' || character == '-' {
+            cleaned.push(character);
             last_was_space = false;
         } else if !last_was_space {
-            result.push(' ');
+            cleaned.push(' ');
             last_was_space = true;
         }
     }
 
-    if result.ends_with(' ') {
-        result.pop();
+    if cleaned.ends_with(' ') {
+        cleaned.pop();
     }
 
-    result
+    let terms = cleaned
+        .split_whitespace()
+        .take(32)
+        .map(|term| format!("\"{term}\""))
+        .collect::<Vec<_>>();
+    if terms.is_empty() {
+        return String::new();
+    }
+    std::iter::once(format!("\"{cleaned}\""))
+        .chain(terms)
+        .collect::<Vec<_>>()
+        .join(" OR ")
+}
+
+fn sanitize_fts_terms(query: &str) -> String {
+    let mut cleaned = String::with_capacity(query.len());
+    let mut last_was_space = true;
+    for character in query.chars() {
+        if character.is_alphanumeric() || character == '_' || character == '-' {
+            cleaned.push(character);
+            last_was_space = false;
+        } else if !last_was_space {
+            cleaned.push(' ');
+            last_was_space = true;
+        }
+    }
+    if cleaned.ends_with(' ') {
+        cleaned.pop();
+    }
+    cleaned
 }
 
 /// Sanitize a query for trigram FTS5 MATCH
 fn sanitize_trigram_query(query: &str) -> String {
     // Trigram tokenizer expects quoted phrases for substring matching
-    let cleaned = sanitize_fts_query(query);
+    let cleaned = sanitize_fts_terms(query);
     if cleaned.is_empty() {
         return String::new();
     }
@@ -652,9 +681,18 @@ mod tests {
 
     #[test]
     fn test_sanitize_fts_query() {
-        assert_eq!(sanitize_fts_query("hello world"), "hello world");
-        assert_eq!(sanitize_fts_query("error: can't find"), "error can t find");
-        assert_eq!(sanitize_fts_query("fn main()"), "fn main");
+        assert_eq!(
+            sanitize_fts_query("hello world"),
+            "\"hello world\" OR \"hello\" OR \"world\""
+        );
+        assert_eq!(
+            sanitize_fts_query("error: can't find"),
+            "\"error can t find\" OR \"error\" OR \"can\" OR \"t\" OR \"find\""
+        );
+        assert_eq!(
+            sanitize_fts_query("fn main()"),
+            "\"fn main\" OR \"fn\" OR \"main\""
+        );
     }
 
     #[test]

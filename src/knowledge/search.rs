@@ -718,29 +718,43 @@ fn session_to_knowledge_result(sr: SearchResult, snippet_bytes: usize) -> Knowle
 
 /// Sanitize a query for FTS5 MATCH syntax.
 fn sanitize_fts_query(query: &str) -> String {
-    let mut result = String::with_capacity(query.len());
-    let mut last_was_space = true;
+    let cleaned = sanitize_fts_terms(query);
+    let phrase = format!("\"{cleaned}\"");
+    let terms = cleaned
+        .split_whitespace()
+        .take(32)
+        .map(|term| format!("\"{term}\""))
+        .collect::<Vec<_>>();
+    if terms.is_empty() {
+        return String::new();
+    }
+    std::iter::once(phrase)
+        .chain(terms)
+        .collect::<Vec<_>>()
+        .join(" OR ")
+}
 
-    for c in query.chars() {
-        if c.is_alphanumeric() || c == '_' || c == '-' {
-            result.push(c);
+fn sanitize_fts_terms(query: &str) -> String {
+    let mut cleaned = String::with_capacity(query.len());
+    let mut last_was_space = true;
+    for character in query.chars() {
+        if character.is_alphanumeric() || character == '_' || character == '-' {
+            cleaned.push(character);
             last_was_space = false;
         } else if !last_was_space {
-            result.push(' ');
+            cleaned.push(' ');
             last_was_space = true;
         }
     }
-
-    if result.ends_with(' ') {
-        result.pop();
+    if cleaned.ends_with(' ') {
+        cleaned.pop();
     }
-
-    result
+    cleaned
 }
 
 /// Sanitize for trigram FTS5 MATCH (requires quoted phrase).
 fn sanitize_trigram_query(query: &str) -> String {
-    let cleaned = sanitize_fts_query(query);
+    let cleaned = sanitize_fts_terms(query);
     if cleaned.is_empty() {
         return String::new();
     }
@@ -820,6 +834,37 @@ mod tests {
 
     fn make_store() -> KnowledgeStore {
         knowledge::open_in_memory().expect("in-memory knowledge store")
+    }
+
+    #[test]
+    fn lexical_search_matches_individual_terms_in_natural_language_queries() {
+        let store = make_store();
+        seed_chunk(
+            &store,
+            "repo",
+            "/repo",
+            "src/search.rs",
+            "Hybrid retrieval layers",
+            "The pipeline runs BM25, trigram, fuzzy, and semantic vector retrieval, then merges ranked results.",
+            "{}",
+        );
+
+        let results = knowledge_search(
+            &store,
+            "Which code runs BM25 and semantic vector retrieval across the corpus?",
+            None,
+            Some("repo"),
+            10,
+            &SearchWeights {
+                keyword_weight: 1.0,
+                vector_weight: 0.0,
+            },
+            2000,
+        )
+        .unwrap();
+
+        assert_eq!(results[0].file_path, "src/search.rs");
+        assert!(results[0].why.layers.bm25 > 0.0);
     }
 
     #[test]
@@ -1145,9 +1190,18 @@ mod tests {
 
     #[test]
     fn test_sanitize_fts_query() {
-        assert_eq!(sanitize_fts_query("hello world"), "hello world");
-        assert_eq!(sanitize_fts_query("error: can't find"), "error can t find");
-        assert_eq!(sanitize_fts_query("fn main()"), "fn main");
+        assert_eq!(
+            sanitize_fts_query("hello world"),
+            "\"hello world\" OR \"hello\" OR \"world\""
+        );
+        assert_eq!(
+            sanitize_fts_query("error: can't find"),
+            "\"error can t find\" OR \"error\" OR \"can\" OR \"t\" OR \"find\""
+        );
+        assert_eq!(
+            sanitize_fts_query("fn main()"),
+            "\"fn main\" OR \"fn\" OR \"main\""
+        );
     }
 
     #[test]

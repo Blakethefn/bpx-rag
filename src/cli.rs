@@ -48,7 +48,7 @@ pub enum Commands {
         #[command(subcommand)]
         action: ModelsAction,
     },
-    /// Evaluate retrieval against the checked-in judged corpus using a cached model.
+    /// Evaluate retrieval against a judged dataset using a cached model.
     Evaluate {
         #[command(subcommand)]
         action: EvalAction,
@@ -117,6 +117,12 @@ pub enum EvalAction {
     Retrieval {
         #[arg(long, default_value = "3")]
         repetitions: usize,
+        /// Directory containing queries.jsonl and qrels.jsonl. Defaults to the bundled fixture.
+        #[arg(long, value_hint = ValueHint::DirPath)]
+        dataset: Option<PathBuf>,
+        /// Source tree to index. Defaults to <dataset>/corpus.
+        #[arg(long, value_hint = ValueHint::DirPath)]
+        corpus_root: Option<PathBuf>,
     },
     /// Measure SQLite vector-search scaling with deterministic synthetic vectors.
     Scaling {

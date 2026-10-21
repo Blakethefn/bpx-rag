@@ -369,7 +369,11 @@ impl RagApp {
 
     pub fn download_embedding_model(&mut self) -> Result<String> {
         let model_dir = model_directory(&self.config);
-        let embedder = Embedder::new(&model_dir, &self.config.embeddings.model)?;
+        let embedder = Embedder::new(
+            &model_dir,
+            &self.config.embeddings.model,
+            self.config.embeddings.batch_size,
+        )?;
         self.install_embedder(embedder);
         Ok(format!(
             "Model {} is ready at {}.",
@@ -403,7 +407,11 @@ impl RagApp {
             ));
             return;
         }
-        match Embedder::load_cached(&model_dir, &self.config.embeddings.model) {
+        match Embedder::load_cached(
+            &model_dir,
+            &self.config.embeddings.model,
+            self.config.embeddings.batch_size,
+        ) {
             Ok(embedder) => self.install_embedder(embedder),
             Err(error) => {
                 self.embedding_notice = Some(format!(

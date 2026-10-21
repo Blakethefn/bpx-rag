@@ -32,7 +32,7 @@ bpx-rag models download
 bpx-rag knowledge embed-backfill
 ```
 
-The default `jina-embeddings-v2-base-code` model is tuned for code retrieval across 30 programming languages and supports an 8K token input window ([upstream model card](https://huggingface.co/jinaai/jina-embeddings-v2-base-code)). Its local model artifacts take about 644 MB. Set `embeddings.model` in `~/.config/bpcontext/config.toml` to `all-MiniLM-L6-v2` for the smaller 91 MB general-purpose baseline, which scored lower MRR and nDCG on the checked-in controlled code benchmark.
+The default `jina-embeddings-v2-base-code` model is tuned for code retrieval across 30 programming languages and supports an 8K token input window ([upstream model card](https://huggingface.co/jinaai/jina-embeddings-v2-base-code)). bpx-rag caps each embedded chunk at 1,024 tokens to control local inference cost; the full local model artifacts take about 644 MB. Set `embeddings.model` in `~/.config/bpcontext/config.toml` to `all-MiniLM-L6-v2` for the smaller 91 MB general-purpose baseline, which scored lower MRR and nDCG on the checked-in controlled code benchmark.
 
 Vectors are stored with a canonical model ID. Switching models never mixes vectors from different spaces; run `knowledge embed-backfill` to replace vectors for existing chunks. Search reports incomplete active-model coverage and continues to use lexical results while backfill is pending.
 
@@ -96,8 +96,10 @@ To run the checked-in judged retrieval benchmark against the configured real mod
 ```bash
 bpx-rag evaluate retrieval --repetitions 5
 bpx-rag evaluate scaling --repetitions 5
+# Evaluate a judged dataset against a caller-selected real source tree.
+bpx-rag evaluate retrieval --dataset eval/bpx-rag-rust --corpus-root src --repetitions 1
 ```
 
-The retrieval command refuses to download a missing model. It reports hybrid, lexical-only, and vector-only graded retrieval metrics by query category and language, citation validity, filter leakage, indexing time, warm-query p50/p95, SQLite footprint, and model artifact size. The separate scaling command compares exact vector search with the persistent HNSW candidate index from 1K to 50K synthetic chunks, including index build/load time, query latency, memory, and Recall@10 against exact results. Exact search stays enabled below 4,096 vectors; larger indexes use HNSW candidates followed by SQL metadata rechecks and exact vector reranking. The checked-in reports in `eval/results/` are controlled benchmarks; add project-specific judged queries before using their quality scores as a production claim.
+The retrieval command refuses to download a missing model. It accepts a dataset directory containing `queries.jsonl` and `qrels.jsonl`, plus a corpus root to index; without these flags it uses the bundled fixture. Reports include hybrid, lexical-only, and vector-only graded metrics and top paths, citation path/line validity with invalid references listed, filter leakage, indexing time, warm-query p50/p95, SQLite footprint, and model artifact size. `eval/bpx-rag-rust/` evaluates the actual `src/` tree with 25 curated self-evaluation queries and 68 graded file judgments; these labels are not independent human annotations. The separate scaling command compares exact vector search with the persistent HNSW candidate index from 1K to 50K synthetic chunks, including index build/load time, query latency, memory, and Recall@10 against exact results. Exact search stays enabled below 4,096 vectors; larger indexes use HNSW candidates followed by SQL metadata rechecks and exact vector reranking. The checked-in reports in `eval/results/` are controlled benchmarks; add independently reviewed, project-specific judgments before using their quality scores as a production claim.
 
 The `bpcontext` executable remains as a compatibility launcher for older scripts.

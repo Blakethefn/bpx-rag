@@ -13,7 +13,7 @@ use crate::store::search::SearchWeights;
 
 const TOP_K: usize = 10;
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Clone)]
 struct EvalQuery {
     query_id: String,
     text: String,
@@ -47,6 +47,8 @@ pub struct QualityMetrics {
 pub struct RetrievalEvalReport {
     pub model_name: String,
     pub model_id: String,
+    pub dataset_name: String,
+    pub corpus_root_name: String,
     pub embedding_dimension: usize,
     pub operating_system: String,
     pub architecture: String,
@@ -69,6 +71,7 @@ pub struct RetrievalEvalReport {
     pub by_language: BTreeMap<String, QualityMetrics>,
     pub citation_validity: f64,
     pub citation_count: usize,
+    pub invalid_citations: Vec<CitationIssue>,
     pub filter_leaks: usize,
 }
 
@@ -81,6 +84,15 @@ pub struct EvalCaseReport {
     pub lexical_only: QualityMetrics,
     pub vector_only: QualityMetrics,
     pub top_paths: Vec<String>,
+    pub lexical_top_paths: Vec<String>,
+    pub vector_top_paths: Vec<String>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct CitationIssue {
+    pub query_id: String,
+    pub path: String,
+    pub lines: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -145,7 +157,11 @@ impl MetricSums {
     }
 }
 
-pub fn run_retrieval_evaluation(repetitions: usize) -> Result<RetrievalEvalReport> {
+pub fn run_retrieval_evaluation(
+    repetitions: usize,
+    dataset: Option<&Path>,
+    corpus_root: Option<&Path>,
+) -> Result<RetrievalEvalReport> {
     if !(1..=100).contains(&repetitions) {
         return Err(anyhow!("repetitions must be between 1 and 100"));
     }
@@ -159,17 +175,36 @@ pub fn run_retrieval_evaluation(repetitions: usize) -> Result<RetrievalEvalRepor
     }
 
     let model_start = Instant::now();
-    let embedder = Embedder::load_cached(&model_dir, &config.embeddings.model)?;
+    let embedder = Embedder::load_cached(
+        &model_dir,
+        &config.embeddings.model,
+        config.embeddings.batch_size,
+    )?;
     let model_load_ms = model_start.elapsed().as_secs_f64() * 1000.0;
     let model_id = embedder.model_id().to_string();
     let embedding_dimension = embedder.dim();
     let model_artifact_bytes = embedder::model_cache_bytes(&model_dir, &config.embeddings.model)?;
 
-    let data_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("eval/retrieval");
-    let corpus_dir = data_dir.join("corpus");
+    let data_dir = dataset.map_or_else(
+        || PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("eval/retrieval"),
+        Path::to_path_buf,
+    );
+    let corpus_dir = corpus_root.map_or_else(|| data_dir.join("corpus"), Path::to_path_buf);
+    if !data_dir.is_dir() {
+        anyhow::bail!(
+            "retrieval dataset directory does not exist: {}",
+            data_dir.display()
+        );
+    }
+    if !corpus_dir.is_dir() {
+        anyhow::bail!(
+            "retrieval corpus directory does not exist: {}",
+            corpus_dir.display()
+        );
+    }
     let queries = read_jsonl::<EvalQuery>(&data_dir.join("queries.jsonl"))?;
     let qrels = read_qrels(&data_dir.join("qrels.jsonl"))?;
-    validate_qrels(&queries, &qrels)?;
+    validate_qrels(&queries, &qrels, &corpus_dir)?;
     if queries.is_empty() || qrels.is_empty() {
         return Err(anyhow!("retrieval evaluation data is empty"));
     }
@@ -203,6 +238,7 @@ pub fn run_retrieval_evaluation(repetitions: usize) -> Result<RetrievalEvalRepor
     let mut latencies = Vec::with_capacity(queries.len() * repetitions);
     let mut citations_checked = 0usize;
     let mut valid_citations = 0usize;
+    let mut invalid_citations = Vec::new();
     let mut filter_leaks = 0usize;
 
     for query in &queries {
@@ -297,6 +333,20 @@ pub fn run_retrieval_evaluation(repetitions: usize) -> Result<RetrievalEvalRepor
             lexical_only: lexical_metrics,
             vector_only: vector_metrics,
             top_paths: unique_paths(&ranked_paths, TOP_K),
+            lexical_top_paths: unique_paths(
+                &lexical_results
+                    .iter()
+                    .map(|result| result.file_path.clone())
+                    .collect::<Vec<_>>(),
+                TOP_K,
+            ),
+            vector_top_paths: unique_paths(
+                &vector_results
+                    .iter()
+                    .map(|result| result.file_path.clone())
+                    .collect::<Vec<_>>(),
+                TOP_K,
+            ),
         });
 
         if let Some(expected_language) = &query.expected_language {
@@ -312,6 +362,12 @@ pub fn run_retrieval_evaluation(repetitions: usize) -> Result<RetrievalEvalRepor
             citations_checked += 1;
             if citation_is_valid(&corpus_dir, &result.file_path, &result.lines)? {
                 valid_citations += 1;
+            } else {
+                invalid_citations.push(CitationIssue {
+                    query_id: query.query_id.clone(),
+                    path: result.file_path.clone(),
+                    lines: result.lines.clone(),
+                });
             }
         }
     }
@@ -326,6 +382,16 @@ pub fn run_retrieval_evaluation(repetitions: usize) -> Result<RetrievalEvalRepor
     Ok(RetrievalEvalReport {
         model_name: config.embeddings.model,
         model_id,
+        dataset_name: data_dir
+            .file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or("dataset")
+            .to_string(),
+        corpus_root_name: corpus_dir
+            .file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or("corpus")
+            .to_string(),
         embedding_dimension,
         operating_system: std::env::consts::OS.to_string(),
         architecture: std::env::consts::ARCH.to_string(),
@@ -358,6 +424,7 @@ pub fn run_retrieval_evaluation(repetitions: usize) -> Result<RetrievalEvalRepor
             valid_citations as f64 / citations_checked as f64
         },
         citation_count: citations_checked,
+        invalid_citations,
         filter_leaks,
     })
 }
@@ -645,6 +712,7 @@ fn read_qrels(path: &Path) -> Result<HashMap<String, BTreeMap<String, u8>>> {
 fn validate_qrels(
     queries: &[EvalQuery],
     qrels: &HashMap<String, BTreeMap<String, u8>>,
+    corpus_dir: &Path,
 ) -> Result<()> {
     let query_ids = queries
         .iter()
@@ -665,6 +733,29 @@ fn validate_qrels(
                 "query {} has no positive relevance judgments",
                 query.query_id
             );
+        }
+    }
+    let canonical_root = corpus_dir.canonicalize().with_context(|| {
+        format!(
+            "failed to resolve corpus directory {}",
+            corpus_dir.display()
+        )
+    })?;
+    for path in qrels.values().flat_map(|judgments| judgments.keys()) {
+        let relative = Path::new(path);
+        if relative.as_os_str().is_empty()
+            || relative
+                .components()
+                .any(|component| !matches!(component, std::path::Component::Normal(_)))
+        {
+            anyhow::bail!("relevance judgment path is not a safe relative path: {path}");
+        }
+        let resolved = canonical_root
+            .join(relative)
+            .canonicalize()
+            .with_context(|| format!("judged corpus file does not exist: {path}"))?;
+        if !resolved.starts_with(&canonical_root) || !resolved.is_file() {
+            anyhow::bail!("judged corpus path is outside the corpus or not a file: {path}");
         }
     }
     Ok(())
@@ -820,7 +911,7 @@ mod tests {
         let eval_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("eval/retrieval");
         let queries = read_jsonl::<EvalQuery>(&eval_dir.join("queries.jsonl")).unwrap();
         let qrels = read_qrels(&eval_dir.join("qrels.jsonl")).unwrap();
-        validate_qrels(&queries, &qrels).unwrap();
+        validate_qrels(&queries, &qrels, &eval_dir.join("corpus")).unwrap();
         let languages = queries
             .iter()
             .map(|query| query.language.as_str())
@@ -839,12 +930,6 @@ mod tests {
                 query.query_id
             );
         }
-        for path in qrels.values().flat_map(|docs| docs.keys()) {
-            assert!(
-                eval_dir.join("corpus").join(path).is_file(),
-                "missing judged document {path}"
-            );
-        }
     }
 
     #[test]
@@ -861,7 +946,12 @@ mod tests {
             "unknown".to_string(),
             BTreeMap::from([("src/lib.rs".to_string(), 1)]),
         )]);
-        assert!(validate_qrels(&[query], &unknown).is_err());
+        let corpus = tempfile::tempdir().unwrap();
+        fs::create_dir_all(corpus.path().join("src")).unwrap();
+        fs::write(corpus.path().join("src/lib.rs"), "pub fn lib() {}\n").unwrap();
+        assert!(validate_qrels(&[query.clone()], &unknown, corpus.path()).is_err());
+        let missing = HashMap::new();
+        assert!(validate_qrels(&[query], &missing, corpus.path()).is_err());
 
         let dir = tempfile::tempdir().unwrap();
         let qrels_path = dir.path().join("qrels.jsonl");
@@ -871,5 +961,24 @@ mod tests {
         )
         .unwrap();
         assert!(read_qrels(&qrels_path).is_err());
+    }
+
+    #[test]
+    fn qrels_reject_paths_that_escape_the_corpus_root() {
+        let corpus = tempfile::tempdir().unwrap();
+        let query = EvalQuery {
+            query_id: "known".to_string(),
+            text: "find it".to_string(),
+            category: "intent".to_string(),
+            language: "rust".to_string(),
+            filter: None,
+            expected_language: None,
+        };
+        let qrels = HashMap::from([(
+            "known".to_string(),
+            BTreeMap::from([("../secret.rs".to_string(), 1)]),
+        )]);
+
+        assert!(validate_qrels(&[query], &qrels, corpus.path()).is_err());
     }
 }

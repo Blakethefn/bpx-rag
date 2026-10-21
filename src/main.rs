@@ -73,8 +73,16 @@ fn main() -> Result<()> {
 
 fn run_evaluation(action: EvalAction) -> Result<()> {
     match action {
-        EvalAction::Retrieval { repetitions } => {
-            let report = eval::run_retrieval_evaluation(repetitions)?;
+        EvalAction::Retrieval {
+            repetitions,
+            dataset,
+            corpus_root,
+        } => {
+            let report = eval::run_retrieval_evaluation(
+                repetitions,
+                dataset.as_deref(),
+                corpus_root.as_deref(),
+            )?;
             println!("{}", serde_json::to_string_pretty(&report)?);
             if report.filter_leaks > 0 || report.citation_validity < 1.0 {
                 return Err(anyhow!(
@@ -148,7 +156,11 @@ fn run_models(action: ModelsAction) -> Result<()> {
         ModelsAction::Status => println!("{}", rag_app::embedding_model_status(&config)),
         ModelsAction::Download => {
             let model_dir = rag_app::model_directory(&config);
-            embedder::Embedder::new(&model_dir, &config.embeddings.model)?;
+            embedder::Embedder::new(
+                &model_dir,
+                &config.embeddings.model,
+                config.embeddings.batch_size,
+            )?;
             println!(
                 "Downloaded and loaded {} at {}.",
                 config.embeddings.model,

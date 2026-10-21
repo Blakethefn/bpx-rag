@@ -10,7 +10,10 @@ pub const EMBEDDING_DIM: usize = 384;
 pub const DEFAULT_MODEL: &str = "all-MiniLM-L6-v2";
 pub const CODE_MODEL: &str = "jina-embeddings-v2-base-code";
 const MINI_LM_MAX_LENGTH: usize = 256;
-const JINA_CODE_MAX_LENGTH: usize = 8192;
+// Source chunks are bounded to 4 KiB. A 1,024-token window covers those chunks
+// while avoiding the latency and memory cost of processing the model's full
+// 8K-token capability for unusually large chunks.
+const JINA_CODE_MAX_LENGTH: usize = 1024;
 const TOKENIZER_FILES: [&str; 4] = [
     "tokenizer.json",
     "config.json",
@@ -43,17 +46,18 @@ pub struct Embedder {
     inner: Mutex<TextEmbedding>,
     model_id: String,
     dim: usize,
+    batch_size: usize,
 }
 
 impl Embedder {
     /// Explicitly download the selected model, then load it from local cache.
-    pub fn new(model_dir: &Path, model_name: &str) -> Result<Self> {
+    pub fn new(model_dir: &Path, model_name: &str, batch_size: usize) -> Result<Self> {
         Self::download_model(model_dir, model_name)?;
-        Self::load_cached(model_dir, model_name)
+        Self::load_cached(model_dir, model_name, batch_size)
     }
 
     /// Load only a complete local cache entry. This never attempts a network request.
-    pub fn load_cached(model_dir: &Path, model_name: &str) -> Result<Self> {
+    pub fn load_cached(model_dir: &Path, model_name: &str, batch_size: usize) -> Result<Self> {
         let model = resolve_model(model_name)?;
         let model_info = TextEmbedding::get_model_info(&model)
             .map_err(|error| anyhow!("unsupported embedding model: {error}"))?;
@@ -78,6 +82,7 @@ impl Embedder {
             inner: Mutex::new(inner),
             model_id,
             dim,
+            batch_size: batch_size.clamp(1, 256),
         })
     }
 
@@ -206,7 +211,7 @@ impl Embed for Embedder {
             .lock()
             .map_err(|_| anyhow!("embedding model lock was poisoned"))?;
         inner
-            .embed(texts, None)
+            .embed(texts, Some(self.batch_size))
             .map_err(|error| anyhow!("embedding generation failed: {error}"))
     }
 
