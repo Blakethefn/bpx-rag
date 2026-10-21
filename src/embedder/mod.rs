@@ -30,6 +30,11 @@ pub trait Embed: Send + Sync {
     /// Embed multiple texts in batches, returning L2-normalized vectors.
     fn embed_batch(&self, texts: &[&str]) -> Result<Vec<Vec<f32>>>;
 
+    /// Maximum input texts to include in one embedding request.
+    fn max_batch_size(&self) -> usize {
+        16
+    }
+
     /// The dimensionality of the output vectors.
     fn dim(&self) -> usize;
 
@@ -256,6 +261,10 @@ impl Embed for Embedder {
 
     fn dim(&self) -> usize {
         self.dim
+    }
+
+    fn max_batch_size(&self) -> usize {
+        self.batch_size
     }
 
     fn model_id(&self) -> &str {

@@ -43,7 +43,7 @@ pub struct SyncResult {
     pub links_created: usize,
     /// Time spent waiting for and running the embedding model, in milliseconds.
     pub embedding_ms: u64,
-    /// Number of corpus-wide calls made through the Embed trait.
+    /// Number of configured-size embedding batches made through the Embed trait.
     pub embedding_calls: usize,
     /// Number of chunk texts embedded before writing this sync transaction.
     pub embedding_chunks: usize,
@@ -102,9 +102,9 @@ pub fn sync_source(
     // 2. Load existing file records from DB
     let db_files = load_db_files(conn, source.id)?;
 
-    // 3. Classify files: read once, hash, decode UTF-8, then classify
-    let mut to_add: Vec<(String, PathBuf, String, String)> = Vec::new(); // (rel, abs, content, hash)
-    let mut to_update: Vec<(i64, PathBuf, String, String)> = Vec::new(); // (file_id, abs, content, hash)
+    // 3. Classify files by content hash without retaining every changed body.
+    let mut to_add: Vec<(String, PathBuf, String)> = Vec::new(); // (rel, abs, hash)
+    let mut to_update: Vec<(i64, PathBuf, String)> = Vec::new(); // (file_id, abs, hash)
     let mut to_remove: Vec<i64> = Vec::new();
     let mut sensitive_content_paths = HashSet::new();
     let mut unchanged: usize = 0;
@@ -127,12 +127,12 @@ pub fn sync_source(
         let chunker_version = chunker_version_for_path(Path::new(rel_path));
         if let Some((file_id, old_hash, old_chunker_version)) = db_files.get(rel_path) {
             if *old_hash != hash || *old_chunker_version != chunker_version {
-                to_update.push((*file_id, abs_path.clone(), content, hash));
+                to_update.push((*file_id, abs_path.clone(), hash));
             } else {
                 unchanged += 1;
             }
         } else {
-            to_add.push((rel_path.clone(), abs_path.clone(), content, hash));
+            to_add.push((rel_path.clone(), abs_path.clone(), hash));
         }
     }
 
@@ -147,12 +147,12 @@ pub fn sync_source(
     let files_updated = to_update.len();
     let files_removed = to_remove.len();
 
-    // Prepare all changed files and embeddings before acquiring SQLite's write
-    // lock. The embedder applies its configured internal batch size to this
-    // corpus-wide call, avoiding one model invocation per file.
+    // Prepare changed files before acquiring SQLite's write lock. Re-read only
+    // files selected for indexing and verify they still match the classification
+    // hash, keeping source text out of the corpus-wide staging vectors.
     let mut prepared_files = Vec::with_capacity(files_added + files_updated);
-    let mut embedding_texts = Vec::new();
-    for (rel_path, abs_path, content, hash) in to_add {
+    for (rel_path, abs_path, hash) in to_add {
+        let content = read_classified_file(&abs_path, &hash)?;
         prepared_files.push(prepare_file(
             rel_path,
             abs_path,
@@ -162,12 +162,13 @@ pub fn sync_source(
             enrichment_fn,
         ));
     }
-    for (file_id, abs_path, content, hash) in to_update {
+    for (file_id, abs_path, hash) in to_update {
         let rel_path = abs_path
             .strip_prefix(base_path)
             .unwrap_or(&abs_path)
             .to_string_lossy()
             .to_string();
+        let content = read_classified_file(&abs_path, &hash)?;
         prepared_files.push(prepare_file(
             rel_path,
             abs_path,
@@ -177,35 +178,31 @@ pub fn sync_source(
             enrichment_fn,
         ));
     }
-    for file in &prepared_files {
-        embedding_texts.extend(
-            file.chunks
-                .iter()
-                .map(|chunk| format!("{} {}", chunk.title, chunk.content)),
-        );
-    }
-
     let embedding_start = Instant::now();
-    let embedding_calls = usize::from(embedder.is_some() && !embedding_texts.is_empty());
-    if let Some(emb) = embedder.filter(|_| !embedding_texts.is_empty()) {
-        let refs: Vec<&str> = embedding_texts.iter().map(String::as_str).collect();
-        let embeddings = emb
-            .embed_batch(&refs)
-            .context("failed to embed changed corpus chunks")?;
-        if embeddings.len() != embedding_texts.len() {
-            anyhow::bail!(
-                "embedder returned {} vectors for {} chunks",
-                embeddings.len(),
-                embedding_texts.len()
-            );
-        }
-        let normalized = embeddings
-            .iter()
-            .map(|vector| normalize_embedding(vector, emb.dim()))
-            .collect::<Result<Vec<_>>>()?;
-        let mut vectors = normalized.into_iter();
+    let mut embedding_calls = 0;
+    if let Some(emb) = embedder {
+        let batch_size = emb.max_batch_size().clamp(1, 256);
+        let mut pending = Vec::with_capacity(batch_size);
         for file in &mut prepared_files {
-            file.vectors = vectors.by_ref().take(file.chunks.len()).collect();
+            file.vectors = vec![Vec::new(); file.chunks.len()];
+        }
+        for file_index in 0..prepared_files.len() {
+            let chunk_count = prepared_files[file_index].chunks.len();
+            for chunk_index in 0..chunk_count {
+                let text = {
+                    let chunk = &prepared_files[file_index].chunks[chunk_index];
+                    format!("{} {}", chunk.title, chunk.content)
+                };
+                pending.push((file_index, chunk_index, text));
+                if pending.len() == batch_size {
+                    embed_pending_batch(emb.as_ref(), &mut prepared_files, &mut pending)?;
+                    embedding_calls += 1;
+                }
+            }
+        }
+        if !pending.is_empty() {
+            embed_pending_batch(emb.as_ref(), &mut prepared_files, &mut pending)?;
+            embedding_calls += 1;
         }
     }
     let embedding_ms = embedding_start.elapsed().as_millis() as u64;
@@ -1012,6 +1009,46 @@ fn prepare_file(
         used_tree_sitter: chunking.used_tree_sitter,
         vectors: Vec::new(),
     }
+}
+
+fn read_classified_file(abs_path: &Path, expected_hash: &str) -> Result<String> {
+    let bytes =
+        fs::read(abs_path).with_context(|| format!("failed to read {}", abs_path.display()))?;
+    let content = String::from_utf8(bytes)
+        .with_context(|| format!("file is not valid UTF-8: {}", abs_path.display()))?;
+    if sha256_hex(content.as_bytes()) != expected_hash {
+        anyhow::bail!(
+            "source file changed before preparation: {}; retry sync",
+            abs_path.display()
+        );
+    }
+    Ok(content)
+}
+
+fn embed_pending_batch(
+    embedder: &dyn crate::embedder::Embed,
+    prepared_files: &mut [PreparedFile],
+    pending: &mut Vec<(usize, usize, String)>,
+) -> Result<()> {
+    let texts = pending
+        .iter()
+        .map(|(_, _, text)| text.as_str())
+        .collect::<Vec<_>>();
+    let embeddings = embedder
+        .embed_batch(&texts)
+        .context("failed to embed changed corpus chunk batch")?;
+    if embeddings.len() != pending.len() {
+        anyhow::bail!(
+            "embedder returned {} vectors for {} chunks",
+            embeddings.len(),
+            pending.len()
+        );
+    }
+    for ((file_index, chunk_index, _), vector) in pending.drain(..).zip(embeddings) {
+        prepared_files[file_index].vectors[chunk_index] =
+            normalize_embedding(&vector, embedder.dim())?;
+    }
+    Ok(())
 }
 
 /// Insert pre-chunked content and precomputed vectors within the caller's
