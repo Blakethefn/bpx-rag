@@ -21,6 +21,7 @@ use std::path::PathBuf;
 
 use cli::{Cli, Commands, EvalAction, KnowledgeAction, ModelsAction};
 use rag_app::{RagApp, SearchOptions};
+use store::search::SearchWeights;
 
 fn main() -> Result<()> {
     let cli = Cli::parse();
@@ -76,6 +77,8 @@ fn run_evaluation(action: EvalAction) -> Result<()> {
     match action {
         EvalAction::Retrieval {
             repetitions,
+            keyword_weight,
+            vector_weight,
             dataset,
             corpus_root,
         } => {
@@ -83,6 +86,10 @@ fn run_evaluation(action: EvalAction) -> Result<()> {
                 repetitions,
                 dataset.as_deref(),
                 corpus_root.as_deref(),
+                SearchWeights {
+                    keyword_weight,
+                    vector_weight,
+                },
             )?;
             println!("{}", serde_json::to_string_pretty(&report)?);
             if report.filter_leaks > 0

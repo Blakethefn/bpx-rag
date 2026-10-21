@@ -121,6 +121,14 @@ pub enum EvalAction {
     Retrieval {
         #[arg(long, default_value = "3")]
         repetitions: usize,
+        /// RRF multiplier for lexical candidates (BM25, trigram, fuzzy).
+        /// Must be in (0, 10]; defaults to 1.0.
+        #[arg(long, default_value_t = 1.0)]
+        keyword_weight: f64,
+        /// RRF multiplier for semantic vector candidates.
+        /// Must be in (0, 10]; defaults to 1.0.
+        #[arg(long, default_value_t = 1.0)]
+        vector_weight: f64,
         /// Directory containing queries.jsonl and qrels.jsonl. Defaults to the bundled fixture.
         #[arg(long, value_hint = ValueHint::DirPath)]
         dataset: Option<PathBuf>,

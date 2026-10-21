@@ -97,6 +97,8 @@ pub struct RetrievalEvalReport {
     pub batch_size: usize,
     pub intra_threads: usize,
     pub candidate_oversample_factor: u32,
+    pub hybrid_keyword_weight: f64,
+    pub hybrid_vector_weight: f64,
     pub queries_sha256: String,
     pub qrels_sha256: String,
     pub corpus_manifest_sha256: String,
@@ -1153,9 +1155,19 @@ pub fn run_retrieval_evaluation(
     repetitions: usize,
     dataset: Option<&Path>,
     corpus_root: Option<&Path>,
+    hybrid_weights: SearchWeights,
 ) -> Result<RetrievalEvalReport> {
     if !(1..=100).contains(&repetitions) {
         return Err(anyhow!("repetitions must be between 1 and 100"));
+    }
+    if !hybrid_weights.keyword_weight.is_finite()
+        || !hybrid_weights.vector_weight.is_finite()
+        || !(0.0..=10.0).contains(&hybrid_weights.keyword_weight)
+        || !(0.0..=10.0).contains(&hybrid_weights.vector_weight)
+        || hybrid_weights.keyword_weight == 0.0
+        || hybrid_weights.vector_weight == 0.0
+    {
+        anyhow::bail!("hybrid weights must be finite and in the range (0, 10]");
     }
     let config = Config::load()?;
     let model_dir = crate::rag_app::model_directory(&config);
@@ -1276,7 +1288,7 @@ pub fn run_retrieval_evaluation(
             query.filter.as_deref(),
             Some("retrieval-eval"),
             TOP_K as u32,
-            &SearchWeights::default(),
+            &hybrid_weights,
             1024,
         )?;
         let lexical_results = knowledge::search::knowledge_search(
@@ -1313,7 +1325,7 @@ pub fn run_retrieval_evaluation(
                 query.filter.as_deref(),
                 Some("retrieval-eval"),
                 TOP_K as u32,
-                &SearchWeights::default(),
+                &hybrid_weights,
                 1024,
             )?;
             query_times.push(started.elapsed());
@@ -1472,6 +1484,8 @@ pub fn run_retrieval_evaluation(
         batch_size: config.embeddings.batch_size,
         intra_threads: config.embeddings.intra_threads,
         candidate_oversample_factor: knowledge::search::CANDIDATE_OVERSAMPLE_FACTOR,
+        hybrid_keyword_weight: hybrid_weights.keyword_weight,
+        hybrid_vector_weight: hybrid_weights.vector_weight,
         queries_sha256,
         qrels_sha256,
         corpus_manifest_sha256: corpus_manifest_hash,
