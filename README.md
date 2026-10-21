@@ -116,6 +116,8 @@ For manual review, open `eval/review-pool.html` in a browser and select the anno
 
 `eval/bpx-rag-rust-ai-assessed-v1/` is a 611-qrel diagnostic set graded by blinded model-assisted reviewers, with overlap adjudication; its 71% exact agreement on the 24-candidate overlap is too limited for ground-truth claims. Report: `eval/results/bpx-rag-rust-ai-assisted-v4.json`.
 
+The bundled `eval/retrieval/` multilingual synthetic fixture has a complete 34-query × 35-file matrix (1,190 qrels, including 1,131 explicit negatives). Its labels are author-curated, not independently human-reviewed; use its 100% judged coverage for deterministic regression analysis, not production-quality relevance claims.
+
 The citation-content check matched all 331 returned excerpts against their cited source lines in the 34-query multilingual fixture. Its report is `eval/results/retrieval-citation-content-multilingual-2026-10-21.json`.
 
 The current Rust source run matched all 250/250 returned excerpts against their cited lines across 55 files / 630 chunks. Its 25-query qrels remain self-authored with 22.4% judged coverage@10, so the ranking scores are development evidence only. Report: `eval/results/bpx-rag-rust-citation-content-2026-10-21.json`.
