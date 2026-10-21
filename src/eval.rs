@@ -57,6 +57,7 @@ pub struct RetrievalEvalReport {
     pub embedding_dimension: usize,
     pub batch_size: usize,
     pub intra_threads: usize,
+    pub candidate_oversample_factor: u32,
     pub operating_system: String,
     pub architecture: String,
     pub host_threads: usize,
@@ -94,6 +95,7 @@ pub struct EvalCaseReport {
     pub hybrid: QualityMetrics,
     pub lexical_only: QualityMetrics,
     pub vector_only: QualityMetrics,
+    pub distinct_files_at_10: usize,
     pub top_paths: Vec<String>,
     pub lexical_top_paths: Vec<String>,
     pub vector_top_paths: Vec<String>,
@@ -558,6 +560,7 @@ pub fn run_retrieval_evaluation(
             hybrid: metrics.clone(),
             lexical_only: lexical_metrics,
             vector_only: vector_metrics,
+            distinct_files_at_10: unique_paths(&ranked_paths, TOP_K).len(),
             top_paths: unique_paths(&ranked_paths, TOP_K),
             lexical_top_paths: unique_paths(
                 &lexical_results
@@ -621,6 +624,7 @@ pub fn run_retrieval_evaluation(
         embedding_dimension,
         batch_size: config.embeddings.batch_size,
         intra_threads: config.embeddings.intra_threads,
+        candidate_oversample_factor: knowledge::search::CANDIDATE_OVERSAMPLE_FACTOR,
         operating_system: std::env::consts::OS.to_string(),
         architecture: std::env::consts::ARCH.to_string(),
         host_threads: std::thread::available_parallelism().map_or(1, usize::from),

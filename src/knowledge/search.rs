@@ -46,7 +46,15 @@ pub fn knowledge_search(
     weights: &SearchWeights,
     snippet_bytes: usize,
 ) -> Result<Vec<KnowledgeSearchResult>> {
+    if limit == 0 {
+        return Ok(Vec::new());
+    }
+    if limit > MAX_CANDIDATE_CHUNKS {
+        anyhow::bail!("knowledge search limit cannot exceed {MAX_CANDIDATE_CHUNKS}");
+    }
+
     let conn = store.conn();
+    let candidate_limit = expanded_candidate_limit(limit);
 
     // Parse metadata filters
     let mut predicates = parse_filter(filter)?;
@@ -60,12 +68,14 @@ pub fn knowledge_search(
 
     if weights.keyword_weight > 0.0 {
         // Layer 1: FTS5 BM25
-        let bm25 = knowledge_bm25_search(conn, query, limit, &meta_where, &meta_params)?;
+        let bm25 = knowledge_bm25_search(conn, query, candidate_limit, &meta_where, &meta_params)?;
         merge_results(&mut all_results, &bm25, weights.keyword_weight, "bm25");
 
-        // Layer 2: Trigram (if BM25 returned fewer than limit)
-        if bm25.len() < limit as usize {
-            let trigram = knowledge_trigram_search(conn, query, limit, &meta_where, &meta_params)?;
+        // Search a wider chunk candidate pool before choosing the final
+        // result limit. File diversity is applied after chunk-level RRF.
+        if bm25.len() < candidate_limit as usize {
+            let trigram =
+                knowledge_trigram_search(conn, query, candidate_limit, &meta_where, &meta_params)?;
             merge_results(
                 &mut all_results,
                 &trigram,
@@ -74,9 +84,10 @@ pub fn knowledge_search(
             );
         }
 
-        // Layer 3: Fuzzy (if still under limit)
-        if all_results.len() < limit as usize {
-            let fuzzy = knowledge_fuzzy_search(conn, query, limit, &meta_where, &meta_params)?;
+        // Layer 3: Fuzzy (if lexical layers still leave candidate room)
+        if all_results.len() < candidate_limit as usize {
+            let fuzzy =
+                knowledge_fuzzy_search(conn, query, candidate_limit, &meta_where, &meta_params)?;
             merge_results(&mut all_results, &fuzzy, weights.keyword_weight, "fuzzy");
         }
     }
@@ -92,13 +103,13 @@ pub fn knowledge_search(
                     let candidates = store.vector_candidates(
                         emb.model_id(),
                         &query_embedding,
-                        limit,
+                        candidate_limit,
                         &predicates,
                     )?;
                     let vector = knowledge_vector_search(
                         conn,
                         &query_embedding,
-                        limit,
+                        candidate_limit,
                         &meta_where,
                         &meta_params,
                         emb.model_id(),
@@ -128,8 +139,46 @@ pub fn knowledge_search(
             .partial_cmp(&a.score)
             .unwrap_or(std::cmp::Ordering::Equal)
     });
-    results.truncate(limit as usize);
-    Ok(results)
+    Ok(diversify_by_file(results, limit as usize))
+}
+
+const MAX_CANDIDATE_CHUNKS: u32 = 1_000;
+pub const CANDIDATE_OVERSAMPLE_FACTOR: u32 = 5;
+
+fn expanded_candidate_limit(limit: u32) -> u32 {
+    limit
+        .saturating_mul(CANDIDATE_OVERSAMPLE_FACTOR)
+        .min(MAX_CANDIDATE_CHUNKS)
+        .max(limit)
+}
+
+/// Keep the highest-scoring passage from each file before returning repeated
+/// files. If fewer files than `limit` are available, duplicate passages fill
+/// the remaining slots in score order; in that fallback case, output order is
+/// file-diversity-first rather than globally score-descending.
+fn diversify_by_file(
+    results: Vec<KnowledgeSearchResult>,
+    limit: usize,
+) -> Vec<KnowledgeSearchResult> {
+    let mut seen_file_ids = std::collections::HashSet::new();
+    let mut unique_files = Vec::with_capacity(limit);
+    let mut duplicate_chunks = Vec::new();
+    for result in results {
+        if seen_file_ids.insert(result.file_id) {
+            unique_files.push(result);
+            if unique_files.len() == limit {
+                return unique_files;
+            }
+        } else {
+            duplicate_chunks.push(result);
+        }
+    }
+    unique_files.extend(
+        duplicate_chunks
+            .into_iter()
+            .take(limit - unique_files.len()),
+    );
+    unique_files
 }
 
 /// Search both session and knowledge DBs, merging results via RRF.
