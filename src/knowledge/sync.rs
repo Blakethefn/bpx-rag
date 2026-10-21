@@ -16,7 +16,7 @@ use std::time::Instant;
 use std::{fs, io};
 
 use crate::embedder::{embedding_to_bytes, normalize_embedding};
-use crate::store::chunker::chunk_content;
+use crate::store::chunker::{chunk_content_for_path, chunker_version_for_path};
 
 use super::{KnowledgeSourceInfo, KnowledgeStore};
 
@@ -34,6 +34,12 @@ pub struct SyncResult {
     pub chunks_total: usize,
     /// Chunks prepared and written by this sync operation.
     pub chunks_indexed: usize,
+    /// Chunks produced by syntax-aware Tree-sitter grammars during this sync.
+    pub tree_sitter_chunks_indexed: usize,
+    /// Chunks produced by the existing fallback chunker during this sync.
+    pub existing_chunker_chunks_indexed: usize,
+    pub tree_sitter_files_indexed: usize,
+    pub existing_chunker_files_indexed: usize,
     pub links_created: usize,
     /// Time spent waiting for and running the embedding model, in milliseconds.
     pub embedding_ms: u64,
@@ -54,6 +60,8 @@ struct PreparedFile {
     file_id: Option<i64>,
     metadata: String,
     chunks: Vec<crate::store::chunker::Chunk>,
+    chunker_version: i64,
+    used_tree_sitter: bool,
     vectors: Vec<Vec<f32>>,
 }
 
@@ -95,8 +103,9 @@ pub fn sync_source(
             .with_context(|| format!("file is not valid UTF-8: {}", abs_path.display()))?;
         let hash = sha256_hex(content.as_bytes());
 
-        if let Some((file_id, old_hash)) = db_files.get(rel_path) {
-            if *old_hash != hash {
+        let chunker_version = chunker_version_for_path(Path::new(rel_path));
+        if let Some((file_id, old_hash, old_chunker_version)) = db_files.get(rel_path) {
+            if *old_hash != hash || *old_chunker_version != chunker_version {
                 to_update.push((*file_id, abs_path.clone(), content, hash));
             } else {
                 unchanged += 1;
@@ -106,7 +115,7 @@ pub fn sync_source(
         }
     }
 
-    for (rel_path, (file_id, _)) in &db_files {
+    for (rel_path, (file_id, _, _)) in &db_files {
         if !disk_files.contains_key(rel_path) {
             to_remove.push(*file_id);
         }
@@ -180,6 +189,17 @@ pub fn sync_source(
     }
     let embedding_ms = embedding_start.elapsed().as_millis() as u64;
     let chunks_indexed = prepared_files.iter().map(|file| file.chunks.len()).sum();
+    let tree_sitter_chunks_indexed = prepared_files
+        .iter()
+        .filter(|file| file.used_tree_sitter)
+        .map(|file| file.chunks.len())
+        .sum();
+    let existing_chunker_chunks_indexed = chunks_indexed - tree_sitter_chunks_indexed;
+    let tree_sitter_files_indexed = prepared_files
+        .iter()
+        .filter(|file| file.used_tree_sitter)
+        .count();
+    let existing_chunker_files_indexed = prepared_files.len() - tree_sitter_files_indexed;
 
     // Avoid committing vectors for file contents that changed during a long
     // embedding pass. The next sync can retry against the newer snapshot.
@@ -283,6 +303,10 @@ pub fn sync_source(
         files_unchanged: unchanged,
         chunks_total: chunks_total as usize,
         chunks_indexed,
+        tree_sitter_chunks_indexed,
+        existing_chunker_chunks_indexed,
+        tree_sitter_files_indexed,
+        existing_chunker_files_indexed,
         links_created,
         embedding_ms,
         embedding_calls,
@@ -359,17 +383,18 @@ pub fn reindex_file(
     let hash = sha256_hex(content.as_bytes());
 
     // Check if file exists and hash matches — skip early if unchanged
-    let existing: Option<(i64, String)> = conn
+    let chunker_version = chunker_version_for_path(Path::new(&rel_path));
+    let existing: Option<(i64, String, i64)> = conn
         .query_row(
-            "SELECT id, content_hash FROM knowledge_files
+            "SELECT id, content_hash, chunker_version FROM knowledge_files
              WHERE source_id = ?1 AND rel_path = ?2",
             params![source.id, rel_path],
-            |row| Ok((row.get(0)?, row.get(1)?)),
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
         )
         .optional()?;
 
-    if let Some((_, ref old_hash)) = existing {
-        if *old_hash == hash {
+    if let Some((_, ref old_hash, old_chunker_version)) = existing {
+        if *old_hash == hash && old_chunker_version == chunker_version {
             return Ok(()); // No change
         }
     }
@@ -379,7 +404,7 @@ pub fn reindex_file(
         canonical_path.clone(),
         content.clone(),
         hash.clone(),
-        existing.as_ref().map(|(file_id, _)| *file_id),
+        existing.as_ref().map(|(file_id, _, _)| *file_id),
         enrichment_fn,
     );
     if let Some(emb) = embedder {
@@ -417,19 +442,19 @@ pub fn reindex_file(
     conn.execute_batch("BEGIN IMMEDIATE")?;
 
     let inner = (|| -> Result<()> {
-        let current: Option<(i64, String)> = conn
+        let current: Option<(i64, String, i64)> = conn
             .query_row(
-                "SELECT id, content_hash FROM knowledge_files
+                "SELECT id, content_hash, chunker_version FROM knowledge_files
                  WHERE source_id = ?1 AND rel_path = ?2",
                 params![source.id, rel_path],
-                |row| Ok((row.get(0)?, row.get(1)?)),
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
             )
             .optional()?;
         if current.as_ref() != existing.as_ref() {
             anyhow::bail!("file index changed while reindex was preparing; retry reindex");
         }
 
-        if let Some((file_id, _)) = existing {
+        if let Some((file_id, _, _)) = existing {
             delete_file_chunks(conn, file_id)?;
             index_prepared_file(
                 conn,
@@ -732,20 +757,21 @@ fn sha256_hex(bytes: &[u8]) -> String {
 fn load_db_files(
     conn: &rusqlite::Connection,
     source_id: i64,
-) -> Result<HashMap<String, (i64, String)>> {
+) -> Result<HashMap<String, (i64, String, i64)>> {
     let mut stmt = conn
-        .prepare("SELECT id, rel_path, content_hash FROM knowledge_files WHERE source_id = ?1")?;
+        .prepare("SELECT id, rel_path, content_hash, chunker_version FROM knowledge_files WHERE source_id = ?1")?;
     let mut files = HashMap::new();
     let rows = stmt.query_map(params![source_id], |row| {
         Ok((
             row.get::<_, i64>(0)?,
             row.get::<_, String>(1)?,
             row.get::<_, String>(2)?,
+            row.get::<_, i64>(3)?,
         ))
     })?;
     for row in rows {
-        let (id, rel_path, hash) = row?;
-        files.insert(rel_path, (id, hash));
+        let (id, rel_path, hash, chunker_version) = row?;
+        files.insert(rel_path, (id, hash, chunker_version));
     }
     Ok(files)
 }
@@ -762,7 +788,8 @@ fn prepare_file(
         Some(f) => f(&content, &abs_path),
         None => serde_json::json!({}),
     };
-    let chunks = chunk_content(&content);
+    let chunking = chunk_content_for_path(&abs_path, &content);
+    let chunker_version = chunker_version_for_path(Path::new(&rel_path));
     PreparedFile {
         rel_path,
         abs_path,
@@ -770,7 +797,9 @@ fn prepare_file(
         hash,
         file_id,
         metadata: metadata.to_string(),
-        chunks,
+        chunks: chunking.chunks,
+        chunker_version,
+        used_tree_sitter: chunking.used_tree_sitter,
         vectors: Vec::new(),
     }
 }
@@ -829,12 +858,13 @@ fn index_prepared_file(
     // Update file record
     conn.execute(
         "UPDATE knowledge_files SET content_hash = ?1, size_bytes = ?2,
-            chunk_count = ?3, indexed_at = datetime('now')
-         WHERE id = ?4",
+            chunk_count = ?3, chunker_version = ?4, indexed_at = datetime('now')
+         WHERE id = ?5",
         params![
             file.hash,
             file.content.len() as i64,
             file.chunks.len() as i64,
+            file.chunker_version,
             file_id
         ],
     )?;

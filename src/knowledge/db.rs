@@ -61,6 +61,7 @@ fn ensure_schema(conn: &Connection) -> Result<()> {
             size_bytes   INTEGER NOT NULL,
             indexed_at   TEXT NOT NULL DEFAULT (datetime('now')),
             chunk_count  INTEGER NOT NULL DEFAULT 0,
+            chunker_version INTEGER NOT NULL DEFAULT 1,
             UNIQUE(source_id, rel_path)
         );
 
@@ -122,6 +123,7 @@ fn ensure_schema(conn: &Connection) -> Result<()> {
         CREATE INDEX IF NOT EXISTS idx_links_target ON knowledge_links(target_file_id);
         ",
     )?;
+    ensure_chunker_version(conn)?;
     ensure_embedding_model_id(conn)?;
     ensure_database_instance_id(conn)?;
     conn.execute_batch(
@@ -146,6 +148,20 @@ fn ensure_schema(conn: &Connection) -> Result<()> {
          END;",
     )?;
     search_memory::init_knowledge_schema(conn)?;
+    Ok(())
+}
+
+fn ensure_chunker_version(conn: &Connection) -> Result<()> {
+    let mut statement = conn.prepare("PRAGMA table_info(knowledge_files)")?;
+    let columns = statement
+        .query_map([], |row| row.get::<_, String>(1))?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    if !columns.iter().any(|column| column == "chunker_version") {
+        conn.execute(
+            "ALTER TABLE knowledge_files ADD COLUMN chunker_version INTEGER NOT NULL DEFAULT 1",
+            [],
+        )?;
+    }
     Ok(())
 }
 

@@ -1,7 +1,7 @@
 use std::path::Path;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub(super) enum Grammar {
+pub(crate) enum Grammar {
     Markdown,
     Rust,
     JavaScript,
@@ -43,7 +43,7 @@ const LANGUAGE_EXTENSIONS: &[(&[&str], Grammar)] = &[
     (&["kt", "kts"], Grammar::Kotlin),
 ];
 
-pub(super) fn grammar_for_path(path: &Path) -> Option<Grammar> {
+pub(crate) fn grammar_for_path(path: &Path) -> Option<Grammar> {
     let extension = path.extension()?.to_str()?.to_ascii_lowercase();
     LANGUAGE_EXTENSIONS
         .iter()

@@ -112,6 +112,10 @@ pub struct RetrievalEvalReport {
     pub corpus_file_count: usize,
     pub sensitive_files_skipped: usize,
     pub chunk_count: usize,
+    pub tree_sitter_files_indexed: usize,
+    pub existing_chunker_files_indexed: usize,
+    pub tree_sitter_chunks_indexed: usize,
+    pub existing_chunker_chunks_indexed: usize,
     pub repetitions: usize,
     pub model_load_ms: f64,
     pub indexing_ms: f64,
@@ -208,6 +212,11 @@ pub struct EmbeddingBenchmarkReport {
     pub corpus_root_name: String,
     pub host_threads: usize,
     pub files_scanned: usize,
+    pub sensitive_files_skipped: usize,
+    pub tree_sitter_files: usize,
+    pub existing_chunker_files: usize,
+    pub tree_sitter_chunks: usize,
+    pub existing_chunker_chunks: usize,
     pub available_chunks: usize,
     pub measured_chunks: usize,
     pub warmup_chunks: usize,
@@ -360,17 +369,30 @@ pub fn run_embedding_benchmark(
         );
     }
 
-    let mut files = crate::knowledge::sync::walk_source_dir(corpus_root, None)?
-        .into_iter()
-        .collect::<Vec<_>>();
+    let walk = crate::knowledge::sync::walk_source_dir_with_report(corpus_root, None)?;
+    let sensitive_files_skipped = walk.sensitive_files_skipped;
+    let mut files = walk.files.into_iter().collect::<Vec<_>>();
     files.sort_by(|left, right| left.0.cmp(&right.0));
     let files_scanned = files.len();
     let mut available_chunks = 0usize;
+    let mut tree_sitter_chunks = 0usize;
+    let mut existing_chunker_chunks = 0usize;
+    let mut tree_sitter_files = 0usize;
+    let mut existing_chunker_files = 0usize;
     let mut file_hashes = Vec::with_capacity(files.len());
     for (_, path) in &files {
         let content = fs::read_to_string(&path)
             .with_context(|| format!("failed to read benchmark file {}", path.display()))?;
-        available_chunks += crate::store::chunker::chunk_content(&content).len();
+        let result = crate::store::chunker::chunk_content_for_path(path, &content);
+        let chunk_count = result.chunks.len();
+        available_chunks += chunk_count;
+        if result.used_tree_sitter {
+            tree_sitter_files += 1;
+            tree_sitter_chunks += chunk_count;
+        } else {
+            existing_chunker_files += 1;
+            existing_chunker_chunks += chunk_count;
+        }
         file_hashes.push(sha256(&content));
     }
     if available_chunks == 0 {
@@ -399,7 +421,7 @@ pub fn run_embedding_benchmark(
                 path.display()
             );
         }
-        for chunk in crate::store::chunker::chunk_content(&content) {
+        for chunk in crate::store::chunker::chunk_content_for_path(path, &content).chunks {
             if sample_indices.get(next_sample) == Some(&chunk_index) {
                 texts.push(format!("{} {}", chunk.title, chunk.content));
                 next_sample += 1;
@@ -476,6 +498,11 @@ pub fn run_embedding_benchmark(
             .to_string(),
         host_threads,
         files_scanned,
+        sensitive_files_skipped,
+        tree_sitter_files,
+        existing_chunker_files,
+        tree_sitter_chunks,
+        existing_chunker_chunks,
         available_chunks,
         measured_chunks: texts.len(),
         warmup_chunks,
@@ -1460,6 +1487,10 @@ pub fn run_retrieval_evaluation(
         corpus_file_count: sync.files_scanned,
         sensitive_files_skipped: sync.sensitive_files_skipped,
         chunk_count: sync.chunks_total,
+        tree_sitter_files_indexed: sync.tree_sitter_files_indexed,
+        existing_chunker_files_indexed: sync.existing_chunker_files_indexed,
+        tree_sitter_chunks_indexed: sync.tree_sitter_chunks_indexed,
+        existing_chunker_chunks_indexed: sync.existing_chunker_chunks_indexed,
         repetitions,
         model_load_ms,
         indexing_ms,

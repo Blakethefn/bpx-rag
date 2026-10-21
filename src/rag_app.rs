@@ -455,7 +455,7 @@ impl RagApp {
 
 pub fn format_sync_result(result: &knowledge::sync::SyncResult) -> String {
     format!(
-        "Source '{}': scanned {}, added {}, updated {}, removed {}, unchanged {}; {} sensitive files skipped by policy; {} chunks indexed in {} ms.",
+        "Source '{}': scanned {}, added {}, updated {}, removed {}, unchanged {}; {} sensitive files skipped by policy; {} chunks indexed this sync ({} total; {} Tree-sitter / {} existing chunker across {} / {} changed files) in {} ms.",
         result.source_label,
         result.files_scanned,
         result.files_added,
@@ -463,7 +463,12 @@ pub fn format_sync_result(result: &knowledge::sync::SyncResult) -> String {
         result.files_removed,
         result.files_unchanged,
         result.sensitive_files_skipped,
+        result.chunks_indexed,
         result.chunks_total,
+        result.tree_sitter_chunks_indexed,
+        result.existing_chunker_chunks_indexed,
+        result.tree_sitter_files_indexed,
+        result.existing_chunker_files_indexed,
         result.duration_ms
     )
 }
