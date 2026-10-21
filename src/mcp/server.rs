@@ -213,10 +213,14 @@ fn handle_embeddings(args: &Value, app: &mut RagApp) -> Result<String> {
     match args["action"].as_str().unwrap_or("") {
         "status" => Ok(app.embedding_model_status()),
         "download" => app.download_embedding_model(),
-        "backfill" => Ok(format!(
-            "Created embeddings for {} chunks.",
-            app.backfill_embeddings()?
-        )),
+        "backfill" => {
+            let label = match args.get("label") {
+                None | Some(Value::Null) => None,
+                Some(Value::String(label)) => Some(label.as_str()),
+                Some(_) => return Err(anyhow!("'label' must be a string")),
+            };
+            Ok(app.backfill_embeddings(label)?.summary())
+        }
         action => Err(anyhow!("unknown embeddings action '{action}'")),
     }
 }

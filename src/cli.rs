@@ -85,7 +85,11 @@ pub enum KnowledgeAction {
     /// Remove one source and its indexed chunks.
     Remove { label: String },
     /// Backfill missing embeddings after installing the configured model.
-    EmbedBackfill,
+    EmbedBackfill {
+        /// Restrict backfill to one registered source label. Omit to process all sources.
+        #[arg(long)]
+        label: Option<String>,
+    },
     /// Read indexed chunks for a source in original order.
     Read {
         label: String,

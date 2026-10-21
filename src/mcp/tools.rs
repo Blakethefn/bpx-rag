@@ -76,10 +76,13 @@ pub fn tool_definitions() -> Value {
             },
             {
                 "name": "bpx_embeddings",
-                "description": "Inspect or explicitly download the local embedding model, or backfill vectors for indexed chunks.",
+                "description": "Inspect or explicitly download the local embedding model, or backfill vectors for indexed chunks. Backfill can be restricted to one registered source label.",
                 "inputSchema": {
                     "type": "object",
-                    "properties": { "action": { "type": "string", "enum": ["status", "download", "backfill"] } },
+                    "properties": {
+                        "action": { "type": "string", "enum": ["status", "download", "backfill"] },
+                        "label": { "type": "string", "description": "Optional exact knowledge source label for backfill; omitted means all registered sources." }
+                    },
                     "required": ["action"]
                 }
             },

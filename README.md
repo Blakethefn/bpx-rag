@@ -30,11 +30,13 @@ Model downloads are explicit:
 bpx-rag models status
 bpx-rag models download
 bpx-rag knowledge embed-backfill
+# Backfill one registered source at a time for large knowledge stores.
+bpx-rag knowledge embed-backfill --label my-project
 ```
 
 The default `jina-embeddings-v2-base-code` model is tuned for code retrieval across 30 programming languages and supports an 8K token input window ([upstream model card](https://huggingface.co/jinaai/jina-embeddings-v2-base-code)). bpx-rag caps each embedded chunk at 1,024 tokens to control local inference cost; the full local model artifacts take about 644 MB. Set `embeddings.model` in `~/.config/bpcontext/config.toml` to `all-MiniLM-L6-v2` for the smaller 91 MB general-purpose baseline, which scored lower MRR and nDCG on the checked-in controlled code benchmark.
 
-Vectors are stored with a canonical model ID. Switching models never mixes vectors from different spaces; run `knowledge embed-backfill` to replace vectors for existing chunks. Search reports incomplete active-model coverage and continues to use lexical results while backfill is pending.
+Vectors are stored with a canonical model ID. Switching models never mixes vectors from different spaces; run `knowledge embed-backfill` to replace vectors for existing chunks. Use `--label <source-label>` to backfill just one registered source; omitting it retains all-source behavior. Backfill processes bounded batches, rechecks chunks before writing to account for concurrent syncs/removals, and reports remaining chunks for the active model. Search reports incomplete active-model coverage and continues to use lexical results while backfill is pending. The `bpx_embeddings` MCP tool accepts the same optional `label` with `action: "backfill"`.
 
 Example model configuration:
 

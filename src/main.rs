@@ -184,9 +184,9 @@ fn run_knowledge(action: KnowledgeAction, project_dir: &std::path::Path) -> Resu
                 result.files_removed, result.chunks_removed
             );
         }
-        KnowledgeAction::EmbedBackfill => {
-            let count = app.backfill_embeddings()?;
-            println!("Created embeddings for {count} chunks.");
+        KnowledgeAction::EmbedBackfill { label } => {
+            let report = app.backfill_embeddings(label.as_deref())?;
+            println!("{}", report.summary());
         }
         KnowledgeAction::Read {
             label,
