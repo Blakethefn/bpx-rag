@@ -95,15 +95,26 @@ pub struct CleanupConfig {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
+#[serde(default)]
 pub struct EmbeddingsConfig {
     /// Model alias: all-MiniLM-L6-v2 or jina-embeddings-v2-base-code.
     pub model: String,
     /// Directory for storing downloaded models
     pub model_dir: String,
-    /// Batch size for embedding generation (default 32)
+    /// Batch size for embedding generation (default 16)
     pub batch_size: usize,
+    /// ONNX Runtime intra-op CPU threads (default: available logical CPUs).
+    #[serde(default = "default_embedding_threads")]
+    pub intra_threads: usize,
     /// Enable/disable embedding generation (default true)
     pub enabled: bool,
+}
+
+fn default_embedding_threads() -> usize {
+    std::thread::available_parallelism()
+        .map(usize::from)
+        .unwrap_or(1)
+        .clamp(1, 256)
 }
 
 impl Default for EmbeddingsConfig {
@@ -120,7 +131,8 @@ impl Default for EmbeddingsConfig {
         Self {
             model: "jina-embeddings-v2-base-code".to_string(),
             model_dir,
-            batch_size: 32,
+            batch_size: 16,
+            intra_threads: default_embedding_threads(),
             enabled: true,
         }
     }

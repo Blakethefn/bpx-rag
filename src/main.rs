@@ -96,6 +96,22 @@ fn run_evaluation(action: EvalAction) -> Result<()> {
             let report = eval::run_scaling_evaluation(repetitions)?;
             println!("{}", serde_json::to_string_pretty(&report)?);
         }
+        EvalAction::Embeddings {
+            corpus_root,
+            threads,
+            batch_sizes,
+            repetitions,
+            max_chunks,
+        } => {
+            let report = eval::run_embedding_benchmark(
+                &corpus_root,
+                threads.as_deref().unwrap_or(&[]),
+                &batch_sizes,
+                repetitions,
+                max_chunks,
+            )?;
+            println!("{}", serde_json::to_string_pretty(&report)?);
+        }
     }
     Ok(())
 }
@@ -160,6 +176,7 @@ fn run_models(action: ModelsAction) -> Result<()> {
                 &model_dir,
                 &config.embeddings.model,
                 config.embeddings.batch_size,
+                config.embeddings.intra_threads,
             )?;
             println!(
                 "Downloaded and loaded {} at {}.",

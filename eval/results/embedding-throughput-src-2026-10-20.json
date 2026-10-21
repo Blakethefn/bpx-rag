@@ -1,0 +1,77 @@
+{
+  "benchmark": "cached-model embedding throughput",
+  "build_profile": "release",
+  "command": "bpx-rag evaluate embeddings --corpus-root src --threads 4,8,12 --batch-sizes 16,32 --repetitions 2 --max-chunks 32",
+  "model_name": "jina-embeddings-v2-base-code",
+  "model_id": "jinaai/jina-embeddings-v2-base-code",
+  "corpus_root_name": "src",
+  "host_threads": 12,
+  "files_scanned": 55,
+  "available_chunks": 599,
+  "sample_method": "32 deterministic evenly spaced chunk indices including corpus endpoints",
+  "measured_chunks": 32,
+  "warmup_chunks": 8,
+  "repetitions": 2,
+  "runs": [
+    {
+      "intra_threads": 4,
+      "batch_size": 16,
+      "model_load_ms": 903.757807,
+      "warmup_ms": 5609.265060000001,
+      "embedding_ms_samples": [14581.581451, 14447.318947],
+      "embedding_ms_median": 14514.450198999999,
+      "chunks_per_second": 2.2046994244538936,
+      "milliseconds_per_chunk": 453.57656871874997
+    },
+    {
+      "intra_threads": 4,
+      "batch_size": 32,
+      "model_load_ms": 563.672921,
+      "warmup_ms": 5587.276618,
+      "embedding_ms_samples": [23480.628232, 23069.913626999998],
+      "embedding_ms_median": 23275.2709295,
+      "chunks_per_second": 1.3748497320150175,
+      "milliseconds_per_chunk": 727.352216546875
+    },
+    {
+      "intra_threads": 8,
+      "batch_size": 16,
+      "model_load_ms": 590.2633950000001,
+      "warmup_ms": 4950.762608999999,
+      "embedding_ms_samples": [12808.817976, 12561.725344999999],
+      "embedding_ms_median": 12685.271660499999,
+      "chunks_per_second": 2.522610540509205,
+      "milliseconds_per_chunk": 396.41473939062496
+    },
+    {
+      "intra_threads": 8,
+      "batch_size": 32,
+      "model_load_ms": 635.2740239999999,
+      "warmup_ms": 4924.062182,
+      "embedding_ms_samples": [20164.253153, 20069.752135000002],
+      "embedding_ms_median": 20117.002644,
+      "chunks_per_second": 1.5906942284736523,
+      "milliseconds_per_chunk": 628.656332625
+    },
+    {
+      "intra_threads": 12,
+      "batch_size": 16,
+      "model_load_ms": 622.345318,
+      "warmup_ms": 4580.111518,
+      "embedding_ms_samples": [12048.077674, 11849.975628],
+      "embedding_ms_median": 11949.026651,
+      "chunks_per_second": 2.678042399154073,
+      "milliseconds_per_chunk": 373.40708284375
+    },
+    {
+      "intra_threads": 12,
+      "batch_size": 32,
+      "model_load_ms": 563.8460239999999,
+      "warmup_ms": 4552.435469,
+      "embedding_ms_samples": [19291.706257, 19327.840255000003],
+      "embedding_ms_median": 19309.773256,
+      "chunks_per_second": 1.6571919087686258,
+      "milliseconds_per_chunk": 603.43041425
+    }
+  ]
+}

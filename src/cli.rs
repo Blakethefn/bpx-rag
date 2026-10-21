@@ -129,4 +129,22 @@ pub enum EvalAction {
         #[arg(long, default_value = "5")]
         repetitions: usize,
     },
+    /// Measure cached-model embedding throughput on production-sized source chunks.
+    Embeddings {
+        #[arg(long, value_hint = ValueHint::DirPath)]
+        corpus_root: PathBuf,
+        /// ONNX intra-op CPU thread counts to compare.
+        /// Defaults to roughly one-third, two-thirds, and all available CPUs.
+        #[arg(long, value_delimiter = ',')]
+        threads: Option<Vec<usize>>,
+        /// FastEmbed batch sizes to compare.
+        #[arg(long, value_delimiter = ',', default_value = "16,32")]
+        batch_sizes: Vec<usize>,
+        /// Repeated embedding passes per thread/batch combination.
+        #[arg(long, default_value = "2")]
+        repetitions: usize,
+        /// Maximum corpus-wide sampled chunks to embed per run.
+        #[arg(long, default_value = "32")]
+        max_chunks: usize,
+    },
 }

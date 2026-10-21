@@ -373,6 +373,7 @@ impl RagApp {
             &model_dir,
             &self.config.embeddings.model,
             self.config.embeddings.batch_size,
+            self.config.embeddings.intra_threads,
         )?;
         self.install_embedder(embedder);
         Ok(format!(
@@ -411,6 +412,7 @@ impl RagApp {
             &model_dir,
             &self.config.embeddings.model,
             self.config.embeddings.batch_size,
+            self.config.embeddings.intra_threads,
         ) {
             Ok(embedder) => self.install_embedder(embedder),
             Err(error) => {

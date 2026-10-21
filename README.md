@@ -44,7 +44,7 @@ model = "jina-embeddings-v2-base-code"
 enabled = true
 ```
 
-The model cache defaults to the local application data directory. `HF_HOME`, when set, selects the Hugging Face cache location.
+Embedding batches default to 16 chunks and ONNX uses the available logical CPUs; set `batch_size` or `intra_threads` to tune memory use and throughput. These fields have defaults when omitted from an existing config. The model cache defaults to the local application data directory. `HF_HOME`, when set, selects the Hugging Face cache location.
 
 ## CLI
 
@@ -96,10 +96,12 @@ To run the checked-in judged retrieval benchmark against the configured real mod
 ```bash
 bpx-rag evaluate retrieval --repetitions 5
 bpx-rag evaluate scaling --repetitions 5
+# Compare CPU threads and model batch sizes on a real source tree.
+bpx-rag evaluate embeddings --corpus-root src --threads 4,8,12 --batch-sizes 16,32 --repetitions 2
 # Evaluate a judged dataset against a caller-selected real source tree.
 bpx-rag evaluate retrieval --dataset eval/bpx-rag-rust --corpus-root src --repetitions 1
 ```
 
-The retrieval command refuses to download a missing model. It accepts a dataset directory containing `queries.jsonl` and `qrels.jsonl`, plus a corpus root to index; without these flags it uses the bundled fixture. Reports include hybrid, lexical-only, and vector-only graded metrics and top paths, citation path/line validity with invalid references listed, filter leakage, indexing time, embedding time/call/chunk counts, SQLite write-transaction time, warm-query p50/p95, database footprint, and model artifact size. `eval/bpx-rag-rust/` evaluates the actual `src/` tree with 25 curated self-evaluation queries and 68 graded file judgments; these labels are not independent human annotations. The separate scaling command compares exact vector search with the persistent HNSW candidate index from 1K to 50K synthetic chunks, including index build/load time, query latency, memory, and Recall@10 against exact results. Exact search stays enabled below 4,096 vectors; larger indexes use HNSW candidates followed by SQL metadata rechecks and exact vector reranking. The checked-in reports in `eval/results/` are controlled benchmarks; add independently reviewed, project-specific judgments before using their quality scores as a production claim.
+The retrieval command refuses to download a missing model. It accepts a dataset directory containing `queries.jsonl` and `qrels.jsonl`, plus a corpus root to index; without these flags it uses the bundled fixture. Reports include hybrid, lexical-only, and vector-only graded metrics and top paths, citation path/line validity with invalid references listed, filter leakage, indexing time, embedding time/call/chunk counts, SQLite write-transaction time, warm-query p50/p95, database footprint, and model artifact size. `evaluate embeddings` uses the production ignore rules and chunker, samples chunks across the full corpus, and reports repeated-run throughput medians for thread/batch combinations. `eval/bpx-rag-rust/` evaluates the actual `src/` tree with 25 curated self-evaluation queries and 68 graded file judgments; these labels are not independent human annotations. The separate scaling command compares exact vector search with the persistent HNSW candidate index from 1K to 50K synthetic chunks, including index build/load time, query latency, memory, and Recall@10 against exact results. Exact search stays enabled below 4,096 vectors; larger indexes use HNSW candidates followed by SQL metadata rechecks and exact vector reranking. The checked-in reports in `eval/results/` are controlled benchmarks; add independently reviewed, project-specific judgments before using their quality scores as a production claim.
 
 The `bpcontext` executable remains as a compatibility launcher for older scripts.

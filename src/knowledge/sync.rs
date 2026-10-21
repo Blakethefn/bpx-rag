@@ -452,7 +452,7 @@ pub fn reindex_file(
 /// Respects .gitignore, skips binary/empty files, and applies the glob filter.
 /// Any traversal or inspection error aborts the sync so reconciliation cannot
 /// mistake an incomplete scan for deleted files.
-fn walk_source_dir(
+pub(crate) fn walk_source_dir(
     base_path: &Path,
     glob_pattern: Option<&str>,
 ) -> Result<HashMap<String, PathBuf>> {

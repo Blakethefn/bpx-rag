@@ -2,7 +2,7 @@ use anyhow::{anyhow, Context, Result};
 use fastembed::{EmbeddingModel, TextEmbedding, TextInitOptions};
 use hf_hub::{api::sync::ApiBuilder, Cache};
 use std::path::{Path, PathBuf};
-use std::sync::Mutex;
+use std::sync::{Mutex, OnceLock};
 
 /// The legacy MiniLM dimension used by the deterministic mock embedder.
 #[cfg(test)]
@@ -51,13 +51,23 @@ pub struct Embedder {
 
 impl Embedder {
     /// Explicitly download the selected model, then load it from local cache.
-    pub fn new(model_dir: &Path, model_name: &str, batch_size: usize) -> Result<Self> {
+    pub fn new(
+        model_dir: &Path,
+        model_name: &str,
+        batch_size: usize,
+        intra_threads: usize,
+    ) -> Result<Self> {
         Self::download_model(model_dir, model_name)?;
-        Self::load_cached(model_dir, model_name, batch_size)
+        Self::load_cached(model_dir, model_name, batch_size, intra_threads)
     }
 
     /// Load only a complete local cache entry. This never attempts a network request.
-    pub fn load_cached(model_dir: &Path, model_name: &str, batch_size: usize) -> Result<Self> {
+    pub fn load_cached(
+        model_dir: &Path,
+        model_name: &str,
+        batch_size: usize,
+        intra_threads: usize,
+    ) -> Result<Self> {
         let model = resolve_model(model_name)?;
         let model_info = TextEmbedding::get_model_info(&model)
             .map_err(|error| anyhow!("unsupported embedding model: {error}"))?;
@@ -74,7 +84,8 @@ impl Embedder {
         let options = TextInitOptions::new(model)
             .with_cache_dir(model_dir.to_path_buf())
             .with_max_length(max_length)
-            .with_intra_threads(4)
+            .with_intra_threads(intra_threads.clamp(1, 256))
+            .with_environment(shared_ort_environment()?)
             .with_show_download_progress(false);
         let inner = TextEmbedding::try_new(options)
             .map_err(|error| anyhow!("failed to load cached embedding model: {error}"))?;
@@ -108,6 +119,26 @@ impl Embedder {
         }
         Ok(cache_dir)
     }
+}
+
+fn shared_ort_environment() -> Result<ort::environment::Environment> {
+    static ENVIRONMENT: OnceLock<Mutex<Option<ort::environment::Environment>>> = OnceLock::new();
+    let environment = ENVIRONMENT.get_or_init(|| Mutex::new(None));
+    let mut environment = environment
+        .lock()
+        .map_err(|_| anyhow!("ONNX Runtime environment lock was poisoned"))?;
+    if environment.is_none() {
+        *environment = Some(
+            ort::init()
+                .with_name("bpx-rag")
+                .build()
+                .map_err(|error| anyhow!("failed to initialize ONNX Runtime: {error}"))?,
+        );
+    }
+    environment
+        .as_ref()
+        .cloned()
+        .ok_or_else(|| anyhow!("ONNX Runtime environment initialization failed"))
 }
 
 pub fn model_files_present(model_dir: &Path, model_name: &str) -> bool {

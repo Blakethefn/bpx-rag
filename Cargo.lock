@@ -159,6 +159,7 @@ dependencies = [
  "glob",
  "hf-hub",
  "ignore",
+ "ort",
  "rusqlite",
  "serde",
  "serde_json",
