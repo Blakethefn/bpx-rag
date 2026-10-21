@@ -517,3 +517,137 @@ fn swift_and_csharp_imports_map_namespaces_to_local_directories() {
         "import"
     ));
 }
+
+#[test]
+fn bare_quoted_c_includes_and_php_requires_resolve_from_the_source_directory() {
+    let dir = tempdir().unwrap();
+    write_file(dir.path(), "c/header.h", "#pragma once\n");
+    write_file(dir.path(), "c/consumer.c", "#include \"header.h\"\n");
+    write_file(dir.path(), "php/file.php", "<?php\n");
+    write_file(
+        dir.path(),
+        "php/consumer.php",
+        "<?php\nrequire 'file.php';\n",
+    );
+
+    let header = analyze_file(&dir.path().join("c/header.h"), Some(dir.path())).unwrap();
+    let php = analyze_file(&dir.path().join("php/file.php"), Some(dir.path())).unwrap();
+
+    assert_eq!(header.incoming.len(), 1);
+    assert!(incoming_from(
+        &header,
+        "c/consumer.c",
+        "header.h",
+        "include"
+    ));
+    assert_eq!(php.incoming.len(), 1);
+    assert!(incoming_from(
+        &php,
+        "php/consumer.php",
+        "file.php",
+        "include"
+    ));
+}
+
+#[test]
+fn unresolved_local_polyglot_imports_remain_outgoing_without_targets() {
+    let dir = tempdir().unwrap();
+    write_file(dir.path(), "src/main.c", "#include \"missing.h\"\n");
+    write_file(
+        dir.path(),
+        "ruby/main.rb",
+        "require_relative 'missing_file'\n",
+    );
+
+    let c = analyze_file(&dir.path().join("src/main.c"), Some(dir.path())).unwrap();
+    let ruby = analyze_file(&dir.path().join("ruby/main.rb"), Some(dir.path())).unwrap();
+
+    assert_eq!(c.outgoing.len(), 1);
+    assert_eq!(c.outgoing[0].specifier, "missing.h");
+    assert_eq!(c.outgoing[0].to, None);
+    assert_eq!(ruby.outgoing.len(), 1);
+    assert_eq!(ruby.outgoing[0].specifier, "./missing_file");
+    assert_eq!(ruby.outgoing[0].to, None);
+}
+
+#[test]
+fn python_from_package_import_resolves_module_without_inventing_symbol_edges() {
+    let dir = tempdir().unwrap();
+    write_file(dir.path(), "pkg/__init__.py", "");
+    write_file(dir.path(), "pkg/quotes.py", "");
+    write_file(
+        dir.path(),
+        "consumer.py",
+        "from pkg import quotes, MissingSymbol\n",
+    );
+
+    let quotes = analyze_file(&dir.path().join("pkg/quotes.py"), Some(dir.path())).unwrap();
+    let consumer = analyze_file(&dir.path().join("consumer.py"), Some(dir.path())).unwrap();
+
+    assert!(incoming_from(
+        &quotes,
+        "consumer.py",
+        "pkg.quotes",
+        "import"
+    ));
+    assert!(consumer
+        .outgoing
+        .iter()
+        .any(|relationship| relationship.specifier == "pkg"));
+    assert!(consumer
+        .outgoing
+        .iter()
+        .any(|relationship| relationship.specifier == "pkg.quotes"));
+    assert!(!consumer
+        .outgoing
+        .iter()
+        .any(|relationship| relationship.specifier == "pkg.MissingSymbol"));
+}
+
+#[test]
+fn project_markers_infer_roots_for_go_java_dart_and_csharp() {
+    let cases = [
+        (
+            "go",
+            "go.mod",
+            "module example.com/project\n",
+            "src/main.go",
+            "package main\n",
+        ),
+        (
+            "java",
+            "pom.xml",
+            "<project></project>\n",
+            "src/Main.java",
+            "class Main {}\n",
+        ),
+        (
+            "dart",
+            "pubspec.yaml",
+            "name: sample_app\n",
+            "lib/main.dart",
+            "void main() {}\n",
+        ),
+        (
+            "csharp",
+            "Sample.csproj",
+            "<Project />\n",
+            "src/Main.cs",
+            "class Main {}\n",
+        ),
+    ];
+
+    for (name, marker, marker_content, source, source_content) in cases {
+        let dir = tempdir().unwrap();
+        write_file(dir.path(), marker, marker_content);
+        write_file(dir.path(), source, source_content);
+
+        let result = analyze_file(&dir.path().join(source), None).unwrap();
+
+        assert_eq!(
+            result.root,
+            dir.path().canonicalize().unwrap().display().to_string(),
+            "{name}"
+        );
+    }
+}
