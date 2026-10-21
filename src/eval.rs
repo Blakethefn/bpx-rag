@@ -2,7 +2,8 @@ use anyhow::{anyhow, Context, Result};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, HashMap};
-use std::fs;
+use std::fs::{self, OpenOptions};
+use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -18,6 +19,28 @@ fn sha256(content: &str) -> String {
     format!("{:x}", Sha256::digest(content.as_bytes()))
 }
 
+fn sha256_file(path: &Path) -> Result<String> {
+    let bytes = fs::read(path)
+        .with_context(|| format!("failed to read evaluation file {}", path.display()))?;
+    Ok(format!("{:x}", Sha256::digest(bytes)))
+}
+
+fn corpus_manifest_sha256(corpus_root: &Path) -> Result<String> {
+    let mut files = crate::knowledge::sync::walk_source_dir(corpus_root, None)?
+        .into_iter()
+        .collect::<Vec<_>>();
+    files.sort_by(|left, right| left.0.cmp(&right.0));
+    let mut manifest = Sha256::new();
+    for (relative_path, absolute_path) in files {
+        let content = fs::read(&absolute_path)
+            .with_context(|| format!("failed to fingerprint {}", absolute_path.display()))?;
+        manifest.update((relative_path.len() as u64).to_be_bytes());
+        manifest.update(relative_path.as_bytes());
+        manifest.update(Sha256::digest(content));
+    }
+    Ok(format!("{:x}", manifest.finalize()))
+}
+
 #[derive(Debug, Deserialize, Clone)]
 struct EvalQuery {
     query_id: String,
@@ -28,9 +51,11 @@ struct EvalQuery {
     filter: Option<String>,
     #[serde(default)]
     expected_language: Option<String>,
+    #[serde(default)]
+    judgment_source: Option<String>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 struct Qrel {
     query_id: String,
     path: String,
@@ -43,6 +68,8 @@ pub struct QualityMetrics {
     pub recall_at_10: f64,
     pub precision_at_5: f64,
     pub precision_at_10: f64,
+    pub judged_coverage_at_5: f64,
+    pub judged_coverage_at_10: f64,
     pub mrr_at_10: f64,
     pub ndcg_at_10: f64,
     pub success_at_5: f64,
@@ -58,6 +85,12 @@ pub struct RetrievalEvalReport {
     pub batch_size: usize,
     pub intra_threads: usize,
     pub candidate_oversample_factor: u32,
+    pub queries_sha256: String,
+    pub qrels_sha256: String,
+    pub corpus_manifest_sha256: String,
+    pub positive_judgment_count: usize,
+    pub explicit_negative_judgment_count: usize,
+    pub judgment_sources: Vec<String>,
     pub operating_system: String,
     pub architecture: String,
     pub host_threads: usize,
@@ -156,6 +189,90 @@ pub struct EmbeddingBenchmarkRun {
     pub embedding_ms: f64,
     pub chunks_per_second: f64,
     pub milliseconds_per_chunk: f64,
+}
+
+const JUDGMENT_POOL_SCHEMA_VERSION: u8 = 1;
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct JudgmentPoolArtifact {
+    pub schema_version: u8,
+    pub seed: u64,
+    pub candidate_depth_per_retriever: usize,
+    pub dataset_queries_sha256: String,
+    pub corpus_manifest_sha256: String,
+    pub corpus_file_count: usize,
+    pub chunk_count: usize,
+    pub grade_guide: Vec<GradeGuideEntry>,
+    pub candidates: Vec<JudgmentPoolCandidate>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct JudgmentPoolCandidate {
+    pub blinded_query_id: String,
+    pub query: String,
+    pub candidate_id: String,
+    pub path: String,
+    pub evidence: Vec<JudgmentPoolEvidence>,
+    pub grade: Option<u8>,
+    pub reviewer_notes: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct GradeGuideEntry {
+    pub grade: u8,
+    pub meaning: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct JudgmentPoolEvidence {
+    pub title: String,
+    pub lines: String,
+    pub snippet: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct JudgmentPoolKey {
+    pub schema_version: u8,
+    pub seed: u64,
+    pub dataset_queries_sha256: String,
+    pub corpus_manifest_sha256: String,
+    pub model_id: String,
+    pub candidate_depth_per_retriever: usize,
+    pub candidates: Vec<JudgmentPoolKeyEntry>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct JudgmentPoolKeyEntry {
+    pub candidate_id: String,
+    pub blinded_query_id: String,
+    pub query_id: String,
+    pub path: String,
+    pub retrieved_by: PoolRetrieverRanks,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct PoolRetrieverRanks {
+    pub hybrid: Option<usize>,
+    pub lexical: Option<usize>,
+    pub vector: Option<usize>,
+}
+
+#[derive(Default)]
+struct PoolCandidateAccumulator {
+    evidence: BTreeMap<String, JudgmentPoolEvidence>,
+    retrieved_by: PoolRetrieverRanks,
+}
+
+#[derive(Debug, Serialize)]
+pub struct JudgmentPoolGenerationReport {
+    pub candidate_count: usize,
+    pub query_count: usize,
+    pub corpus_file_count: usize,
+    pub chunk_count: usize,
+    pub pool_output: String,
+    pub key_output: String,
+    pub dataset_queries_sha256: String,
+    pub corpus_manifest_sha256: String,
 }
 
 /// Compare cached ONNX model throughput over a deterministic sample produced by
@@ -331,6 +448,475 @@ pub fn run_embedding_benchmark(
     })
 }
 
+/// Build a blinded annotation pool by merging file candidates from the hybrid,
+/// lexical, and vector search channels. The rank-reveal key is written
+/// separately from the annotator artifact.
+pub fn generate_judgment_pool(
+    dataset: Option<&Path>,
+    corpus_root: Option<&Path>,
+    pool_output: &Path,
+    key_output: &Path,
+    depth: usize,
+    seed: u64,
+) -> Result<JudgmentPoolGenerationReport> {
+    if !(1..=100).contains(&depth) {
+        anyhow::bail!("pool depth must be between 1 and 100");
+    }
+    ensure_new_distinct_outputs(pool_output, key_output)?;
+
+    let config = Config::load()?;
+    let model_dir = crate::rag_app::model_directory(&config);
+    if !embedder::model_files_present(&model_dir, &config.embeddings.model) {
+        anyhow::bail!(
+            "judgment pooling requires the configured model to be cached; run `bpx-rag models download` first ({})",
+            model_dir.display()
+        );
+    }
+    let model = Embedder::load_cached(
+        &model_dir,
+        &config.embeddings.model,
+        config.embeddings.batch_size,
+        config.embeddings.intra_threads,
+    )?;
+    let model_id = model.model_id().to_string();
+
+    let data_dir = dataset.map_or_else(
+        || PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("eval/retrieval"),
+        Path::to_path_buf,
+    );
+    let corpus_dir = corpus_root.map_or_else(|| data_dir.join("corpus"), Path::to_path_buf);
+    if !data_dir.is_dir() {
+        anyhow::bail!(
+            "judgment dataset directory does not exist: {}",
+            data_dir.display()
+        );
+    }
+    if !corpus_dir.is_dir() {
+        anyhow::bail!(
+            "judgment corpus directory does not exist: {}",
+            corpus_dir.display()
+        );
+    }
+    let query_path = data_dir.join("queries.jsonl");
+    let query_bytes = fs::read(&query_path)
+        .with_context(|| format!("failed to read evaluation queries {}", query_path.display()))?;
+    let dataset_queries_sha256 = format!("{:x}", Sha256::digest(&query_bytes));
+    let query_contents = String::from_utf8(query_bytes)
+        .with_context(|| format!("evaluation queries are not UTF-8: {}", query_path.display()))?;
+    let queries = parse_jsonl::<EvalQuery>(&query_contents, &query_path)?;
+    validate_queries(&queries)?;
+    if queries.is_empty() {
+        anyhow::bail!("judgment query set is empty");
+    }
+    let corpus_before = corpus_manifest_sha256(&corpus_dir)?;
+
+    let mut store = knowledge::open_in_memory()?;
+    store.set_embedder(Arc::new(model));
+    store.add_source(
+        "judgment-pool",
+        &corpus_dir.to_string_lossy(),
+        None,
+        &["frontmatter".into()],
+    )?;
+    let source = store
+        .get_source("judgment-pool")?
+        .ok_or_else(|| anyhow!("could not load judgment-pool source"))?;
+    let enrichment =
+        knowledge::enrichment::build_enrichment_fn(&source.enrichments, Path::new(&source.path));
+    let enrichment_ref = enrichment
+        .as_ref()
+        .map(|function| function.as_ref() as &dyn Fn(&str, &Path) -> serde_json::Value);
+    let sync = knowledge::sync::sync_source(&store, &source, enrichment_ref)?;
+    let corpus_after = corpus_manifest_sha256(&corpus_dir)?;
+    if corpus_before != corpus_after {
+        anyhow::bail!("judgment corpus changed during indexing; retry pool generation");
+    }
+
+    let mut pool_candidates = Vec::new();
+    let mut key_candidates = Vec::new();
+    for query in &queries {
+        let blinded_query_id = opaque_id(seed, "query", &query.query_id);
+        let mut candidates: BTreeMap<String, PoolCandidateAccumulator> = BTreeMap::new();
+        let channels = [
+            (
+                "hybrid",
+                SearchWeights {
+                    keyword_weight: 1.0,
+                    vector_weight: 1.0,
+                },
+            ),
+            (
+                "lexical",
+                SearchWeights {
+                    keyword_weight: 1.0,
+                    vector_weight: 0.0,
+                },
+            ),
+            (
+                "vector",
+                SearchWeights {
+                    keyword_weight: 0.0,
+                    vector_weight: 1.0,
+                },
+            ),
+        ];
+        for (channel, weights) in channels {
+            let results = knowledge::search::knowledge_search(
+                &store,
+                &query.text,
+                query.filter.as_deref(),
+                Some("judgment-pool"),
+                depth as u32,
+                &weights,
+                1200,
+            )?;
+            for (rank, result) in results.into_iter().enumerate() {
+                let candidate = candidates.entry(result.file_path.clone()).or_default();
+                let evidence_key = format!(
+                    "{}:{}:{}",
+                    result.lines,
+                    result.title,
+                    sha256(&result.snippet)
+                );
+                candidate
+                    .evidence
+                    .entry(evidence_key)
+                    .or_insert(JudgmentPoolEvidence {
+                        title: result.title,
+                        lines: result.lines,
+                        snippet: result.snippet,
+                    });
+                match channel {
+                    "hybrid" => {
+                        candidate.retrieved_by.hybrid = Some(
+                            candidate
+                                .retrieved_by
+                                .hybrid
+                                .map_or(rank + 1, |old| old.min(rank + 1)),
+                        );
+                    }
+                    "lexical" => {
+                        candidate.retrieved_by.lexical = Some(
+                            candidate
+                                .retrieved_by
+                                .lexical
+                                .map_or(rank + 1, |old| old.min(rank + 1)),
+                        );
+                    }
+                    "vector" => {
+                        candidate.retrieved_by.vector = Some(
+                            candidate
+                                .retrieved_by
+                                .vector
+                                .map_or(rank + 1, |old| old.min(rank + 1)),
+                        );
+                    }
+                    _ => anyhow::bail!("unexpected judgment-pool retrieval channel"),
+                }
+            }
+        }
+
+        for (path, candidate) in candidates {
+            let candidate_id =
+                opaque_id(seed, "candidate", &format!("{}:{path}", blinded_query_id));
+            pool_candidates.push(JudgmentPoolCandidate {
+                blinded_query_id: blinded_query_id.clone(),
+                query: query.text.clone(),
+                candidate_id: candidate_id.clone(),
+                path: path.clone(),
+                evidence: candidate.evidence.into_values().collect(),
+                grade: None,
+                reviewer_notes: None,
+            });
+            key_candidates.push(JudgmentPoolKeyEntry {
+                candidate_id,
+                blinded_query_id: blinded_query_id.clone(),
+                query_id: query.query_id.clone(),
+                path,
+                retrieved_by: candidate.retrieved_by,
+            });
+        }
+    }
+
+    pool_candidates.sort_by(|left, right| {
+        (&left.blinded_query_id, &left.candidate_id)
+            .cmp(&(&right.blinded_query_id, &right.candidate_id))
+    });
+    key_candidates.sort_by(|left, right| left.candidate_id.cmp(&right.candidate_id));
+    if sha256_file(&query_path)? != dataset_queries_sha256 {
+        anyhow::bail!("evaluation queries changed during judgment-pool generation; retry");
+    }
+    if corpus_manifest_sha256(&corpus_dir)? != corpus_after {
+        anyhow::bail!("judgment corpus changed during candidate retrieval; retry pool generation");
+    }
+    let corpus_manifest_sha256 = corpus_after;
+    let pool_artifact = JudgmentPoolArtifact {
+        schema_version: JUDGMENT_POOL_SCHEMA_VERSION,
+        seed,
+        candidate_depth_per_retriever: depth,
+        dataset_queries_sha256: dataset_queries_sha256.clone(),
+        corpus_manifest_sha256: corpus_manifest_sha256.clone(),
+        corpus_file_count: sync.files_scanned,
+        chunk_count: sync.chunks_total,
+        grade_guide: vec![
+            GradeGuideEntry {
+                grade: 0,
+                meaning: "Not relevant to answering this query".into(),
+            },
+            GradeGuideEntry {
+                grade: 1,
+                meaning: "Related, but provides little direct help".into(),
+            },
+            GradeGuideEntry {
+                grade: 2,
+                meaning: "Useful supporting evidence".into(),
+            },
+            GradeGuideEntry {
+                grade: 3,
+                meaning: "Directly answers or is essential to answering the query".into(),
+            },
+        ],
+        candidates: pool_candidates,
+    };
+    let key_artifact = JudgmentPoolKey {
+        schema_version: JUDGMENT_POOL_SCHEMA_VERSION,
+        seed,
+        dataset_queries_sha256: dataset_queries_sha256.clone(),
+        corpus_manifest_sha256: corpus_manifest_sha256.clone(),
+        model_id,
+        candidate_depth_per_retriever: depth,
+        candidates: key_candidates,
+    };
+    write_new_json(pool_output, &pool_artifact)?;
+    write_new_json(key_output, &key_artifact)?;
+
+    Ok(JudgmentPoolGenerationReport {
+        candidate_count: pool_artifact.candidates.len(),
+        query_count: queries.len(),
+        corpus_file_count: sync.files_scanned,
+        chunk_count: sync.chunks_total,
+        pool_output: pool_output.display().to_string(),
+        key_output: key_output.display().to_string(),
+        dataset_queries_sha256,
+        corpus_manifest_sha256,
+    })
+}
+
+/// Import completed human grades from a pool and its separate reveal key.
+/// Unreviewed candidates stay out of qrels, while explicit grade zero remains
+/// a judged nonrelevant document.
+pub fn import_judgment_pool(
+    pool_path: &Path,
+    key_path: &Path,
+    dataset: &Path,
+    corpus_root: &Path,
+    output: &Path,
+) -> Result<usize> {
+    ensure_new_output(output)?;
+    let output_identity = normalized_output_target(output)?;
+    if output_identity == normalized_output_target(pool_path)?
+        || output_identity == normalized_output_target(key_path)?
+    {
+        anyhow::bail!("qrels output must differ from the pool and reveal-key files");
+    }
+    let pool: JudgmentPoolArtifact = read_json_file(pool_path)?;
+    let key: JudgmentPoolKey = read_json_file(key_path)?;
+    if pool.schema_version != JUDGMENT_POOL_SCHEMA_VERSION
+        || key.schema_version != JUDGMENT_POOL_SCHEMA_VERSION
+    {
+        anyhow::bail!("unsupported judgment-pool schema version");
+    }
+    if pool.seed != key.seed
+        || pool.dataset_queries_sha256 != key.dataset_queries_sha256
+        || pool.corpus_manifest_sha256 != key.corpus_manifest_sha256
+        || pool.candidate_depth_per_retriever != key.candidate_depth_per_retriever
+    {
+        anyhow::bail!("judgment pool and reveal key do not match");
+    }
+    let query_path = dataset.join("queries.jsonl");
+    let queries = read_jsonl::<EvalQuery>(&query_path)?;
+    let query_ids = validate_queries(&queries)?;
+    let queries_by_id = queries
+        .iter()
+        .map(|query| (query.query_id.as_str(), query))
+        .collect::<HashMap<_, _>>();
+    if sha256_file(&query_path)? != pool.dataset_queries_sha256 {
+        anyhow::bail!("dataset queries changed since the judgment pool was created");
+    }
+    if corpus_manifest_sha256(corpus_root)? != pool.corpus_manifest_sha256 {
+        anyhow::bail!("corpus changed since the judgment pool was created");
+    }
+
+    let mut key_by_candidate = HashMap::with_capacity(key.candidates.len());
+    for entry in &key.candidates {
+        if !query_ids.contains(&entry.query_id) {
+            anyhow::bail!("reveal key contains unknown query ID {}", entry.query_id);
+        }
+        let expected_blinded_id = opaque_id(key.seed, "query", &entry.query_id);
+        if entry.blinded_query_id != expected_blinded_id {
+            anyhow::bail!("reveal key query ID does not match its blinded ID");
+        }
+        let expected_candidate_id = opaque_id(
+            key.seed,
+            "candidate",
+            &format!("{}:{}", entry.blinded_query_id, entry.path),
+        );
+        if entry.candidate_id != expected_candidate_id {
+            anyhow::bail!("reveal key candidate ID does not match its query and path");
+        }
+        if key_by_candidate
+            .insert(entry.candidate_id.clone(), entry)
+            .is_some()
+        {
+            anyhow::bail!(
+                "duplicate candidate ID in reveal key: {}",
+                entry.candidate_id
+            );
+        }
+    }
+
+    let mut seen_pool_ids = std::collections::HashSet::new();
+    let mut seen_qrel_pairs = std::collections::HashSet::new();
+    let mut qrels = Vec::new();
+    let mut qrel_map: HashMap<String, BTreeMap<String, u8>> = HashMap::new();
+    for candidate in &pool.candidates {
+        if !seen_pool_ids.insert(candidate.candidate_id.as_str()) {
+            anyhow::bail!(
+                "duplicate candidate ID in annotation pool: {}",
+                candidate.candidate_id
+            );
+        }
+        let entry = key_by_candidate
+            .get(&candidate.candidate_id)
+            .ok_or_else(|| {
+                anyhow!(
+                    "candidate is missing from the reveal key: {}",
+                    candidate.candidate_id
+                )
+            })?;
+        if entry.blinded_query_id != candidate.blinded_query_id || entry.path != candidate.path {
+            anyhow::bail!("annotation candidate does not match its reveal-key entry");
+        }
+        let source_query = queries_by_id
+            .get(entry.query_id.as_str())
+            .ok_or_else(|| anyhow!("reveal key references unknown query {}", entry.query_id))?;
+        if candidate.query != source_query.text {
+            anyhow::bail!("annotation candidate query text does not match the source dataset");
+        }
+        let Some(grade) = candidate.grade else {
+            continue;
+        };
+        if grade > 3 {
+            anyhow::bail!(
+                "candidate grade must be between 0 and 3: {}",
+                candidate.candidate_id
+            );
+        }
+        if !seen_qrel_pairs.insert((entry.query_id.clone(), entry.path.clone())) {
+            anyhow::bail!(
+                "annotation pool contains duplicate judgments for {} and {}",
+                entry.query_id,
+                entry.path
+            );
+        }
+        qrels.push(Qrel {
+            query_id: entry.query_id.clone(),
+            path: entry.path.clone(),
+            grade,
+        });
+        qrel_map
+            .entry(entry.query_id.clone())
+            .or_default()
+            .insert(entry.path.clone(), grade);
+    }
+    if seen_pool_ids.len() != key_by_candidate.len() {
+        anyhow::bail!("reveal key contains candidates absent from the annotation pool");
+    }
+    if qrels.is_empty() {
+        anyhow::bail!("annotation pool contains no completed grades");
+    }
+    validate_qrels(&queries, &qrel_map, corpus_root)?;
+    qrels.sort_by(|left, right| (&left.query_id, &left.path).cmp(&(&right.query_id, &right.path)));
+    write_new_jsonl(output, &qrels)?;
+    Ok(qrels.len())
+}
+
+fn opaque_id(seed: u64, kind: &str, value: &str) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(seed.to_be_bytes());
+    hasher.update(kind.as_bytes());
+    hasher.update([0]);
+    hasher.update(value.as_bytes());
+    let digest = format!("{:x}", hasher.finalize());
+    format!("{kind}-{}", &digest[..20])
+}
+
+fn normalized_output_target(path: &Path) -> Result<PathBuf> {
+    let file_name = path
+        .file_name()
+        .ok_or_else(|| anyhow!("output path must include a file name"))?;
+    let parent = path
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+        .unwrap_or(Path::new("."));
+    if !parent.is_dir() {
+        anyhow::bail!("output directory does not exist: {}", parent.display());
+    }
+    Ok(parent.canonicalize()?.join(file_name))
+}
+
+fn ensure_new_output(path: &Path) -> Result<()> {
+    let _ = normalized_output_target(path)?;
+    if path.exists() {
+        anyhow::bail!("refusing to overwrite existing output {}", path.display());
+    }
+    Ok(())
+}
+
+fn ensure_new_distinct_outputs(first: &Path, second: &Path) -> Result<()> {
+    ensure_new_output(first)?;
+    ensure_new_output(second)?;
+    if normalized_output_target(first)? == normalized_output_target(second)? {
+        anyhow::bail!("pool and reveal-key outputs must be different files");
+    }
+    Ok(())
+}
+
+fn write_new_json<T: Serialize>(path: &Path, value: &T) -> Result<()> {
+    let file = OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(path)
+        .with_context(|| format!("could not create output {}", path.display()))?;
+    let mut writer = std::io::BufWriter::new(file);
+    serde_json::to_writer_pretty(&mut writer, value)?;
+    writer.write_all(b"\n")?;
+    writer.flush()?;
+    writer.get_ref().sync_all()?;
+    Ok(())
+}
+
+fn write_new_jsonl<T: Serialize>(path: &Path, records: &[T]) -> Result<()> {
+    let file = OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(path)
+        .with_context(|| format!("could not create output {}", path.display()))?;
+    let mut writer = std::io::BufWriter::new(file);
+    for record in records {
+        serde_json::to_writer(&mut writer, record)?;
+        writer.write_all(b"\n")?;
+    }
+    writer.flush()?;
+    writer.get_ref().sync_all()?;
+    Ok(())
+}
+
+fn read_json_file<T: for<'de> Deserialize<'de>>(path: &Path) -> Result<T> {
+    let bytes = fs::read(path).with_context(|| format!("failed to read {}", path.display()))?;
+    serde_json::from_slice(&bytes).with_context(|| format!("invalid JSON file {}", path.display()))
+}
+
 fn default_thread_sweep(host_threads: usize) -> Vec<usize> {
     let candidates = [
         host_threads.div_ceil(3),
@@ -352,6 +938,8 @@ struct MetricSums {
     recall_at_10: f64,
     precision_at_5: f64,
     precision_at_10: f64,
+    judged_coverage_at_5: f64,
+    judged_coverage_at_10: f64,
     mrr_at_10: f64,
     ndcg_at_10: f64,
     success_at_5: f64,
@@ -364,6 +952,8 @@ impl MetricSums {
         self.recall_at_10 += metrics.recall_at_10;
         self.precision_at_5 += metrics.precision_at_5;
         self.precision_at_10 += metrics.precision_at_10;
+        self.judged_coverage_at_5 += metrics.judged_coverage_at_5;
+        self.judged_coverage_at_10 += metrics.judged_coverage_at_10;
         self.mrr_at_10 += metrics.mrr_at_10;
         self.ndcg_at_10 += metrics.ndcg_at_10;
         self.success_at_5 += metrics.success_at_5;
@@ -377,6 +967,8 @@ impl MetricSums {
             recall_at_10: self.recall_at_10 / count,
             precision_at_5: self.precision_at_5 / count,
             precision_at_10: self.precision_at_10 / count,
+            judged_coverage_at_5: self.judged_coverage_at_5 / count,
+            judged_coverage_at_10: self.judged_coverage_at_10 / count,
             mrr_at_10: self.mrr_at_10 / count,
             ndcg_at_10: self.ndcg_at_10 / count,
             success_at_5: self.success_at_5 / count,
@@ -430,11 +1022,38 @@ pub fn run_retrieval_evaluation(
             corpus_dir.display()
         );
     }
-    let queries = read_jsonl::<EvalQuery>(&data_dir.join("queries.jsonl"))?;
-    let qrels = read_qrels(&data_dir.join("qrels.jsonl"))?;
+    let query_path = data_dir.join("queries.jsonl");
+    let qrels_path = data_dir.join("qrels.jsonl");
+    let queries = read_jsonl::<EvalQuery>(&query_path)?;
+    let qrels = read_qrels(&qrels_path)?;
     validate_qrels(&queries, &qrels, &corpus_dir)?;
     if queries.is_empty() || qrels.is_empty() {
         return Err(anyhow!("retrieval evaluation data is empty"));
+    }
+    let queries_sha256 = sha256_file(&query_path)?;
+    let qrels_sha256 = sha256_file(&qrels_path)?;
+    let corpus_manifest_sha256 = corpus_manifest_sha256(&corpus_dir)?;
+    let positive_judgment_count = qrels
+        .values()
+        .flat_map(|judgments| judgments.values())
+        .filter(|grade| **grade > 0)
+        .count();
+    let explicit_negative_judgment_count = qrels
+        .values()
+        .flat_map(|judgments| judgments.values())
+        .filter(|grade| **grade == 0)
+        .count();
+    let mut judgment_sources = queries
+        .iter()
+        .filter_map(|query| query.judgment_source.as_deref())
+        .map(str::trim)
+        .filter(|source| !source.is_empty())
+        .collect::<std::collections::BTreeSet<_>>()
+        .into_iter()
+        .map(str::to_string)
+        .collect::<Vec<_>>();
+    if judgment_sources.is_empty() {
+        judgment_sources.push("unspecified".to_string());
     }
 
     let mut store = knowledge::open_in_memory()?;
@@ -625,6 +1244,12 @@ pub fn run_retrieval_evaluation(
         batch_size: config.embeddings.batch_size,
         intra_threads: config.embeddings.intra_threads,
         candidate_oversample_factor: knowledge::search::CANDIDATE_OVERSAMPLE_FACTOR,
+        queries_sha256,
+        qrels_sha256,
+        corpus_manifest_sha256,
+        positive_judgment_count,
+        explicit_negative_judgment_count,
+        judgment_sources,
         operating_system: std::env::consts::OS.to_string(),
         architecture: std::env::consts::ARCH.to_string(),
         host_threads: std::thread::available_parallelism().map_or(1, usize::from),
@@ -911,8 +1536,13 @@ impl embedder::Embed for ScalingEmbedder {
 }
 
 fn read_jsonl<T: for<'de> Deserialize<'de>>(path: &Path) -> Result<Vec<T>> {
-    fs::read_to_string(path)
-        .with_context(|| format!("failed to read evaluation data {}", path.display()))?
+    let contents = fs::read_to_string(path)
+        .with_context(|| format!("failed to read evaluation data {}", path.display()))?;
+    parse_jsonl(&contents, path)
+}
+
+fn parse_jsonl<T: for<'de> Deserialize<'de>>(contents: &str, path: &Path) -> Result<Vec<T>> {
+    contents
         .lines()
         .filter(|line| !line.trim().is_empty())
         .map(|line| {
@@ -927,15 +1557,22 @@ fn read_qrels(path: &Path) -> Result<HashMap<String, BTreeMap<String, u8>>> {
     let mut judgments: HashMap<String, BTreeMap<String, u8>> = HashMap::new();
     let mut seen_records = std::collections::HashSet::new();
     for record in records {
+        if record.query_id.trim().is_empty() || record.path.trim().is_empty() {
+            anyhow::bail!("relevance judgments require a query ID and corpus path");
+        }
+        if record.grade > 3 {
+            anyhow::bail!(
+                "relevance grade must be between 0 and 3 for query {} and path {}",
+                record.query_id,
+                record.path
+            );
+        }
         if !seen_records.insert((record.query_id.clone(), record.path.clone())) {
             anyhow::bail!(
                 "duplicate relevance judgment for query {} and path {}",
                 record.query_id,
                 record.path
             );
-        }
-        if record.grade == 0 {
-            continue;
         }
         judgments
             .entry(record.query_id)
@@ -950,10 +1587,7 @@ fn validate_qrels(
     qrels: &HashMap<String, BTreeMap<String, u8>>,
     corpus_dir: &Path,
 ) -> Result<()> {
-    let query_ids = queries
-        .iter()
-        .map(|query| query.query_id.as_str())
-        .collect::<std::collections::HashSet<_>>();
+    let query_ids = validate_queries(queries)?;
     if let Some(query_id) = qrels
         .keys()
         .find(|query_id| !query_ids.contains(query_id.as_str()))
@@ -961,10 +1595,9 @@ fn validate_qrels(
         anyhow::bail!("relevance judgments reference unknown query {query_id}");
     }
     for query in queries {
-        if qrels
-            .get(&query.query_id)
-            .map_or(true, |judgments| judgments.is_empty())
-        {
+        if qrels.get(&query.query_id).map_or(true, |judgments| {
+            !judgments.values().any(|grade| *grade > 0)
+        }) {
             anyhow::bail!(
                 "query {} has no positive relevance judgments",
                 query.query_id
@@ -977,6 +1610,9 @@ fn validate_qrels(
             corpus_dir.display()
         )
     })?;
+    let indexable_paths = crate::knowledge::sync::walk_source_dir(corpus_dir, None)?
+        .into_keys()
+        .collect::<std::collections::HashSet<_>>();
     for path in qrels.values().flat_map(|judgments| judgments.keys()) {
         let relative = Path::new(path);
         if relative.as_os_str().is_empty()
@@ -993,30 +1629,70 @@ fn validate_qrels(
         if !resolved.starts_with(&canonical_root) || !resolved.is_file() {
             anyhow::bail!("judged corpus path is outside the corpus or not a file: {path}");
         }
+        if !indexable_paths.contains(path) {
+            anyhow::bail!("judged corpus file is excluded by indexing rules: {path}");
+        }
     }
     Ok(())
 }
 
+fn validate_queries(queries: &[EvalQuery]) -> Result<std::collections::HashSet<String>> {
+    let mut query_ids = std::collections::HashSet::new();
+    for query in queries {
+        if query.query_id.trim().is_empty()
+            || query.text.trim().is_empty()
+            || query.category.trim().is_empty()
+            || query.language.trim().is_empty()
+        {
+            anyhow::bail!("evaluation queries require nonempty ID, text, category, and language");
+        }
+        if !query_ids.insert(query.query_id.clone()) {
+            anyhow::bail!("duplicate evaluation query ID: {}", query.query_id);
+        }
+    }
+    Ok(query_ids)
+}
+
 fn measure_query(ranked_paths: &[String], judgments: &BTreeMap<String, u8>) -> QualityMetrics {
     let unique_paths = unique_paths(ranked_paths, usize::MAX);
-    let relevant_total = judgments.len().max(1) as f64;
+    let relevant_total = judgments
+        .values()
+        .filter(|grade| **grade > 0)
+        .count()
+        .max(1) as f64;
     let relevant_at = |cutoff: usize| {
         unique_paths
             .iter()
             .take(cutoff)
-            .filter(|path| judgments.contains_key(path.as_str()))
+            .filter(|path| judgments.get(path.as_str()).is_some_and(|grade| *grade > 0))
             .count()
+    };
+    let judged_coverage_at = |cutoff: usize| {
+        let returned = unique_paths.len().min(cutoff);
+        if returned == 0 {
+            return 0.0;
+        }
+        let judged = unique_paths
+            .iter()
+            .take(cutoff)
+            .filter(|path| judgments.contains_key(path.as_str()))
+            .count();
+        judged as f64 / returned as f64
     };
     let mrr_at_10 = unique_paths
         .iter()
         .take(TOP_K)
-        .position(|path| judgments.contains_key(path.as_str()))
+        .position(|path| judgments.get(path.as_str()).is_some_and(|grade| *grade > 0))
         .map_or(0.0, |rank| 1.0 / (rank as f64 + 1.0));
     let actual_dcg = dcg(unique_paths
         .iter()
         .take(TOP_K)
         .map(|path| judgments.get(path.as_str()).copied().unwrap_or(0)));
-    let mut ideal_grades = judgments.values().copied().collect::<Vec<_>>();
+    let mut ideal_grades = judgments
+        .values()
+        .copied()
+        .filter(|grade| *grade > 0)
+        .collect::<Vec<_>>();
     ideal_grades.sort_by(|left, right| right.cmp(left));
     let ideal_dcg = dcg(ideal_grades.into_iter().take(TOP_K));
     let found_at_5 = relevant_at(5);
@@ -1025,6 +1701,8 @@ fn measure_query(ranked_paths: &[String], judgments: &BTreeMap<String, u8>) -> Q
         recall_at_10: relevant_at(TOP_K) as f64 / relevant_total,
         precision_at_5: found_at_5 as f64 / 5.0,
         precision_at_10: relevant_at(TOP_K) as f64 / TOP_K as f64,
+        judged_coverage_at_5: judged_coverage_at(5),
+        judged_coverage_at_10: judged_coverage_at(TOP_K),
         mrr_at_10,
         ndcg_at_10: if ideal_dcg == 0.0 {
             0.0
@@ -1177,6 +1855,7 @@ mod tests {
             language: "rust".to_string(),
             filter: None,
             expected_language: None,
+            judgment_source: None,
         };
         let unknown = HashMap::from([(
             "unknown".to_string(),
@@ -1209,6 +1888,7 @@ mod tests {
             language: "rust".to_string(),
             filter: None,
             expected_language: None,
+            judgment_source: None,
         };
         let qrels = HashMap::from([(
             "known".to_string(),

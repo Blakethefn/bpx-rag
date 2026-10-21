@@ -1,5 +1,7 @@
 /target
 docs/
+!eval/retrieval/corpus/docs/
+!eval/retrieval/corpus/docs/**
 # Local cargo config (contains machine-specific paths)
 .cargo/config.toml
 

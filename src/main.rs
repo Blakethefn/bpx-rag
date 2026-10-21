@@ -112,6 +112,39 @@ fn run_evaluation(action: EvalAction) -> Result<()> {
             )?;
             println!("{}", serde_json::to_string_pretty(&report)?);
         }
+        EvalAction::Pool {
+            dataset,
+            corpus_root,
+            output,
+            key_output,
+            depth,
+            seed,
+        } => {
+            let report = eval::generate_judgment_pool(
+                dataset.as_deref(),
+                corpus_root.as_deref(),
+                &output,
+                &key_output,
+                depth,
+                seed,
+            )?;
+            println!("{}", serde_json::to_string_pretty(&report)?);
+        }
+        EvalAction::ImportPool {
+            pool,
+            key,
+            dataset,
+            corpus_root,
+            output,
+        } => {
+            let imported =
+                eval::import_judgment_pool(&pool, &key, &dataset, &corpus_root, &output)?;
+            println!(
+                "Imported {} explicit relevance grades into {}.",
+                imported,
+                output.display()
+            );
+        }
     }
     Ok(())
 }

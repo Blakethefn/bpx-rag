@@ -147,4 +147,39 @@ pub enum EvalAction {
         #[arg(long, default_value = "32")]
         max_chunks: usize,
     },
+    /// Build a blinded pool of lexical, vector, and hybrid file candidates for human relevance grading.
+    Pool {
+        /// Dataset directory containing queries.jsonl. Defaults to the bundled fixture.
+        #[arg(long, value_hint = ValueHint::DirPath)]
+        dataset: Option<PathBuf>,
+        /// Corpus tree to index. Defaults to <dataset>/corpus.
+        #[arg(long, value_hint = ValueHint::DirPath)]
+        corpus_root: Option<PathBuf>,
+        /// New JSON file for annotators; snippets and relative paths are included.
+        #[arg(long, value_hint = ValueHint::FilePath)]
+        output: PathBuf,
+        /// New JSON file containing the separate retrieval-rank reveal key.
+        #[arg(long, value_hint = ValueHint::FilePath)]
+        key_output: PathBuf,
+        /// Distinct files to retrieve per search channel before pooling.
+        #[arg(long, default_value = "20")]
+        depth: usize,
+        /// Stable shuffle seed for blinded IDs and candidate order.
+        #[arg(long, default_value = "20261021")]
+        seed: u64,
+    },
+    /// Import completed pool grades into the evaluator's JSONL qrels format.
+    ImportPool {
+        #[arg(long, value_hint = ValueHint::FilePath)]
+        pool: PathBuf,
+        #[arg(long, value_hint = ValueHint::FilePath)]
+        key: PathBuf,
+        #[arg(long, value_hint = ValueHint::DirPath)]
+        dataset: PathBuf,
+        #[arg(long, value_hint = ValueHint::DirPath)]
+        corpus_root: PathBuf,
+        /// New output qrels file. Existing files are never overwritten.
+        #[arg(long, value_hint = ValueHint::FilePath)]
+        output: PathBuf,
+    },
 }
