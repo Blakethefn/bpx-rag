@@ -364,9 +364,6 @@ fn apply_graph_rerank(
     let mut source_by_file: std::collections::HashMap<i64, (String, i64)> =
         std::collections::HashMap::new();
     for chunk in linked_chunks {
-        if neighbor_by_file.contains_key(&chunk.file_id) {
-            continue;
-        }
         if let Some(scope) = source_scope {
             let source = knowledge_source_for_file(ks, chunk.file_id)?;
             if scope != source.0 {
@@ -374,7 +371,20 @@ fn apply_graph_rerank(
             }
             source_by_file.insert(chunk.file_id, source);
         }
-        neighbor_by_file.insert(chunk.file_id, chunk);
+        let chunk_has_lines = chunk.line_start > 0 && chunk.line_end >= chunk.line_start;
+        match neighbor_by_file.entry(chunk.file_id) {
+            std::collections::hash_map::Entry::Vacant(entry) => {
+                entry.insert(chunk);
+            }
+            std::collections::hash_map::Entry::Occupied(mut entry)
+                if (entry.get().line_start == 0
+                    || entry.get().line_end < entry.get().line_start)
+                    && chunk_has_lines =>
+            {
+                entry.insert(chunk);
+            }
+            std::collections::hash_map::Entry::Occupied(_) => {}
+        }
     }
 
     let existing_files: std::collections::HashSet<i64> =
@@ -394,6 +404,9 @@ fn apply_graph_rerank(
             if injected >= 2 || existing_files.contains(&file_id) {
                 continue;
             }
+            if chunk.line_start == 0 || chunk.line_end < chunk.line_start {
+                continue;
+            }
             let (source_label, source_id) = match source_by_file.get(&file_id) {
                 Some((label, id)) => (label.clone(), *id),
                 None => knowledge_source_for_file(ks, file_id)?,
@@ -409,7 +422,7 @@ fn apply_graph_rerank(
                 file_path: chunk.rel_path,
                 file_id,
                 source_id,
-                lines: String::new(),
+                lines: format!("{}-{}", chunk.line_start, chunk.line_end),
                 metadata: serde_json::Value::Object(Default::default()),
                 source_type: "knowledge".to_string(),
                 why,

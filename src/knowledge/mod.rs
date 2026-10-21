@@ -77,6 +77,8 @@ pub struct RelatedChunk {
     pub rel_path: String,
     pub title: String,
     pub content: String,
+    pub line_start: u32,
+    pub line_end: u32,
     pub link_type: String,
     pub direction: &'static str,
     /// Traversal depth: 1 = direct link, 2 = link-of-link, etc.
@@ -456,7 +458,8 @@ impl KnowledgeStore {
 
         if matches!(direction, LinkDirection::Forward | LinkDirection::Both) {
             let sql = format!(
-                "SELECT kc.rowid, kcm.file_id, kf.rel_path, kc.title, kc.content, kl.link_type
+                "SELECT kc.rowid, kcm.file_id, kf.rel_path, kc.title, kc.content, kl.link_type,
+                        COALESCE(kcm.line_start, 0), COALESCE(kcm.line_end, 0)
                  FROM knowledge_links kl
                  JOIN knowledge_chunk_meta kcm ON kcm.file_id = kl.target_file_id
                  JOIN knowledge_chunks kc ON kc.rowid = kcm.chunk_rowid
@@ -482,6 +485,8 @@ impl KnowledgeStore {
                     title: row.get(3)?,
                     content: row.get(4)?,
                     link_type: row.get(5)?,
+                    line_start: row.get(6)?,
+                    line_end: row.get(7)?,
                     direction: "forward",
                     hop: 1,
                 })
@@ -495,7 +500,8 @@ impl KnowledgeStore {
             let remaining = max_results.saturating_sub(results.len());
             if remaining > 0 {
                 let sql = format!(
-                    "SELECT kc.rowid, kcm.file_id, kf.rel_path, kc.title, kc.content, kl.link_type
+                    "SELECT kc.rowid, kcm.file_id, kf.rel_path, kc.title, kc.content, kl.link_type,
+                            COALESCE(kcm.line_start, 0), COALESCE(kcm.line_end, 0)
                      FROM knowledge_links kl
                      JOIN knowledge_chunk_meta kcm ON kcm.file_id = kl.source_file_id
                      JOIN knowledge_chunks kc ON kc.rowid = kcm.chunk_rowid
@@ -521,6 +527,8 @@ impl KnowledgeStore {
                         title: row.get(3)?,
                         content: row.get(4)?,
                         link_type: row.get(5)?,
+                        line_start: row.get(6)?,
+                        line_end: row.get(7)?,
                         direction: "backward",
                         hop: 1,
                     })
