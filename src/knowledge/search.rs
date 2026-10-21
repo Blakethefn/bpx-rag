@@ -58,48 +58,61 @@ pub fn knowledge_search(
 
     let mut all_results: HashMap<i64, ScoredResult> = HashMap::new();
 
-    // Layer 1: FTS5 BM25
-    let bm25 = knowledge_bm25_search(conn, query, limit, &meta_where, &meta_params)?;
-    merge_results(&mut all_results, &bm25, weights.keyword_weight, "bm25");
+    if weights.keyword_weight > 0.0 {
+        // Layer 1: FTS5 BM25
+        let bm25 = knowledge_bm25_search(conn, query, limit, &meta_where, &meta_params)?;
+        merge_results(&mut all_results, &bm25, weights.keyword_weight, "bm25");
 
-    // Layer 2: Trigram (if BM25 returned fewer than limit)
-    if bm25.len() < limit as usize {
-        let trigram = knowledge_trigram_search(conn, query, limit, &meta_where, &meta_params)?;
-        merge_results(
-            &mut all_results,
-            &trigram,
-            weights.keyword_weight,
-            "trigram",
-        );
-    }
+        // Layer 2: Trigram (if BM25 returned fewer than limit)
+        if bm25.len() < limit as usize {
+            let trigram = knowledge_trigram_search(conn, query, limit, &meta_where, &meta_params)?;
+            merge_results(
+                &mut all_results,
+                &trigram,
+                weights.keyword_weight,
+                "trigram",
+            );
+        }
 
-    // Layer 3: Fuzzy (if still under limit)
-    if all_results.len() < limit as usize {
-        let fuzzy = knowledge_fuzzy_search(conn, query, limit, &meta_where, &meta_params)?;
-        merge_results(&mut all_results, &fuzzy, weights.keyword_weight, "fuzzy");
+        // Layer 3: Fuzzy (if still under limit)
+        if all_results.len() < limit as usize {
+            let fuzzy = knowledge_fuzzy_search(conn, query, limit, &meta_where, &meta_params)?;
+            merge_results(&mut all_results, &fuzzy, weights.keyword_weight, "fuzzy");
+        }
     }
 
     // Layer 4: Vector similarity
-    if let Some(emb) = store.embedder() {
-        match emb
-            .embed_one(query)
-            .and_then(|vector| embedder::normalize_embedding(&vector, emb.dim()))
-        {
-            Ok(query_embedding) => {
-                let vector = knowledge_vector_search(
-                    conn,
-                    &query_embedding,
-                    limit,
-                    &meta_where,
-                    &meta_params,
-                    // Dense retrieval must search the entire metadata-filtered corpus.
-                    // Restricting vectors to lexical hits makes semantic-only matches impossible.
-                    None,
-                )?;
-                merge_results(&mut all_results, &vector, weights.vector_weight, "vector");
-            }
-            Err(e) => {
-                eprintln!("[bpx-rag] knowledge query embedding failed, skipping vector layer: {e}");
+    if weights.vector_weight > 0.0 {
+        if let Some(emb) = store.embedder() {
+            match emb
+                .embed_one(query)
+                .and_then(|vector| embedder::normalize_embedding(&vector, emb.dim()))
+            {
+                Ok(query_embedding) => {
+                    let candidates = store.vector_candidates(
+                        emb.model_id(),
+                        &query_embedding,
+                        limit,
+                        &predicates,
+                    )?;
+                    let vector = knowledge_vector_search(
+                        conn,
+                        &query_embedding,
+                        limit,
+                        &meta_where,
+                        &meta_params,
+                        emb.model_id(),
+                        // ANN IDs come from the active model's full vector space, not
+                        // lexical hits. SQL rechecks model, metadata, and exact scores.
+                        candidates.as_deref(),
+                    )?;
+                    merge_results(&mut all_results, &vector, weights.vector_weight, "vector");
+                }
+                Err(e) => {
+                    eprintln!(
+                        "[bpx-rag] knowledge query embedding failed, skipping vector layer: {e}"
+                    );
+                }
             }
         }
     }
@@ -493,8 +506,12 @@ fn knowledge_vector_search(
     limit: u32,
     meta_where: &str,
     meta_params: &[String],
+    model_id: &str,
     candidate_rowids: Option<&[i64]>,
 ) -> Result<Vec<RankedResult>> {
+    if candidate_rowids.is_some_and(|rowids| rowids.is_empty()) || limit == 0 {
+        return Ok(Vec::new());
+    }
     let mut params: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
 
     // Metadata filter params
@@ -523,6 +540,10 @@ fn knowledge_vector_search(
          JOIN knowledge_sources ks ON ks.id = kcm.source_id
          WHERE 1=1{meta_clause}"
     );
+
+    let model_param_index = params.len() + 1;
+    sql.push_str(&format!(" AND ke.model_id = ?{model_param_index}"));
+    params.push(Box::new(model_id.to_string()));
 
     if let Some(rowids) = candidate_rowids {
         if !rowids.is_empty() {
@@ -851,6 +872,83 @@ mod tests {
         assert!(results.iter().any(|result| {
             result.file_path == "src/migration.md" && result.why.layers.vector > 0.0
         }));
+    }
+
+    #[test]
+    fn dense_retrieval_ignores_vectors_from_a_different_model() {
+        let mut store = make_store();
+        store.set_embedder(Arc::new(SemanticTestEmbedder));
+        let rowid = seed_chunk(
+            &store,
+            "repo",
+            "/repo",
+            "src/migration.md",
+            "Ocean migration",
+            "blue ocean migration paths of large mammals",
+            "{}",
+        );
+        let incompatible = SemanticTestEmbedder
+            .embed_one("blue ocean migration")
+            .unwrap();
+        store
+            .conn()
+            .execute(
+                "INSERT INTO knowledge_embeddings (chunk_rowid, embedding, dim, model_id)
+             VALUES (?1, ?2, 2, 'jinaai/jina-embeddings-v2-base-code')",
+                params![rowid, embedder::embedding_to_bytes(&incompatible)],
+            )
+            .unwrap();
+
+        let results = knowledge_search(
+            &store,
+            "whale",
+            None,
+            None,
+            10,
+            &SearchWeights::default(),
+            2000,
+        )
+        .unwrap();
+
+        assert!(
+            results.is_empty(),
+            "vectors from a foreign model must not be compared"
+        );
+    }
+
+    #[test]
+    fn explicit_empty_vector_candidates_return_no_results() {
+        let store = make_store();
+        let rowid = seed_chunk(
+            &store,
+            "repo",
+            "/repo",
+            "src/vector.md",
+            "Vector chunk",
+            "text that would otherwise be searchable",
+            "{}",
+        );
+        store
+            .conn()
+            .execute(
+                "INSERT INTO knowledge_embeddings (chunk_rowid, embedding, dim)
+                 VALUES (?1, ?2, 2)",
+                params![rowid, embedder::embedding_to_bytes(&[1.0, 0.0])],
+            )
+            .unwrap();
+
+        let results = knowledge_vector_search(
+            store.conn(),
+            &[1.0, 0.0],
+            10,
+            "",
+            &[],
+            "sentence-transformers/all-MiniLM-L6-v2",
+            Some(&[]),
+        )
+        .unwrap();
+
+        assert!(results.is_empty());
     }
 
     #[test]

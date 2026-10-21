@@ -96,7 +96,7 @@ pub struct CleanupConfig {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct EmbeddingsConfig {
-    /// Model name (default: all-MiniLM-L6-v2)
+    /// Model alias: all-MiniLM-L6-v2 or jina-embeddings-v2-base-code.
     pub model: String,
     /// Directory for storing downloaded models
     pub model_dir: String,
@@ -118,7 +118,7 @@ impl Default for EmbeddingsConfig {
             .unwrap_or_else(|| "~/.local/share/bpcontext/models".to_string());
 
         Self {
-            model: "all-MiniLM-L6-v2".to_string(),
+            model: "jina-embeddings-v2-base-code".to_string(),
             model_dir,
             batch_size: 32,
             enabled: true,

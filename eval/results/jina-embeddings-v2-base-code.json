@@ -1,0 +1,1725 @@
+{
+  "model_name": "jina-embeddings-v2-base-code",
+  "model_id": "jinaai/jina-embeddings-v2-base-code",
+  "embedding_dimension": 768,
+  "operating_system": "linux",
+  "architecture": "x86_64",
+  "host_threads": 12,
+  "query_count": 34,
+  "corpus_file_count": 34,
+  "chunk_count": 38,
+  "repetitions": 5,
+  "model_load_ms": 1118.8517339999999,
+  "indexing_ms": 1687.320227,
+  "database_bytes": 368640,
+  "model_artifact_bytes": 644080771,
+  "warm_query_p50_ms": 21.122614000000002,
+  "warm_query_p95_ms": 24.123486999999997,
+  "overall": {
+    "recall_at_5": 0.980392156862745,
+    "recall_at_10": 0.980392156862745,
+    "precision_at_5": 0.22941176470588248,
+    "precision_at_10": 0.11470588235294124,
+    "mrr_at_10": 0.9338235294117647,
+    "ndcg_at_10": 0.9222381080693991,
+    "success_at_5": 1.0
+  },
+  "lexical_only": {
+    "recall_at_5": 0.5441176470588235,
+    "recall_at_10": 0.980392156862745,
+    "precision_at_5": 0.1294117647058824,
+    "precision_at_10": 0.11470588235294124,
+    "mrr_at_10": 0.5234477124183005,
+    "ndcg_at_10": 0.5977250217704281,
+    "success_at_5": 0.6176470588235294
+  },
+  "vector_only": {
+    "recall_at_5": 0.980392156862745,
+    "recall_at_10": 0.980392156862745,
+    "precision_at_5": 0.22941176470588248,
+    "precision_at_10": 0.11470588235294124,
+    "mrr_at_10": 0.9338235294117647,
+    "ndcg_at_10": 0.9222381080693991,
+    "success_at_5": 1.0
+  },
+  "cases": [
+    {
+      "query_id": "auth_expiry",
+      "category": "natural_language",
+      "language": "rust",
+      "hybrid": {
+        "recall_at_5": 1.0,
+        "recall_at_10": 1.0,
+        "precision_at_5": 0.4,
+        "precision_at_10": 0.2,
+        "mrr_at_10": 1.0,
+        "ndcg_at_10": 0.7309292742059024,
+        "success_at_5": 1.0
+      },
+      "lexical_only": {
+        "recall_at_5": 0.5,
+        "recall_at_10": 1.0,
+        "precision_at_5": 0.2,
+        "precision_at_10": 0.2,
+        "mrr_at_10": 1.0,
+        "ndcg_at_10": 0.888707665873224,
+        "success_at_5": 1.0
+      },
+      "vector_only": {
+        "recall_at_5": 1.0,
+        "recall_at_10": 1.0,
+        "precision_at_5": 0.4,
+        "precision_at_10": 0.2,
+        "mrr_at_10": 1.0,
+        "ndcg_at_10": 0.7309292742059024,
+        "success_at_5": 1.0
+      },
+      "top_paths": [
+        "java/expiry.java",
+        "lua/bucket.lua",
+        "rust/auth.rs",
+        "dart/decode.dart",
+        "dart/refresh.dart",
+        "swift/keychain.swift",
+        "lua/counter.lua",
+        "ruby/password_policy.rb",
+        "csharp/payment_retry.cs",
+        "typescript/timeout.ts"
+      ]
+    },
+    {
+      "query_id": "lru_eviction",
+      "category": "natural_language",
+      "language": "python",
+      "hybrid": {
+        "recall_at_5": 1.0,
+        "recall_at_10": 1.0,
+        "precision_at_5": 0.2,
+        "precision_at_10": 0.1,
+        "mrr_at_10": 1.0,
+        "ndcg_at_10": 1.0,
+        "success_at_5": 1.0
+      },
+      "lexical_only": {
+        "recall_at_5": 0.0,
+        "recall_at_10": 1.0,
+        "precision_at_5": 0.0,
+        "precision_at_10": 0.1,
+        "mrr_at_10": 0.1,
+        "ndcg_at_10": 0.2890648263178878,
+        "success_at_5": 0.0
+      },
+      "vector_only": {
+        "recall_at_5": 1.0,
+        "recall_at_10": 1.0,
+        "precision_at_5": 0.2,
+        "precision_at_10": 0.1,
+        "mrr_at_10": 1.0,
+        "ndcg_at_10": 1.0,
+        "success_at_5": 1.0
+      },
+      "top_paths": [
+        "python/cache.py",
+        "csharp/idempotency.cs",
+        "lua/bucket.lua",
+        "cpp/task_cancel.cpp",
+        "go/queue.go",
+        "cpp/pool.cpp",
+        "sql/index.sql",
+        "lua/counter.lua",
+        "java/session.java",
+        "c/buffer.c"
+      ]
+    },
+    {
+      "query_id": "retry_backoff",
+      "category": "natural_language",
+      "language": "typescript",
+      "hybrid": {
+        "recall_at_5": 0.6666666666666666,
+        "recall_at_10": 0.6666666666666666,
+        "precision_at_5": 0.4,
+        "precision_at_10": 0.2,
+        "mrr_at_10": 1.0,
+        "ndcg_at_10": 0.6920202103528978,
+        "success_at_5": 1.0
+      },
+      "lexical_only": {
+        "recall_at_5": 0.3333333333333333,
+        "recall_at_10": 0.6666666666666666,
+        "precision_at_5": 0.2,
+        "precision_at_10": 0.2,
+        "mrr_at_10": 0.3333333333333333,
+        "ndcg_at_10": 0.42516128052173835,
+        "success_at_5": 1.0
+      },
+      "vector_only": {
+        "recall_at_5": 0.6666666666666666,
+        "recall_at_10": 0.6666666666666666,
+        "precision_at_5": 0.4,
+        "precision_at_10": 0.2,
+        "mrr_at_10": 1.0,
+        "ndcg_at_10": 0.6920202103528978,
+        "success_at_5": 1.0
+      },
+      "top_paths": [
+        "python/retry.py",
+        "python/fixed_retry.py",
+        "typescript/retry.ts",
+        "csharp/payment_retry.cs",
+        "typescript/timeout.ts",
+        "lua/bucket.lua",
+        "cpp/task_cancel.cpp",
+        "lua/counter.lua",
+        "javascript/throttle.js",
+        "cpp/pool.cpp"
+      ]
+    },
+    {
+      "query_id": "debounce",
+      "category": "natural_language",
+      "language": "javascript",
+      "hybrid": {
+        "recall_at_5": 1.0,
+        "recall_at_10": 1.0,
+        "precision_at_5": 0.2,
+        "precision_at_10": 0.1,
+        "mrr_at_10": 1.0,
+        "ndcg_at_10": 1.0,
+        "success_at_5": 1.0
+      },
+      "lexical_only": {
+        "recall_at_5": 0.0,
+        "recall_at_10": 1.0,
+        "precision_at_5": 0.0,
+        "precision_at_10": 0.1,
+        "mrr_at_10": 0.1111111111111111,
+        "ndcg_at_10": 0.3010299956639812,
+        "success_at_5": 0.0
+      },
+      "vector_only": {
+        "recall_at_5": 1.0,
+        "recall_at_10": 1.0,
+        "precision_at_5": 0.2,
+        "precision_at_10": 0.1,
+        "mrr_at_10": 1.0,
+        "ndcg_at_10": 1.0,
+        "success_at_5": 1.0
+      },
+      "top_paths": [
+        "javascript/debounce.js",
+        "python/fixed_retry.py",
+        "lua/counter.lua",
+        "typescript/timeout.ts",
+        "lua/bucket.lua",
+        "csharp/idempotency.cs",
+        "cpp/task_cancel.cpp",
+        "sql/fullscan.sql",
+        "ruby/password_policy.rb",
+        "python/retry.py"
+      ]
+    },
+    {
+      "query_id": "queue_ack",
+      "category": "natural_language",
+      "language": "go",
+      "hybrid": {
+        "recall_at_5": 1.0,
+        "recall_at_10": 1.0,
+        "precision_at_5": 0.2,
+        "precision_at_10": 0.1,
+        "mrr_at_10": 1.0,
+        "ndcg_at_10": 1.0,
+        "success_at_5": 1.0
+      },
+      "lexical_only": {
+        "recall_at_5": 0.0,
+        "recall_at_10": 1.0,
+        "precision_at_5": 0.0,
+        "precision_at_10": 0.1,
+        "mrr_at_10": 0.1111111111111111,
+        "ndcg_at_10": 0.3010299956639812,
+        "success_at_5": 0.0
+      },
+      "vector_only": {
+        "recall_at_5": 1.0,
+        "recall_at_10": 1.0,
+        "precision_at_5": 0.2,
+        "precision_at_10": 0.1,
+        "mrr_at_10": 1.0,
+        "ndcg_at_10": 1.0,
+        "success_at_5": 1.0
+      },
+      "top_paths": [
+        "go/queue.go",
+        "csharp/idempotency.cs",
+        "cpp/pool.cpp",
+        "csharp/payment_retry.cs",
+        "typescript/retry.ts",
+        "cpp/task_cancel.cpp",
+        "python/fixed_retry.py",
+        "python/retry.py",
+        "lua/bucket.lua",
+        "lua/counter.lua"
+      ]
+    },
+    {
+      "query_id": "worker_shutdown",
+      "category": "natural_language",
+      "language": "cpp",
+      "hybrid": {
+        "recall_at_5": 1.0,
+        "recall_at_10": 1.0,
+        "precision_at_5": 0.2,
+        "precision_at_10": 0.1,
+        "mrr_at_10": 1.0,
+        "ndcg_at_10": 1.0,
+        "success_at_5": 1.0
+      },
+      "lexical_only": {
+        "recall_at_5": 1.0,
+        "recall_at_10": 1.0,
+        "precision_at_5": 0.2,
+        "precision_at_10": 0.1,
+        "mrr_at_10": 1.0,
+        "ndcg_at_10": 1.0,
+        "success_at_5": 1.0
+      },
+      "vector_only": {
+        "recall_at_5": 1.0,
+        "recall_at_10": 1.0,
+        "precision_at_5": 0.2,
+        "precision_at_10": 0.1,
+        "mrr_at_10": 1.0,
+        "ndcg_at_10": 1.0,
+        "success_at_5": 1.0
+      },
+      "top_paths": [
+        "cpp/pool.cpp",
+        "cpp/task_cancel.cpp",
+        "python/retry.py",
+        "python/fixed_retry.py",
+        "javascript/throttle.js",
+        "typescript/retry.ts",
+        "lua/bucket.lua",
+        "lua/counter.lua",
+        "csharp/payment_retry.cs",
+        "csharp/idempotency.cs"
+      ]
+    },
+    {
+      "query_id": "payment_idempotency",
+      "category": "natural_language",
+      "language": "csharp",
+      "hybrid": {
+        "recall_at_5": 1.0,
+        "recall_at_10": 1.0,
+        "precision_at_5": 0.2,
+        "precision_at_10": 0.1,
+        "mrr_at_10": 1.0,
+        "ndcg_at_10": 1.0,
+        "success_at_5": 1.0
+      },
+      "lexical_only": {
+        "recall_at_5": 0.0,
+        "recall_at_10": 1.0,
+        "precision_at_5": 0.0,
+        "precision_at_10": 0.1,
+        "mrr_at_10": 0.16666666666666666,
+        "ndcg_at_10": 0.3562071871080222,
+        "success_at_5": 0.0
+      },
+      "vector_only": {
+        "recall_at_5": 1.0,
+        "recall_at_10": 1.0,
+        "precision_at_5": 0.2,
+        "precision_at_10": 0.1,
+        "mrr_at_10": 1.0,
+        "ndcg_at_10": 1.0,
+        "success_at_5": 1.0
+      },
+      "top_paths": [
+        "csharp/idempotency.cs",
+        "csharp/payment_retry.cs",
+        "lua/bucket.lua",
+        "kotlin/read_tx.kt",
+        "typescript/retry.ts",
+        "dart/refresh.dart",
+        "python/cache.py",
+        "kotlin/transaction.kt",
+        "python/retry.py",
+        "rust/auth.rs"
+      ]
+    },
+    {
+      "query_id": "atomic_order",
+      "category": "natural_language",
+      "language": "kotlin",
+      "hybrid": {
+        "recall_at_5": 1.0,
+        "recall_at_10": 1.0,
+        "precision_at_5": 0.2,
+        "precision_at_10": 0.1,
+        "mrr_at_10": 1.0,
+        "ndcg_at_10": 1.0,
+        "success_at_5": 1.0
+      },
+      "lexical_only": {
+        "recall_at_5": 0.0,
+        "recall_at_10": 1.0,
+        "precision_at_5": 0.0,
+        "precision_at_10": 0.1,
+        "mrr_at_10": 0.125,
+        "ndcg_at_10": 0.31546487678572877,
+        "success_at_5": 0.0
+      },
+      "vector_only": {
+        "recall_at_5": 1.0,
+        "recall_at_10": 1.0,
+        "precision_at_5": 0.2,
+        "precision_at_10": 0.1,
+        "mrr_at_10": 1.0,
+        "ndcg_at_10": 1.0,
+        "success_at_5": 1.0
+      },
+      "top_paths": [
+        "kotlin/transaction.kt",
+        "kotlin/read_tx.kt",
+        "csharp/idempotency.cs",
+        "go/queue.go",
+        "csharp/payment_retry.cs",
+        "bash/rollback.sh",
+        "c/buffer.c",
+        "python/retry.py",
+        "lua/bucket.lua",
+        "python/fixed_retry.py"
+      ]
+    },
+    {
+      "query_id": "sales_tax",
+      "category": "natural_language",
+      "language": "php",
+      "hybrid": {
+        "recall_at_5": 1.0,
+        "recall_at_10": 1.0,
+        "precision_at_5": 0.2,
+        "precision_at_10": 0.1,
+        "mrr_at_10": 1.0,
+        "ndcg_at_10": 1.0,
+        "success_at_5": 1.0
+      },
+      "lexical_only": {
+        "recall_at_5": 1.0,
+        "recall_at_10": 1.0,
+        "precision_at_5": 0.2,
+        "precision_at_10": 0.1,
+        "mrr_at_10": 1.0,
+        "ndcg_at_10": 1.0,
+        "success_at_5": 1.0
+      },
+      "vector_only": {
+        "recall_at_5": 1.0,
+        "recall_at_10": 1.0,
+        "precision_at_5": 0.2,
+        "precision_at_10": 0.1,
+        "mrr_at_10": 1.0,
+        "ndcg_at_10": 1.0,
+        "success_at_5": 1.0
+      },
+      "top_paths": [
+        "php/tax.php",
+        "php/discount.php",
+        "kotlin/transaction.kt",
+        "csharp/idempotency.cs",
+        "bash/rollback.sh",
+        "csharp/payment_retry.cs",
+        "kotlin/read_tx.kt",
+        "ruby/password.rb",
+        "bash/release.sh",
+        "swift/keychain.swift"
+      ]
+    },
+    {
+      "query_id": "password_hash",
+      "category": "natural_language",
+      "language": "ruby",
+      "hybrid": {
+        "recall_at_5": 1.0,
+        "recall_at_10": 1.0,
+        "precision_at_5": 0.2,
+        "precision_at_10": 0.1,
+        "mrr_at_10": 1.0,
+        "ndcg_at_10": 1.0,
+        "success_at_5": 1.0
+      },
+      "lexical_only": {
+        "recall_at_5": 1.0,
+        "recall_at_10": 1.0,
+        "precision_at_5": 0.2,
+        "precision_at_10": 0.1,
+        "mrr_at_10": 1.0,
+        "ndcg_at_10": 1.0,
+        "success_at_5": 1.0
+      },
+      "vector_only": {
+        "recall_at_5": 1.0,
+        "recall_at_10": 1.0,
+        "precision_at_5": 0.2,
+        "precision_at_10": 0.1,
+        "mrr_at_10": 1.0,
+        "ndcg_at_10": 1.0,
+        "success_at_5": 1.0
+      },
+      "top_paths": [
+        "ruby/password.rb",
+        "ruby/password_policy.rb",
+        "swift/keychain.swift",
+        "rust/auth.rs",
+        "java/expiry.java",
+        "dart/decode.dart",
+        "swift/preferences.swift",
+        "c/buffer_size.c"
+      ]
+    },
+    {
+      "query_id": "atomic_release",
+      "category": "natural_language",
+      "language": "shell",
+      "hybrid": {
+        "recall_at_5": 1.0,
+        "recall_at_10": 1.0,
+        "precision_at_5": 0.2,
+        "precision_at_10": 0.1,
+        "mrr_at_10": 1.0,
+        "ndcg_at_10": 1.0,
+        "success_at_5": 1.0
+      },
+      "lexical_only": {
+        "recall_at_5": 0.0,
+        "recall_at_10": 1.0,
+        "precision_at_5": 0.0,
+        "precision_at_10": 0.1,
+        "mrr_at_10": 0.16666666666666666,
+        "ndcg_at_10": 0.3562071871080222,
+        "success_at_5": 0.0
+      },
+      "vector_only": {
+        "recall_at_5": 1.0,
+        "recall_at_10": 1.0,
+        "precision_at_5": 0.2,
+        "precision_at_10": 0.1,
+        "mrr_at_10": 1.0,
+        "ndcg_at_10": 1.0,
+        "success_at_5": 1.0
+      },
+      "top_paths": [
+        "bash/release.sh",
+        "bash/rollback.sh",
+        "swift/keychain.swift",
+        "java/session.java",
+        "csharp/idempotency.cs",
+        "swift/preferences.swift",
+        "kotlin/transaction.kt",
+        "cpp/pool.cpp",
+        "dart/refresh.dart",
+        "kotlin/read_tx.kt"
+      ]
+    },
+    {
+      "query_id": "rate_limit",
+      "category": "natural_language",
+      "language": "lua",
+      "hybrid": {
+        "recall_at_5": 1.0,
+        "recall_at_10": 1.0,
+        "precision_at_5": 0.2,
+        "precision_at_10": 0.1,
+        "mrr_at_10": 1.0,
+        "ndcg_at_10": 1.0,
+        "success_at_5": 1.0
+      },
+      "lexical_only": {
+        "recall_at_5": 0.0,
+        "recall_at_10": 1.0,
+        "precision_at_5": 0.0,
+        "precision_at_10": 0.1,
+        "mrr_at_10": 0.1,
+        "ndcg_at_10": 0.2890648263178878,
+        "success_at_5": 0.0
+      },
+      "vector_only": {
+        "recall_at_5": 1.0,
+        "recall_at_10": 1.0,
+        "precision_at_5": 0.2,
+        "precision_at_10": 0.1,
+        "mrr_at_10": 1.0,
+        "ndcg_at_10": 1.0,
+        "success_at_5": 1.0
+      },
+      "top_paths": [
+        "lua/bucket.lua",
+        "javascript/throttle.js",
+        "csharp/idempotency.cs",
+        "lua/counter.lua",
+        "csharp/payment_retry.cs",
+        "python/retry.py",
+        "typescript/retry.ts",
+        "python/fixed_retry.py",
+        "python/cache.py",
+        "typescript/timeout.ts"
+      ]
+    },
+    {
+      "query_id": "mobile_refresh",
+      "category": "natural_language",
+      "language": "dart",
+      "hybrid": {
+        "recall_at_5": 1.0,
+        "recall_at_10": 1.0,
+        "precision_at_5": 0.4,
+        "precision_at_10": 0.2,
+        "mrr_at_10": 1.0,
+        "ndcg_at_10": 1.0,
+        "success_at_5": 1.0
+      },
+      "lexical_only": {
+        "recall_at_5": 0.5,
+        "recall_at_10": 1.0,
+        "precision_at_5": 0.2,
+        "precision_at_10": 0.2,
+        "mrr_at_10": 1.0,
+        "ndcg_at_10": 0.4578013980696306,
+        "success_at_5": 1.0
+      },
+      "vector_only": {
+        "recall_at_5": 1.0,
+        "recall_at_10": 1.0,
+        "precision_at_5": 0.4,
+        "precision_at_10": 0.2,
+        "mrr_at_10": 1.0,
+        "ndcg_at_10": 1.0,
+        "success_at_5": 1.0
+      },
+      "top_paths": [
+        "dart/refresh.dart",
+        "swift/keychain.swift",
+        "java/expiry.java",
+        "lua/bucket.lua",
+        "rust/auth.rs",
+        "dart/decode.dart",
+        "csharp/payment_retry.cs",
+        "java/session.java",
+        "csharp/idempotency.cs",
+        "python/cache.py"
+      ]
+    },
+    {
+      "query_id": "secure_storage",
+      "category": "natural_language",
+      "language": "swift",
+      "hybrid": {
+        "recall_at_5": 1.0,
+        "recall_at_10": 1.0,
+        "precision_at_5": 0.2,
+        "precision_at_10": 0.1,
+        "mrr_at_10": 1.0,
+        "ndcg_at_10": 1.0,
+        "success_at_5": 1.0
+      },
+      "lexical_only": {
+        "recall_at_5": 1.0,
+        "recall_at_10": 1.0,
+        "precision_at_5": 0.2,
+        "precision_at_10": 0.1,
+        "mrr_at_10": 1.0,
+        "ndcg_at_10": 1.0,
+        "success_at_5": 1.0
+      },
+      "vector_only": {
+        "recall_at_5": 1.0,
+        "recall_at_10": 1.0,
+        "precision_at_5": 0.2,
+        "precision_at_10": 0.1,
+        "mrr_at_10": 1.0,
+        "ndcg_at_10": 1.0,
+        "success_at_5": 1.0
+      },
+      "top_paths": [
+        "swift/keychain.swift",
+        "ruby/password.rb",
+        "rust/auth.rs",
+        "lua/bucket.lua",
+        "dart/refresh.dart",
+        "ruby/password_policy.rb",
+        "java/expiry.java",
+        "dart/decode.dart",
+        "swift/preferences.swift",
+        "csharp/payment_retry.cs"
+      ]
+    },
+    {
+      "query_id": "tenant_index",
+      "category": "natural_language",
+      "language": "sql",
+      "hybrid": {
+        "recall_at_5": 1.0,
+        "recall_at_10": 1.0,
+        "precision_at_5": 0.2,
+        "precision_at_10": 0.1,
+        "mrr_at_10": 0.5,
+        "ndcg_at_10": 0.6309297535714575,
+        "success_at_5": 1.0
+      },
+      "lexical_only": {
+        "recall_at_5": 0.0,
+        "recall_at_10": 1.0,
+        "precision_at_5": 0.0,
+        "precision_at_10": 0.1,
+        "mrr_at_10": 0.125,
+        "ndcg_at_10": 0.31546487678572877,
+        "success_at_5": 0.0
+      },
+      "vector_only": {
+        "recall_at_5": 1.0,
+        "recall_at_10": 1.0,
+        "precision_at_5": 0.2,
+        "precision_at_10": 0.1,
+        "mrr_at_10": 0.5,
+        "ndcg_at_10": 0.6309297535714575,
+        "success_at_5": 1.0
+      },
+      "top_paths": [
+        "sql/fullscan.sql",
+        "sql/index.sql",
+        "kotlin/read_tx.kt",
+        "java/session.java",
+        "csharp/idempotency.cs",
+        "lua/bucket.lua",
+        "javascript/throttle.js",
+        "dart/refresh.dart",
+        "lua/counter.lua",
+        "cpp/pool.cpp"
+      ]
+    },
+    {
+      "query_id": "symbol_lookup",
+      "category": "exact_identifier",
+      "language": "rust",
+      "hybrid": {
+        "recall_at_5": 1.0,
+        "recall_at_10": 1.0,
+        "precision_at_5": 0.2,
+        "precision_at_10": 0.1,
+        "mrr_at_10": 1.0,
+        "ndcg_at_10": 1.0,
+        "success_at_5": 1.0
+      },
+      "lexical_only": {
+        "recall_at_5": 1.0,
+        "recall_at_10": 1.0,
+        "precision_at_5": 0.2,
+        "precision_at_10": 0.1,
+        "mrr_at_10": 1.0,
+        "ndcg_at_10": 1.0,
+        "success_at_5": 1.0
+      },
+      "vector_only": {
+        "recall_at_5": 1.0,
+        "recall_at_10": 1.0,
+        "precision_at_5": 0.2,
+        "precision_at_10": 0.1,
+        "mrr_at_10": 1.0,
+        "ndcg_at_10": 1.0,
+        "success_at_5": 1.0
+      },
+      "top_paths": [
+        "rust/auth.rs",
+        "lua/bucket.lua",
+        "java/expiry.java",
+        "dart/decode.dart",
+        "lua/counter.lua",
+        "swift/keychain.swift",
+        "dart/refresh.dart",
+        "csharp/idempotency.cs",
+        "typescript/timeout.ts",
+        "java/session.java"
+      ]
+    },
+    {
+      "query_id": "filter_language",
+      "category": "metadata_filter",
+      "language": "rust",
+      "hybrid": {
+        "recall_at_5": 1.0,
+        "recall_at_10": 1.0,
+        "precision_at_5": 0.2,
+        "precision_at_10": 0.1,
+        "mrr_at_10": 1.0,
+        "ndcg_at_10": 1.0,
+        "success_at_5": 1.0
+      },
+      "lexical_only": {
+        "recall_at_5": 1.0,
+        "recall_at_10": 1.0,
+        "precision_at_5": 0.2,
+        "precision_at_10": 0.1,
+        "mrr_at_10": 1.0,
+        "ndcg_at_10": 1.0,
+        "success_at_5": 1.0
+      },
+      "vector_only": {
+        "recall_at_5": 1.0,
+        "recall_at_10": 1.0,
+        "precision_at_5": 0.2,
+        "precision_at_10": 0.1,
+        "mrr_at_10": 1.0,
+        "ndcg_at_10": 1.0,
+        "success_at_5": 1.0
+      },
+      "top_paths": [
+        "rust/auth.rs"
+      ]
+    },
+    {
+      "query_id": "auth_paraphrase",
+      "category": "paraphrase",
+      "language": "rust",
+      "hybrid": {
+        "recall_at_5": 1.0,
+        "recall_at_10": 1.0,
+        "precision_at_5": 0.4,
+        "precision_at_10": 0.2,
+        "mrr_at_10": 1.0,
+        "ndcg_at_10": 0.9176601606601069,
+        "success_at_5": 1.0
+      },
+      "lexical_only": {
+        "recall_at_5": 0.5,
+        "recall_at_10": 1.0,
+        "precision_at_5": 0.2,
+        "precision_at_10": 0.2,
+        "mrr_at_10": 0.2,
+        "ndcg_at_10": 0.36746270439439016,
+        "success_at_5": 1.0
+      },
+      "vector_only": {
+        "recall_at_5": 1.0,
+        "recall_at_10": 1.0,
+        "precision_at_5": 0.4,
+        "precision_at_10": 0.2,
+        "mrr_at_10": 1.0,
+        "ndcg_at_10": 0.9176601606601069,
+        "success_at_5": 1.0
+      },
+      "top_paths": [
+        "rust/auth.rs",
+        "lua/counter.lua",
+        "lua/bucket.lua",
+        "ruby/password_policy.rb",
+        "java/expiry.java",
+        "csharp/payment_retry.cs",
+        "csharp/idempotency.cs",
+        "swift/keychain.swift",
+        "typescript/timeout.ts",
+        "dart/refresh.dart"
+      ]
+    },
+    {
+      "query_id": "cache_paraphrase",
+      "category": "paraphrase",
+      "language": "python",
+      "hybrid": {
+        "recall_at_5": 1.0,
+        "recall_at_10": 1.0,
+        "precision_at_5": 0.2,
+        "precision_at_10": 0.1,
+        "mrr_at_10": 1.0,
+        "ndcg_at_10": 1.0,
+        "success_at_5": 1.0
+      },
+      "lexical_only": {
+        "recall_at_5": 0.0,
+        "recall_at_10": 1.0,
+        "precision_at_5": 0.0,
+        "precision_at_10": 0.1,
+        "mrr_at_10": 0.16666666666666666,
+        "ndcg_at_10": 0.3562071871080222,
+        "success_at_5": 0.0
+      },
+      "vector_only": {
+        "recall_at_5": 1.0,
+        "recall_at_10": 1.0,
+        "precision_at_5": 0.2,
+        "precision_at_10": 0.1,
+        "mrr_at_10": 1.0,
+        "ndcg_at_10": 1.0,
+        "success_at_5": 1.0
+      },
+      "top_paths": [
+        "python/cache.py",
+        "lua/bucket.lua",
+        "csharp/idempotency.cs",
+        "cpp/task_cancel.cpp",
+        "lua/counter.lua",
+        "javascript/throttle.js",
+        "go/queue.go",
+        "c/buffer.c",
+        "cpp/pool.cpp",
+        "sql/index.sql"
+      ]
+    },
+    {
+      "query_id": "retry_paraphrase",
+      "category": "paraphrase",
+      "language": "typescript",
+      "hybrid": {
+        "recall_at_5": 0.6666666666666666,
+        "recall_at_10": 0.6666666666666666,
+        "precision_at_5": 0.4,
+        "precision_at_10": 0.2,
+        "mrr_at_10": 1.0,
+        "ndcg_at_10": 0.6920202103528978,
+        "success_at_5": 1.0
+      },
+      "lexical_only": {
+        "recall_at_5": 0.6666666666666666,
+        "recall_at_10": 0.6666666666666666,
+        "precision_at_5": 0.4,
+        "precision_at_10": 0.2,
+        "mrr_at_10": 1.0,
+        "ndcg_at_10": 0.6076969782038598,
+        "success_at_5": 1.0
+      },
+      "vector_only": {
+        "recall_at_5": 0.6666666666666666,
+        "recall_at_10": 0.6666666666666666,
+        "precision_at_5": 0.4,
+        "precision_at_10": 0.2,
+        "mrr_at_10": 1.0,
+        "ndcg_at_10": 0.6920202103528978,
+        "success_at_5": 1.0
+      },
+      "top_paths": [
+        "python/retry.py",
+        "python/fixed_retry.py",
+        "typescript/retry.ts",
+        "csharp/payment_retry.cs",
+        "lua/bucket.lua",
+        "lua/counter.lua",
+        "csharp/idempotency.cs",
+        "javascript/throttle.js",
+        "dart/refresh.dart",
+        "cpp/task_cancel.cpp"
+      ]
+    },
+    {
+      "query_id": "debounce_paraphrase",
+      "category": "paraphrase",
+      "language": "javascript",
+      "hybrid": {
+        "recall_at_5": 1.0,
+        "recall_at_10": 1.0,
+        "precision_at_5": 0.2,
+        "precision_at_10": 0.1,
+        "mrr_at_10": 1.0,
+        "ndcg_at_10": 1.0,
+        "success_at_5": 1.0
+      },
+      "lexical_only": {
+        "recall_at_5": 1.0,
+        "recall_at_10": 1.0,
+        "precision_at_5": 0.2,
+        "precision_at_10": 0.1,
+        "mrr_at_10": 1.0,
+        "ndcg_at_10": 1.0,
+        "success_at_5": 1.0
+      },
+      "vector_only": {
+        "recall_at_5": 1.0,
+        "recall_at_10": 1.0,
+        "precision_at_5": 0.2,
+        "precision_at_10": 0.1,
+        "mrr_at_10": 1.0,
+        "ndcg_at_10": 1.0,
+        "success_at_5": 1.0
+      },
+      "top_paths": [
+        "javascript/debounce.js",
+        "javascript/throttle.js",
+        "csharp/idempotency.cs",
+        "go/queue.go",
+        "typescript/timeout.ts",
+        "java/session.java",
+        "python/fixed_retry.py",
+        "lua/bucket.lua",
+        "cpp/task_cancel.cpp",
+        "lua/counter.lua"
+      ]
+    },
+    {
+      "query_id": "queue_paraphrase",
+      "category": "paraphrase",
+      "language": "go",
+      "hybrid": {
+        "recall_at_5": 1.0,
+        "recall_at_10": 1.0,
+        "precision_at_5": 0.2,
+        "precision_at_10": 0.1,
+        "mrr_at_10": 0.25,
+        "ndcg_at_10": 0.43067655807339306,
+        "success_at_5": 1.0
+      },
+      "lexical_only": {
+        "recall_at_5": 1.0,
+        "recall_at_10": 1.0,
+        "precision_at_5": 0.2,
+        "precision_at_10": 0.1,
+        "mrr_at_10": 0.25,
+        "ndcg_at_10": 0.43067655807339306,
+        "success_at_5": 1.0
+      },
+      "vector_only": {
+        "recall_at_5": 1.0,
+        "recall_at_10": 1.0,
+        "precision_at_5": 0.2,
+        "precision_at_10": 0.1,
+        "mrr_at_10": 0.25,
+        "ndcg_at_10": 0.43067655807339306,
+        "success_at_5": 1.0
+      },
+      "top_paths": [
+        "lua/bucket.lua",
+        "csharp/payment_retry.cs",
+        "cpp/task_cancel.cpp",
+        "go/queue.go",
+        "csharp/idempotency.cs",
+        "cpp/pool.cpp",
+        "python/retry.py",
+        "python/fixed_retry.py",
+        "typescript/retry.ts",
+        "bash/rollback.sh"
+      ]
+    },
+    {
+      "query_id": "workers_paraphrase",
+      "category": "paraphrase",
+      "language": "cpp",
+      "hybrid": {
+        "recall_at_5": 1.0,
+        "recall_at_10": 1.0,
+        "precision_at_5": 0.2,
+        "precision_at_10": 0.1,
+        "mrr_at_10": 0.5,
+        "ndcg_at_10": 0.6309297535714575,
+        "success_at_5": 1.0
+      },
+      "lexical_only": {
+        "recall_at_5": 1.0,
+        "recall_at_10": 1.0,
+        "precision_at_5": 0.2,
+        "precision_at_10": 0.1,
+        "mrr_at_10": 0.3333333333333333,
+        "ndcg_at_10": 0.5,
+        "success_at_5": 1.0
+      },
+      "vector_only": {
+        "recall_at_5": 1.0,
+        "recall_at_10": 1.0,
+        "precision_at_5": 0.2,
+        "precision_at_10": 0.1,
+        "mrr_at_10": 0.5,
+        "ndcg_at_10": 0.6309297535714575,
+        "success_at_5": 1.0
+      },
+      "top_paths": [
+        "cpp/task_cancel.cpp",
+        "cpp/pool.cpp",
+        "python/retry.py",
+        "python/fixed_retry.py",
+        "typescript/retry.ts",
+        "csharp/payment_retry.cs",
+        "lua/counter.lua",
+        "lua/bucket.lua",
+        "typescript/timeout.ts",
+        "javascript/throttle.js"
+      ]
+    },
+    {
+      "query_id": "payment_paraphrase",
+      "category": "paraphrase",
+      "language": "csharp",
+      "hybrid": {
+        "recall_at_5": 1.0,
+        "recall_at_10": 1.0,
+        "precision_at_5": 0.2,
+        "precision_at_10": 0.1,
+        "mrr_at_10": 1.0,
+        "ndcg_at_10": 1.0,
+        "success_at_5": 1.0
+      },
+      "lexical_only": {
+        "recall_at_5": 0.0,
+        "recall_at_10": 1.0,
+        "precision_at_5": 0.0,
+        "precision_at_10": 0.1,
+        "mrr_at_10": 0.16666666666666666,
+        "ndcg_at_10": 0.3562071871080222,
+        "success_at_5": 0.0
+      },
+      "vector_only": {
+        "recall_at_5": 1.0,
+        "recall_at_10": 1.0,
+        "precision_at_5": 0.2,
+        "precision_at_10": 0.1,
+        "mrr_at_10": 1.0,
+        "ndcg_at_10": 1.0,
+        "success_at_5": 1.0
+      },
+      "top_paths": [
+        "csharp/idempotency.cs",
+        "csharp/payment_retry.cs",
+        "lua/bucket.lua",
+        "kotlin/transaction.kt",
+        "kotlin/read_tx.kt",
+        "php/tax.php",
+        "go/queue.go",
+        "python/retry.py",
+        "typescript/retry.ts",
+        "rust/auth.rs"
+      ]
+    },
+    {
+      "query_id": "transaction_paraphrase",
+      "category": "paraphrase",
+      "language": "kotlin",
+      "hybrid": {
+        "recall_at_5": 1.0,
+        "recall_at_10": 1.0,
+        "precision_at_5": 0.2,
+        "precision_at_10": 0.1,
+        "mrr_at_10": 1.0,
+        "ndcg_at_10": 1.0,
+        "success_at_5": 1.0
+      },
+      "lexical_only": {
+        "recall_at_5": 1.0,
+        "recall_at_10": 1.0,
+        "precision_at_5": 0.2,
+        "precision_at_10": 0.1,
+        "mrr_at_10": 0.2,
+        "ndcg_at_10": 0.38685280723454163,
+        "success_at_5": 1.0
+      },
+      "vector_only": {
+        "recall_at_5": 1.0,
+        "recall_at_10": 1.0,
+        "precision_at_5": 0.2,
+        "precision_at_10": 0.1,
+        "mrr_at_10": 1.0,
+        "ndcg_at_10": 1.0,
+        "success_at_5": 1.0
+      },
+      "top_paths": [
+        "kotlin/transaction.kt",
+        "csharp/idempotency.cs",
+        "kotlin/read_tx.kt",
+        "c/buffer.c",
+        "go/queue.go",
+        "lua/bucket.lua",
+        "cpp/pool.cpp",
+        "bash/rollback.sh",
+        "python/retry.py",
+        "ruby/password.rb"
+      ]
+    },
+    {
+      "query_id": "tax_paraphrase",
+      "category": "paraphrase",
+      "language": "php",
+      "hybrid": {
+        "recall_at_5": 1.0,
+        "recall_at_10": 1.0,
+        "precision_at_5": 0.2,
+        "precision_at_10": 0.1,
+        "mrr_at_10": 1.0,
+        "ndcg_at_10": 1.0,
+        "success_at_5": 1.0
+      },
+      "lexical_only": {
+        "recall_at_5": 0.0,
+        "recall_at_10": 1.0,
+        "precision_at_5": 0.0,
+        "precision_at_10": 0.1,
+        "mrr_at_10": 0.125,
+        "ndcg_at_10": 0.31546487678572877,
+        "success_at_5": 0.0
+      },
+      "vector_only": {
+        "recall_at_5": 1.0,
+        "recall_at_10": 1.0,
+        "precision_at_5": 0.2,
+        "precision_at_10": 0.1,
+        "mrr_at_10": 1.0,
+        "ndcg_at_10": 1.0,
+        "success_at_5": 1.0
+      },
+      "top_paths": [
+        "php/tax.php",
+        "php/discount.php",
+        "ruby/password.rb",
+        "csharp/idempotency.cs",
+        "csharp/payment_retry.cs",
+        "kotlin/read_tx.kt",
+        "bash/rollback.sh",
+        "kotlin/transaction.kt",
+        "ruby/password_policy.rb"
+      ]
+    },
+    {
+      "query_id": "password_paraphrase",
+      "category": "paraphrase",
+      "language": "ruby",
+      "hybrid": {
+        "recall_at_5": 1.0,
+        "recall_at_10": 1.0,
+        "precision_at_5": 0.2,
+        "precision_at_10": 0.1,
+        "mrr_at_10": 1.0,
+        "ndcg_at_10": 1.0,
+        "success_at_5": 1.0
+      },
+      "lexical_only": {
+        "recall_at_5": 1.0,
+        "recall_at_10": 1.0,
+        "precision_at_5": 0.2,
+        "precision_at_10": 0.1,
+        "mrr_at_10": 1.0,
+        "ndcg_at_10": 1.0,
+        "success_at_5": 1.0
+      },
+      "vector_only": {
+        "recall_at_5": 1.0,
+        "recall_at_10": 1.0,
+        "precision_at_5": 0.2,
+        "precision_at_10": 0.1,
+        "mrr_at_10": 1.0,
+        "ndcg_at_10": 1.0,
+        "success_at_5": 1.0
+      },
+      "top_paths": [
+        "ruby/password.rb",
+        "ruby/password_policy.rb",
+        "swift/keychain.swift",
+        "rust/auth.rs",
+        "java/expiry.java",
+        "csharp/idempotency.cs",
+        "dart/refresh.dart",
+        "lua/bucket.lua",
+        "python/retry.py",
+        "csharp/payment_retry.cs"
+      ]
+    },
+    {
+      "query_id": "release_paraphrase",
+      "category": "paraphrase",
+      "language": "shell",
+      "hybrid": {
+        "recall_at_5": 1.0,
+        "recall_at_10": 1.0,
+        "precision_at_5": 0.2,
+        "precision_at_10": 0.1,
+        "mrr_at_10": 1.0,
+        "ndcg_at_10": 1.0,
+        "success_at_5": 1.0
+      },
+      "lexical_only": {
+        "recall_at_5": 1.0,
+        "recall_at_10": 1.0,
+        "precision_at_5": 0.2,
+        "precision_at_10": 0.1,
+        "mrr_at_10": 0.25,
+        "ndcg_at_10": 0.43067655807339306,
+        "success_at_5": 1.0
+      },
+      "vector_only": {
+        "recall_at_5": 1.0,
+        "recall_at_10": 1.0,
+        "precision_at_5": 0.2,
+        "precision_at_10": 0.1,
+        "mrr_at_10": 1.0,
+        "ndcg_at_10": 1.0,
+        "success_at_5": 1.0
+      },
+      "top_paths": [
+        "bash/release.sh",
+        "bash/rollback.sh",
+        "csharp/idempotency.cs",
+        "cpp/pool.cpp",
+        "java/session.java",
+        "csharp/payment_retry.cs",
+        "cpp/task_cancel.cpp",
+        "go/queue.go"
+      ]
+    },
+    {
+      "query_id": "bucket_paraphrase",
+      "category": "paraphrase",
+      "language": "lua",
+      "hybrid": {
+        "recall_at_5": 1.0,
+        "recall_at_10": 1.0,
+        "precision_at_5": 0.2,
+        "precision_at_10": 0.1,
+        "mrr_at_10": 1.0,
+        "ndcg_at_10": 1.0,
+        "success_at_5": 1.0
+      },
+      "lexical_only": {
+        "recall_at_5": 1.0,
+        "recall_at_10": 1.0,
+        "precision_at_5": 0.2,
+        "precision_at_10": 0.1,
+        "mrr_at_10": 1.0,
+        "ndcg_at_10": 1.0,
+        "success_at_5": 1.0
+      },
+      "vector_only": {
+        "recall_at_5": 1.0,
+        "recall_at_10": 1.0,
+        "precision_at_5": 0.2,
+        "precision_at_10": 0.1,
+        "mrr_at_10": 1.0,
+        "ndcg_at_10": 1.0,
+        "success_at_5": 1.0
+      },
+      "top_paths": [
+        "lua/bucket.lua",
+        "csharp/payment_retry.cs",
+        "typescript/timeout.ts",
+        "lua/counter.lua",
+        "python/fixed_retry.py",
+        "python/retry.py",
+        "typescript/retry.ts",
+        "dart/refresh.dart",
+        "csharp/idempotency.cs",
+        "rust/auth.rs"
+      ]
+    },
+    {
+      "query_id": "refresh_paraphrase",
+      "category": "paraphrase",
+      "language": "dart",
+      "hybrid": {
+        "recall_at_5": 1.0,
+        "recall_at_10": 1.0,
+        "precision_at_5": 0.2,
+        "precision_at_10": 0.1,
+        "mrr_at_10": 1.0,
+        "ndcg_at_10": 1.0,
+        "success_at_5": 1.0
+      },
+      "lexical_only": {
+        "recall_at_5": 0.0,
+        "recall_at_10": 1.0,
+        "precision_at_5": 0.0,
+        "precision_at_10": 0.1,
+        "mrr_at_10": 0.1,
+        "ndcg_at_10": 0.2890648263178878,
+        "success_at_5": 0.0
+      },
+      "vector_only": {
+        "recall_at_5": 1.0,
+        "recall_at_10": 1.0,
+        "precision_at_5": 0.2,
+        "precision_at_10": 0.1,
+        "mrr_at_10": 1.0,
+        "ndcg_at_10": 1.0,
+        "success_at_5": 1.0
+      },
+      "top_paths": [
+        "dart/refresh.dart",
+        "swift/keychain.swift",
+        "java/expiry.java",
+        "lua/bucket.lua",
+        "java/session.java",
+        "rust/auth.rs",
+        "csharp/idempotency.cs",
+        "ruby/password.rb",
+        "dart/decode.dart",
+        "csharp/payment_retry.cs"
+      ]
+    },
+    {
+      "query_id": "keychain_paraphrase",
+      "category": "paraphrase",
+      "language": "swift",
+      "hybrid": {
+        "recall_at_5": 1.0,
+        "recall_at_10": 1.0,
+        "precision_at_5": 0.2,
+        "precision_at_10": 0.1,
+        "mrr_at_10": 1.0,
+        "ndcg_at_10": 1.0,
+        "success_at_5": 1.0
+      },
+      "lexical_only": {
+        "recall_at_5": 0.0,
+        "recall_at_10": 1.0,
+        "precision_at_5": 0.0,
+        "precision_at_10": 0.1,
+        "mrr_at_10": 0.16666666666666666,
+        "ndcg_at_10": 0.3562071871080222,
+        "success_at_5": 0.0
+      },
+      "vector_only": {
+        "recall_at_5": 1.0,
+        "recall_at_10": 1.0,
+        "precision_at_5": 0.2,
+        "precision_at_10": 0.1,
+        "mrr_at_10": 1.0,
+        "ndcg_at_10": 1.0,
+        "success_at_5": 1.0
+      },
+      "top_paths": [
+        "swift/keychain.swift",
+        "ruby/password.rb",
+        "swift/preferences.swift",
+        "dart/refresh.dart",
+        "java/expiry.java",
+        "kotlin/transaction.kt",
+        "csharp/idempotency.cs",
+        "lua/bucket.lua",
+        "python/cache.py",
+        "rust/auth.rs"
+      ]
+    },
+    {
+      "query_id": "index_paraphrase",
+      "category": "paraphrase",
+      "language": "sql",
+      "hybrid": {
+        "recall_at_5": 1.0,
+        "recall_at_10": 1.0,
+        "precision_at_5": 0.2,
+        "precision_at_10": 0.1,
+        "mrr_at_10": 0.5,
+        "ndcg_at_10": 0.6309297535714575,
+        "success_at_5": 1.0
+      },
+      "lexical_only": {
+        "recall_at_5": 1.0,
+        "recall_at_10": 1.0,
+        "precision_at_5": 0.2,
+        "precision_at_10": 0.1,
+        "mrr_at_10": 1.0,
+        "ndcg_at_10": 1.0,
+        "success_at_5": 1.0
+      },
+      "vector_only": {
+        "recall_at_5": 1.0,
+        "recall_at_10": 1.0,
+        "precision_at_5": 0.2,
+        "precision_at_10": 0.1,
+        "mrr_at_10": 0.5,
+        "ndcg_at_10": 0.6309297535714575,
+        "success_at_5": 1.0
+      },
+      "top_paths": [
+        "sql/fullscan.sql",
+        "sql/index.sql",
+        "kotlin/read_tx.kt",
+        "csharp/idempotency.cs",
+        "lua/bucket.lua",
+        "java/session.java",
+        "javascript/throttle.js",
+        "javascript/debounce.js",
+        "java/expiry.java",
+        "python/cache.py"
+      ]
+    },
+    {
+      "query_id": "buffer_bounds",
+      "category": "paraphrase",
+      "language": "c",
+      "hybrid": {
+        "recall_at_5": 1.0,
+        "recall_at_10": 1.0,
+        "precision_at_5": 0.2,
+        "precision_at_10": 0.1,
+        "mrr_at_10": 1.0,
+        "ndcg_at_10": 1.0,
+        "success_at_5": 1.0
+      },
+      "lexical_only": {
+        "recall_at_5": 1.0,
+        "recall_at_10": 1.0,
+        "precision_at_5": 0.2,
+        "precision_at_10": 0.1,
+        "mrr_at_10": 1.0,
+        "ndcg_at_10": 1.0,
+        "success_at_5": 1.0
+      },
+      "vector_only": {
+        "recall_at_5": 1.0,
+        "recall_at_10": 1.0,
+        "precision_at_5": 0.2,
+        "precision_at_10": 0.1,
+        "mrr_at_10": 1.0,
+        "ndcg_at_10": 1.0,
+        "success_at_5": 1.0
+      },
+      "top_paths": [
+        "c/buffer.c",
+        "lua/bucket.lua",
+        "lua/counter.lua",
+        "c/buffer_size.c",
+        "python/cache.py",
+        "javascript/throttle.js",
+        "python/retry.py",
+        "csharp/idempotency.cs",
+        "go/queue.go",
+        "ruby/password_policy.rb"
+      ]
+    },
+    {
+      "query_id": "java_expiry",
+      "category": "paraphrase",
+      "language": "java",
+      "hybrid": {
+        "recall_at_5": 1.0,
+        "recall_at_10": 1.0,
+        "precision_at_5": 0.2,
+        "precision_at_10": 0.1,
+        "mrr_at_10": 1.0,
+        "ndcg_at_10": 1.0,
+        "success_at_5": 1.0
+      },
+      "lexical_only": {
+        "recall_at_5": 1.0,
+        "recall_at_10": 1.0,
+        "precision_at_5": 0.2,
+        "precision_at_10": 0.1,
+        "mrr_at_10": 0.5,
+        "ndcg_at_10": 0.6309297535714575,
+        "success_at_5": 1.0
+      },
+      "vector_only": {
+        "recall_at_5": 1.0,
+        "recall_at_10": 1.0,
+        "precision_at_5": 0.2,
+        "precision_at_10": 0.1,
+        "mrr_at_10": 1.0,
+        "ndcg_at_10": 1.0,
+        "success_at_5": 1.0
+      },
+      "top_paths": [
+        "java/expiry.java",
+        "lua/counter.lua",
+        "ruby/password_policy.rb",
+        "lua/bucket.lua",
+        "rust/auth.rs",
+        "swift/keychain.swift",
+        "dart/refresh.dart",
+        "java/session.java",
+        "python/retry.py",
+        "python/fixed_retry.py"
+      ]
+    }
+  ],
+  "by_category": {
+    "exact_identifier": {
+      "recall_at_5": 1.0,
+      "recall_at_10": 1.0,
+      "precision_at_5": 0.2,
+      "precision_at_10": 0.1,
+      "mrr_at_10": 1.0,
+      "ndcg_at_10": 1.0,
+      "success_at_5": 1.0
+    },
+    "metadata_filter": {
+      "recall_at_5": 1.0,
+      "recall_at_10": 1.0,
+      "precision_at_5": 0.2,
+      "precision_at_10": 0.1,
+      "mrr_at_10": 1.0,
+      "ndcg_at_10": 1.0,
+      "success_at_5": 1.0
+    },
+    "natural_language": {
+      "recall_at_5": 0.9777777777777777,
+      "recall_at_10": 0.9777777777777777,
+      "precision_at_5": 0.24000000000000005,
+      "precision_at_10": 0.12000000000000002,
+      "mrr_at_10": 0.9666666666666667,
+      "ndcg_at_10": 0.9369252825420171,
+      "success_at_5": 1.0
+    },
+    "paraphrase": {
+      "recall_at_5": 0.980392156862745,
+      "recall_at_10": 0.980392156862745,
+      "precision_at_5": 0.22352941176470595,
+      "precision_at_10": 0.11176470588235297,
+      "mrr_at_10": 0.8970588235294118,
+      "ndcg_at_10": 0.9001303786017243,
+      "success_at_5": 1.0
+    }
+  },
+  "by_language": {
+    "c": {
+      "recall_at_5": 1.0,
+      "recall_at_10": 1.0,
+      "precision_at_5": 0.2,
+      "precision_at_10": 0.1,
+      "mrr_at_10": 1.0,
+      "ndcg_at_10": 1.0,
+      "success_at_5": 1.0
+    },
+    "cpp": {
+      "recall_at_5": 1.0,
+      "recall_at_10": 1.0,
+      "precision_at_5": 0.2,
+      "precision_at_10": 0.1,
+      "mrr_at_10": 0.75,
+      "ndcg_at_10": 0.8154648767857288,
+      "success_at_5": 1.0
+    },
+    "csharp": {
+      "recall_at_5": 1.0,
+      "recall_at_10": 1.0,
+      "precision_at_5": 0.2,
+      "precision_at_10": 0.1,
+      "mrr_at_10": 1.0,
+      "ndcg_at_10": 1.0,
+      "success_at_5": 1.0
+    },
+    "dart": {
+      "recall_at_5": 1.0,
+      "recall_at_10": 1.0,
+      "precision_at_5": 0.30000000000000004,
+      "precision_at_10": 0.15000000000000002,
+      "mrr_at_10": 1.0,
+      "ndcg_at_10": 1.0,
+      "success_at_5": 1.0
+    },
+    "go": {
+      "recall_at_5": 1.0,
+      "recall_at_10": 1.0,
+      "precision_at_5": 0.2,
+      "precision_at_10": 0.1,
+      "mrr_at_10": 0.625,
+      "ndcg_at_10": 0.7153382790366966,
+      "success_at_5": 1.0
+    },
+    "java": {
+      "recall_at_5": 1.0,
+      "recall_at_10": 1.0,
+      "precision_at_5": 0.2,
+      "precision_at_10": 0.1,
+      "mrr_at_10": 1.0,
+      "ndcg_at_10": 1.0,
+      "success_at_5": 1.0
+    },
+    "javascript": {
+      "recall_at_5": 1.0,
+      "recall_at_10": 1.0,
+      "precision_at_5": 0.2,
+      "precision_at_10": 0.1,
+      "mrr_at_10": 1.0,
+      "ndcg_at_10": 1.0,
+      "success_at_5": 1.0
+    },
+    "kotlin": {
+      "recall_at_5": 1.0,
+      "recall_at_10": 1.0,
+      "precision_at_5": 0.2,
+      "precision_at_10": 0.1,
+      "mrr_at_10": 1.0,
+      "ndcg_at_10": 1.0,
+      "success_at_5": 1.0
+    },
+    "lua": {
+      "recall_at_5": 1.0,
+      "recall_at_10": 1.0,
+      "precision_at_5": 0.2,
+      "precision_at_10": 0.1,
+      "mrr_at_10": 1.0,
+      "ndcg_at_10": 1.0,
+      "success_at_5": 1.0
+    },
+    "php": {
+      "recall_at_5": 1.0,
+      "recall_at_10": 1.0,
+      "precision_at_5": 0.2,
+      "precision_at_10": 0.1,
+      "mrr_at_10": 1.0,
+      "ndcg_at_10": 1.0,
+      "success_at_5": 1.0
+    },
+    "python": {
+      "recall_at_5": 1.0,
+      "recall_at_10": 1.0,
+      "precision_at_5": 0.2,
+      "precision_at_10": 0.1,
+      "mrr_at_10": 1.0,
+      "ndcg_at_10": 1.0,
+      "success_at_5": 1.0
+    },
+    "ruby": {
+      "recall_at_5": 1.0,
+      "recall_at_10": 1.0,
+      "precision_at_5": 0.2,
+      "precision_at_10": 0.1,
+      "mrr_at_10": 1.0,
+      "ndcg_at_10": 1.0,
+      "success_at_5": 1.0
+    },
+    "rust": {
+      "recall_at_5": 1.0,
+      "recall_at_10": 1.0,
+      "precision_at_5": 0.30000000000000004,
+      "precision_at_10": 0.15000000000000002,
+      "mrr_at_10": 1.0,
+      "ndcg_at_10": 0.9121473587165023,
+      "success_at_5": 1.0
+    },
+    "shell": {
+      "recall_at_5": 1.0,
+      "recall_at_10": 1.0,
+      "precision_at_5": 0.2,
+      "precision_at_10": 0.1,
+      "mrr_at_10": 1.0,
+      "ndcg_at_10": 1.0,
+      "success_at_5": 1.0
+    },
+    "sql": {
+      "recall_at_5": 1.0,
+      "recall_at_10": 1.0,
+      "precision_at_5": 0.2,
+      "precision_at_10": 0.1,
+      "mrr_at_10": 0.5,
+      "ndcg_at_10": 0.6309297535714575,
+      "success_at_5": 1.0
+    },
+    "swift": {
+      "recall_at_5": 1.0,
+      "recall_at_10": 1.0,
+      "precision_at_5": 0.2,
+      "precision_at_10": 0.1,
+      "mrr_at_10": 1.0,
+      "ndcg_at_10": 1.0,
+      "success_at_5": 1.0
+    },
+    "typescript": {
+      "recall_at_5": 0.6666666666666666,
+      "recall_at_10": 0.6666666666666666,
+      "precision_at_5": 0.4,
+      "precision_at_10": 0.2,
+      "mrr_at_10": 1.0,
+      "ndcg_at_10": 0.6920202103528978,
+      "success_at_5": 1.0
+    }
+  },
+  "citation_validity": 1.0,
+  "citation_count": 331,
+  "filter_leaks": 0
+}

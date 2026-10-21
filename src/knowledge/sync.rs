@@ -468,9 +468,9 @@ fn index_file_inner(
             let normalized = normalize_embedding(embedding, emb.dim())?;
             let blob = embedding_to_bytes(&normalized);
             conn.execute(
-                "INSERT INTO knowledge_embeddings (chunk_rowid, embedding, dim)
-                 VALUES (?1, ?2, ?3)",
-                params![rowid, blob, normalized.len() as i64],
+                "INSERT INTO knowledge_embeddings (chunk_rowid, embedding, dim, model_id)
+                 VALUES (?1, ?2, ?3, ?4)",
+                params![rowid, blob, normalized.len() as i64, emb.model_id()],
             )?;
         }
     }

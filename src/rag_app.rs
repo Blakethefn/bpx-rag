@@ -70,6 +70,22 @@ impl RagApp {
         let query = validate_query(query)?;
         let profile = SearchProfile::parse(options.profile)?;
         self.ensure_embedder();
+        if let Some((model_id, dimensions)) = self
+            .knowledge
+            .embedder()
+            .map(|embedder| (embedder.model_id().to_string(), embedder.dim()))
+        {
+            if let Err(error) = self.knowledge.ensure_vector_index(&model_id, dimensions) {
+                self.knowledge.clear_vector_index();
+                self.embedding_notice = Some(format!(
+                    "Approximate index unavailable; using exact vector search: {error}"
+                ));
+                eprintln!("[bpx-rag] failed to prepare approximate index: {error}");
+            }
+        }
+        if let Some(notice) = self.embedding_coverage_notice()? {
+            self.embedding_notice = Some(notice);
+        }
         let outcome = retrieval::run_query(
             QueryRequest {
                 query,
@@ -238,12 +254,13 @@ impl RagApp {
         }
         let mut output = String::from("# Knowledge sources\n\n");
         for source in sources {
+            let model_id = embedder::canonical_model_id(&self.config.embeddings.model)?;
             let (embedded, total): (i64, i64) = self.knowledge.conn().query_row(
-                "SELECT COUNT(e.chunk_rowid), COUNT(m.chunk_rowid)
+                "SELECT COUNT(CASE WHEN e.model_id = ?1 THEN e.chunk_rowid END), COUNT(m.chunk_rowid)
                  FROM knowledge_chunk_meta m
                  LEFT JOIN knowledge_embeddings e ON e.chunk_rowid = m.chunk_rowid
-                 WHERE m.source_id = ?1",
-                params![source.id],
+                 WHERE m.source_id = ?2",
+                params![model_id, source.id],
                 |row| Ok((row.get(0)?, row.get(1)?)),
             )?;
             output.push_str(&format!(
@@ -280,12 +297,12 @@ impl RagApp {
                      FROM knowledge_chunks kc
                      JOIN knowledge_chunk_meta m ON m.chunk_rowid = kc.rowid
                      LEFT JOIN knowledge_embeddings e ON e.chunk_rowid = kc.rowid
-                     WHERE e.chunk_rowid IS NULL
+                     WHERE e.chunk_rowid IS NULL OR e.model_id <> ?1
                      ORDER BY kc.rowid
-                     LIMIT ?1",
+                     LIMIT ?2",
                 )?;
                 let rows = statement
-                    .query_map(params![batch_size as i64], |row| {
+                    .query_map(params![embedder.model_id(), batch_size as i64], |row| {
                         Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?))
                     })?
                     .collect::<rusqlite::Result<Vec<_>>>()?;
@@ -309,12 +326,13 @@ impl RagApp {
                 for ((rowid, _), vector) in batch.iter().zip(vectors.iter()) {
                     let vector = embedder::normalize_embedding(vector, embedder.dim())?;
                     conn.execute(
-                        "INSERT OR REPLACE INTO knowledge_embeddings (chunk_rowid, embedding, dim)
-                         VALUES (?1, ?2, ?3)",
+                        "INSERT OR REPLACE INTO knowledge_embeddings (chunk_rowid, embedding, dim, model_id)
+                         VALUES (?1, ?2, ?3, ?4)",
                         params![
                             *rowid,
                             embedder::embedding_to_bytes(&vector),
-                            embedder.dim() as i64
+                            embedder.dim() as i64,
+                            embedder.model_id()
                         ],
                     )?;
                 }
@@ -334,7 +352,7 @@ impl RagApp {
 
     pub fn embedding_model_status(&self) -> String {
         let model_dir = model_directory(&self.config);
-        if embedder::model_files_present(&model_dir) {
+        if embedder::model_files_present(&model_dir, &self.config.embeddings.model) {
             format!(
                 "{} model files cached at {} (integrity is checked when loaded)",
                 self.config.embeddings.model,
@@ -351,7 +369,7 @@ impl RagApp {
 
     pub fn download_embedding_model(&mut self) -> Result<String> {
         let model_dir = model_directory(&self.config);
-        let embedder = Embedder::new(&model_dir)?;
+        let embedder = Embedder::new(&model_dir, &self.config.embeddings.model)?;
         self.install_embedder(embedder);
         Ok(format!(
             "Model {} is ready at {}.",
@@ -378,14 +396,14 @@ impl RagApp {
             return;
         }
         let model_dir = model_directory(&self.config);
-        if !embedder::model_files_present(&model_dir) {
+        if !embedder::model_files_present(&model_dir, &self.config.embeddings.model) {
             self.embedding_notice = Some(format!(
                 "Semantic retrieval is unavailable; install the local model with `bpx-rag models download` ({}).",
                 model_dir.display()
             ));
             return;
         }
-        match Embedder::load_cached(&model_dir) {
+        match Embedder::load_cached(&model_dir, &self.config.embeddings.model) {
             Ok(embedder) => self.install_embedder(embedder),
             Err(error) => {
                 self.embedding_notice = Some(format!(
@@ -401,6 +419,27 @@ impl RagApp {
         self.knowledge.set_embedder(shared);
         self.embedding_notice = None;
         self.embedder_loaded = true;
+    }
+
+    fn embedding_coverage_notice(&self) -> Result<Option<String>> {
+        let Some(embedder) = self.knowledge.embedder() else {
+            return Ok(None);
+        };
+        let (total, current_model): (i64, i64) = self.knowledge.conn().query_row(
+            "SELECT COUNT(m.chunk_rowid),
+                    COUNT(CASE WHEN e.model_id = ?1 THEN e.chunk_rowid END)
+             FROM knowledge_chunk_meta m
+             LEFT JOIN knowledge_embeddings e ON e.chunk_rowid = m.chunk_rowid",
+            params![embedder.model_id()],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )?;
+        if total > current_model {
+            Ok(Some(format!(
+                "The active model has vectors for {current_model}/{total} indexed chunks; run `bpx-rag knowledge embed-backfill` to build or replace the remaining vectors."
+            )))
+        } else {
+            Ok(None)
+        }
     }
 }
 
@@ -419,12 +458,16 @@ pub fn format_sync_result(result: &knowledge::sync::SyncResult) -> String {
 }
 
 pub fn model_directory(config: &Config) -> PathBuf {
-    PathBuf::from(&config.embeddings.model_dir).join(&config.embeddings.model)
+    std::env::var_os("HF_HOME")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| {
+            PathBuf::from(&config.embeddings.model_dir).join(&config.embeddings.model)
+        })
 }
 
 pub fn embedding_model_status(config: &Config) -> String {
     let path = model_directory(config);
-    if embedder::model_files_present(&path) {
+    if embedder::model_files_present(&path, &config.embeddings.model) {
         format!(
             "{} model files cached at {} (integrity is checked when loaded)",
             config.embeddings.model,
@@ -444,7 +487,7 @@ fn embedding_notice(config: &Config) -> Option<String> {
         return Some("Embeddings are disabled in config.".into());
     }
     let model_dir = model_directory(config);
-    if !embedder::model_files_present(&model_dir) {
+    if !embedder::model_files_present(&model_dir, &config.embeddings.model) {
         return Some(format!(
             "Semantic retrieval is unavailable; install the local model with `bpx-rag models download` ({}).",
             model_dir.display()

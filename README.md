@@ -1,35 +1,65 @@
 # bpx-rag
 
-**Fast, filesystem-first file relationship analysis for coding agents.**
+Local-first retrieval and filesystem analysis for coding agents. bpx-rag indexes project files, finds relevant evidence with lexical and optional semantic search, and returns file/line citations. The connected language model uses that evidence to answer; bpx-rag does not generate answers itself.
 
-Point bpx-rag at a file to see what it imports or links to, and which files directly refer back to it. It reads the current project files and returns paths with line evidence. It does not need a database, embeddings, config, or an indexing step.
+It also provides on-demand direct import, include, and link analysis from the current filesystem.
 
 ## Quick start
 
 ```bash
-# Direct imports and files that refer to this file
-bpx-rag analyze-file src/lib/api/quotes.ts --root /path/to/project
+# Register and index a project directory.
+bpx-rag knowledge add /path/to/project --label my-project
 
-# The project root can be inferred from a nearby .git, Cargo.toml,
-# package.json, or pyproject.toml marker
-bpx-rag analyze-file src/lib/api/quotes.ts
+# Search indexed code and docs.
+bpx-rag search "where is quote status persisted" --source my-project
+
+# Expand the cited chunk from a search result.
+bpx-rag knowledge read my-project --path src/quotes/repository.ts --line-start 30 --line-end 55
+
+# Update changed, added, and deleted files.
+bpx-rag knowledge sync --label my-project
 ```
 
-The selected file and project root must be inside the same project. Scanning respects ignore rules and skips generated directories. The analyzer has safety limits of 20,000 files, 128 MiB total scanned content, and 2 MiB per file; it warns if the scan is incomplete.
+Sources are persisted in a local SQLite knowledge database and incrementally synced using content hashes. Search works immediately with BM25/trigram/fuzzy retrieval. Semantic search becomes available after an embedding model has been downloaded and indexed.
 
-## Supported relationships
+## Embedding models
 
-- Markdown wikilinks, including aliases and headings.
-- Same-crate Rust `mod` and `use` paths.
-- Relative TypeScript and JavaScript imports, re-exports, dynamic imports, and `require()` calls.
-- C/C++ quoted includes, C# namespace imports, Go imports, Java/Kotlin imports, Python imports, PHP includes/requires, Ruby requires, Bash `source`, Lua `require`, Dart imports/exports, and Swift module imports. Programming-language files use statically linked Tree-sitter grammars.
-- Direct incoming references as well as outgoing references from the selected file.
+Model downloads are explicit:
 
-All programming-language grammars are linked into the binary and parser instances are reused during each scan; analysis does not download parsers at runtime. Results cover direct file relationships. Package imports are linked only when they map conservatively to files under the project root. TypeScript `tsconfig` aliases, Cargo cross-crate aliases, compiler-specific module maps, symbol-level calls, and transitive runtime effects are not resolved.
+```bash
+bpx-rag models status
+bpx-rag models download
+bpx-rag knowledge embed-backfill
+```
+
+The default `jina-embeddings-v2-base-code` model is tuned for code retrieval across 30 programming languages and supports an 8K token input window ([upstream model card](https://huggingface.co/jinaai/jina-embeddings-v2-base-code)). Its local model artifacts take about 644 MB. Set `embeddings.model` in `~/.config/bpcontext/config.toml` to `all-MiniLM-L6-v2` for the smaller 91 MB general-purpose baseline, which scored lower MRR and nDCG on the checked-in controlled code benchmark.
+
+Vectors are stored with a canonical model ID. Switching models never mixes vectors from different spaces; run `knowledge embed-backfill` to replace vectors for existing chunks. Search reports incomplete active-model coverage and continues to use lexical results while backfill is pending.
+
+Example model configuration:
+
+```toml
+[embeddings]
+model = "jina-embeddings-v2-base-code"
+enabled = true
+```
+
+The model cache defaults to the local application data directory. `HF_HOME`, when set, selects the Hugging Face cache location.
+
+## CLI
+
+```text
+bpx-rag knowledge add <path> --label <label> [--glob <pattern>]
+bpx-rag knowledge sync [--label <label>]
+bpx-rag knowledge status
+bpx-rag knowledge read <label> [--path <relative-path>] [--line-start N] [--line-end N]
+bpx-rag search <query> [--source <label>] [--filter <key:value>] [--limit N]
+bpx-rag analyze-file <path> [--root <project>]
+```
+
+`knowledge read` accepts a relative path and an overlapping 1-based line range from a search citation. This lets agents expand a specific result instead of receiving only the first chunks from a source.
 
 ## MCP
-
-Add bpx-rag to your MCP client:
 
 ```json
 {
@@ -42,32 +72,32 @@ Add bpx-rag to your MCP client:
 }
 ```
 
-The server exposes one tool, `bpx_file_relationships`:
+RAG tools include `bpx_search`, `bpx_knowledge_add`, `bpx_knowledge_sync`, `bpx_knowledge_status`, `bpx_knowledge_read`, and `bpx_embeddings`. `bpx_knowledge_read` accepts the cited source-relative path and line range. `bpx_file_relationships` analyzes the current filesystem and does not need the RAG index.
 
-```json
-{
-  "path": "/path/to/project/src/lib/api/quotes.ts",
-  "root": "/path/to/project"
-}
+## Direct file relationships
+
+```bash
+bpx-rag analyze-file src/lib/api/quotes.ts --root /path/to/project
 ```
 
-`root` is optional. MCP startup and relationship calls do not read config files, open databases, or load models.
+The analyzer reports direct Markdown wikilinks, imports, includes, and module references with line evidence for Rust, TypeScript/JavaScript, C/C++, C#, Go, Java, Kotlin, Python, PHP, Ruby, Bash, Lua, Dart, and Swift. Static analysis resolves local paths conservatively; it does not infer runtime behavior, symbol-level calls, or build-specific aliases.
 
-## Build and test
+## Build and tests
 
 ```bash
 cargo build --release
 cargo test
 ```
 
-## Performance measurement
+The standard test suite uses deterministic mock embeddings and never downloads a model. Use `bpx-rag models download` when you explicitly want local semantic retrieval.
 
-Build a release binary, then measure end-to-end scan latency and binary size on a generated 17-language project fixture:
+To run the checked-in judged retrieval benchmark against the configured real model, download it explicitly and then run:
 
 ```bash
-python3 scripts/benchmark-analysis.py /path/to/bpx-rag --runs 25 --files-per-language 8
-# Optional: compare with a binary built from an earlier commit on the same fixture.
-python3 scripts/benchmark-analysis.py /path/to/current-bpx-rag --compare /path/to/baseline-bpx-rag
+bpx-rag evaluate retrieval --repetitions 5
+bpx-rag evaluate scaling --repetitions 5
 ```
 
-The `bpcontext` executable remains as a compatibility launcher for older scripts. It forwards arguments to `bpx-rag`.
+The retrieval command refuses to download a missing model. It reports hybrid, lexical-only, and vector-only graded retrieval metrics by query category and language, citation validity, filter leakage, indexing time, warm-query p50/p95, SQLite footprint, and model artifact size. The separate scaling command compares exact vector search with the persistent HNSW candidate index from 1K to 50K synthetic chunks, including index build/load time, query latency, memory, and Recall@10 against exact results. Exact search stays enabled below 4,096 vectors; larger indexes use HNSW candidates followed by SQL metadata rechecks and exact vector reranking. The checked-in reports in `eval/results/` are controlled benchmarks; add project-specific judged queries before using their quality scores as a production claim.
+
+The `bpcontext` executable remains as a compatibility launcher for older scripts.

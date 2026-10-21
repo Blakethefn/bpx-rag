@@ -2,6 +2,7 @@ mod cli;
 mod config;
 mod db;
 mod embedder;
+mod eval;
 mod knowledge;
 mod mcp;
 mod rag_app;
@@ -17,7 +18,7 @@ use anyhow::{anyhow, Result};
 use clap::Parser;
 use std::path::PathBuf;
 
-use cli::{Cli, Commands, KnowledgeAction, ModelsAction};
+use cli::{Cli, Commands, EvalAction, KnowledgeAction, ModelsAction};
 use rag_app::{RagApp, SearchOptions};
 
 fn main() -> Result<()> {
@@ -66,7 +67,29 @@ fn main() -> Result<()> {
         }
         Commands::Knowledge { action } => run_knowledge(action, &project_dir),
         Commands::Models { action } => run_models(action),
+        Commands::Evaluate { action } => run_evaluation(action),
     }
+}
+
+fn run_evaluation(action: EvalAction) -> Result<()> {
+    match action {
+        EvalAction::Retrieval { repetitions } => {
+            let report = eval::run_retrieval_evaluation(repetitions)?;
+            println!("{}", serde_json::to_string_pretty(&report)?);
+            if report.filter_leaks > 0 || report.citation_validity < 1.0 {
+                return Err(anyhow!(
+                    "retrieval evaluation found {} filter leaks and citation validity {:.3}",
+                    report.filter_leaks,
+                    report.citation_validity
+                ));
+            }
+        }
+        EvalAction::Scaling { repetitions } => {
+            let report = eval::run_scaling_evaluation(repetitions)?;
+            println!("{}", serde_json::to_string_pretty(&report)?);
+        }
+    }
+    Ok(())
 }
 
 fn run_knowledge(action: KnowledgeAction, project_dir: &std::path::Path) -> Result<()> {
@@ -125,7 +148,7 @@ fn run_models(action: ModelsAction) -> Result<()> {
         ModelsAction::Status => println!("{}", rag_app::embedding_model_status(&config)),
         ModelsAction::Download => {
             let model_dir = rag_app::model_directory(&config);
-            embedder::Embedder::new(&model_dir)?;
+            embedder::Embedder::new(&model_dir, &config.embeddings.model)?;
             println!(
                 "Downloaded and loaded {} at {}.",
                 config.embeddings.model,

@@ -1,0 +1,30 @@
+{
+  "embedding_dimension": 384,
+  "repetitions": 3,
+  "points": [
+    {
+      "chunk_count": 1000,
+      "database_bytes": 2981888,
+      "indexing_ms": 37.043561000000004,
+      "warm_query_p50_ms": 57.548866999999994,
+      "warm_query_p95_ms": 57.796918000000005,
+      "result_count": 10
+    },
+    {
+      "chunk_count": 10000,
+      "database_bytes": 28704768,
+      "indexing_ms": 398.450309,
+      "warm_query_p50_ms": 831.062949,
+      "warm_query_p95_ms": 837.405074,
+      "result_count": 10
+    },
+    {
+      "chunk_count": 50000,
+      "database_bytes": 145039360,
+      "indexing_ms": 2275.048053,
+      "warm_query_p50_ms": 5574.765541,
+      "warm_query_p95_ms": 5593.512343,
+      "result_count": 10
+    }
+  ]
+}

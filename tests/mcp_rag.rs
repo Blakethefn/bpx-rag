@@ -16,6 +16,7 @@ fn run_cli(
         .env("XDG_CONFIG_HOME", config_home)
         .env("XDG_DATA_HOME", data_home)
         .env("XDG_CACHE_HOME", cache_home)
+        .env_remove("HF_HOME")
         .output()
         .unwrap()
 }
@@ -32,7 +33,9 @@ fn knowledge_cli_add_sync_search_and_read_work_without_auto_downloading_model() 
     let config_home = temp.path().join("config");
     let data_home = temp.path().join("data");
     let cache_home = temp.path().join("cache");
-    let model_dir = data_home.join("bpcontext/models").join("all-MiniLM-L6-v2");
+    let model_dir = data_home
+        .join("bpcontext/models")
+        .join("jina-embeddings-v2-base-code");
     fs::create_dir_all(&project).unwrap();
     fs::create_dir_all(&source).unwrap();
     fs::write(
@@ -221,5 +224,25 @@ fn model_download_is_an_explicit_cli_action() {
     );
     assert!(status.status.success());
     assert!(stdout(&status).contains("not installed"));
-    assert!(!data_home.join("bpcontext/models/all-MiniLM-L6-v2").exists());
+    assert!(!data_home
+        .join("bpcontext/models/jina-embeddings-v2-base-code")
+        .exists());
+
+    let evaluation = run_cli(
+        &project,
+        &config_home,
+        &data_home,
+        &cache_home,
+        &["evaluate", "retrieval"],
+    );
+    assert!(!evaluation.status.success());
+    assert!(
+        String::from_utf8_lossy(&evaluation.stderr)
+            .contains("evaluation requires the configured model to be cached"),
+        "{}",
+        String::from_utf8_lossy(&evaluation.stderr)
+    );
+    assert!(!data_home
+        .join("bpcontext/models/jina-embeddings-v2-base-code")
+        .exists());
 }

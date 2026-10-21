@@ -10,6 +10,7 @@ pub mod enrichment;
 pub mod filter;
 pub mod search;
 pub mod sync;
+pub mod vector_index;
 
 use anyhow::{anyhow, Result};
 use rusqlite::{Connection, OptionalExtension};
@@ -23,6 +24,17 @@ use crate::embedder::Embed;
 pub struct KnowledgeStore {
     conn: Connection,
     embedder: Option<Arc<dyn Embed>>,
+    vector_index_dir: Option<std::path::PathBuf>,
+    vector_index: Option<vector_index::VectorIndex>,
+    vector_index_state: Option<VectorIndexState>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct VectorIndexState {
+    model_id: String,
+    dimensions: usize,
+    generation: i64,
+    database_id: String,
 }
 
 /// A registered knowledge source.
@@ -110,20 +122,24 @@ const SOURCE_COLUMNS: &str =
 impl KnowledgeStore {
     /// Open the knowledge store, creating the DB if needed.
     pub fn open() -> Result<Self> {
-        let conn = db::open_knowledge_db()?;
+        let db_path = db::knowledge_db_path()?;
+        let conn = crate::db::open_db(&db_path)?;
+        db::apply_schema(&conn)?;
+        let vector_index_dir = db_path.parent().map(|parent| parent.join("ann-indexes"));
         Ok(Self {
             conn,
             embedder: None,
+            vector_index_dir,
+            vector_index: None,
+            vector_index_state: None,
         })
     }
 
     /// Open with a shared embedder instance (reuses the session embedder).
     pub fn open_with_embedder(embedder: Arc<dyn Embed>) -> Result<Self> {
-        let conn = db::open_knowledge_db()?;
-        Ok(Self {
-            conn,
-            embedder: Some(embedder),
-        })
+        let mut store = Self::open()?;
+        store.set_embedder(embedder);
+        Ok(store)
     }
 
     /// Set the embedder after construction.
@@ -265,6 +281,115 @@ impl KnowledgeStore {
     /// Get a reference to the underlying SQLite connection.
     pub fn conn(&self) -> &Connection {
         &self.conn
+    }
+
+    pub fn ensure_vector_index(&mut self, model_id: &str, dimensions: usize) -> Result<()> {
+        self.conn.execute_batch("BEGIN")?;
+        let result = (|| -> Result<(VectorIndexState, Option<vector_index::VectorIndex>)> {
+            let state = self.conn.query_row(
+                "SELECT generation, database_id FROM knowledge_embedding_state WHERE state_id = 1",
+                [],
+                |row| {
+                    Ok(VectorIndexState {
+                        model_id: model_id.to_string(),
+                        dimensions,
+                        generation: row.get(0)?,
+                        database_id: row.get(1)?,
+                    })
+                },
+            )?;
+            if self.vector_index_state.as_ref() == Some(&state) {
+                return Ok((state, None));
+            }
+            let index = vector_index::VectorIndex::load_or_build(
+                &self.conn,
+                self.vector_index_dir.as_deref(),
+                &state.model_id,
+                state.dimensions,
+                state.generation,
+                &state.database_id,
+            )?;
+            Ok((state, index))
+        })();
+        match result {
+            Ok((state, index)) => {
+                self.conn.execute_batch("COMMIT")?;
+                if self.vector_index_state.as_ref() != Some(&state) {
+                    self.vector_index = index;
+                    self.vector_index_state = Some(state);
+                }
+                Ok(())
+            }
+            Err(error) => {
+                let _ = self.conn.execute_batch("ROLLBACK");
+                Err(error)
+            }
+        }
+    }
+
+    pub(crate) fn clear_vector_index(&mut self) {
+        self.vector_index = None;
+        self.vector_index_state = None;
+    }
+
+    pub(crate) fn vector_index_memory_usage(&self) -> usize {
+        self.vector_index
+            .as_ref()
+            .map_or(0, vector_index::VectorIndex::memory_usage_bytes)
+    }
+
+    pub(crate) fn vector_candidates(
+        &self,
+        model_id: &str,
+        query_embedding: &[f32],
+        limit: u32,
+        predicates: &[filter::FilterPredicate],
+    ) -> Result<Option<Vec<i64>>> {
+        let Some(index) = &self.vector_index else {
+            return Ok(None);
+        };
+        let Some(state) = &self.vector_index_state else {
+            return Ok(None);
+        };
+        if state.model_id != model_id || state.dimensions != query_embedding.len() {
+            return Ok(None);
+        }
+
+        let allowed = if predicates.is_empty() {
+            None
+        } else {
+            let (meta_where, meta_params) = filter::predicates_to_sql(predicates, 1);
+            let metadata_clause = if meta_where.is_empty() {
+                String::new()
+            } else {
+                format!(" AND {meta_where}")
+            };
+            let sql = format!(
+                "SELECT ke.chunk_rowid
+                 FROM knowledge_embeddings ke
+                 JOIN knowledge_chunk_meta kcm ON kcm.chunk_rowid = ke.chunk_rowid
+                 WHERE ke.model_id = ?1{metadata_clause}"
+            );
+            let mut params: Vec<Box<dyn rusqlite::types::ToSql>> =
+                vec![Box::new(model_id.to_string())];
+            for value in meta_params {
+                params.push(Box::new(value));
+            }
+            let param_refs = params
+                .iter()
+                .map(|param| param.as_ref())
+                .collect::<Vec<_>>();
+            let mut statement = self.conn.prepare(&sql)?;
+            let rowids = statement
+                .query_map(param_refs.as_slice(), |row| row.get::<_, i64>(0))?
+                .collect::<rusqlite::Result<std::collections::HashSet<_>>>()?;
+            if rowids.is_empty() {
+                return Ok(Some(Vec::new()));
+            }
+            Some(rowids)
+        };
+
+        index.candidates(query_embedding, limit as usize, allowed.as_ref())
     }
 
     /// Get a reference to the embedder, if available.
@@ -662,9 +787,8 @@ impl KnowledgeStore {
     }
 }
 
-/// Open an in-memory knowledge store for tests. Uses the same schema as the
-/// on-disk store but doesn't persist to disk.
-#[cfg(test)]
+/// Open an in-memory knowledge store for tests and isolated evaluations. Uses
+/// the same schema as the on-disk store but doesn't persist to disk.
 pub(crate) fn open_in_memory() -> anyhow::Result<KnowledgeStore> {
     use crate::db::open_db;
     use std::path::PathBuf;
@@ -673,6 +797,9 @@ pub(crate) fn open_in_memory() -> anyhow::Result<KnowledgeStore> {
     Ok(KnowledgeStore {
         conn,
         embedder: None,
+        vector_index_dir: None,
+        vector_index: None,
+        vector_index_state: None,
     })
 }
 

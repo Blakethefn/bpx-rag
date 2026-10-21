@@ -48,6 +48,11 @@ pub enum Commands {
         #[command(subcommand)]
         action: ModelsAction,
     },
+    /// Evaluate retrieval against the checked-in judged corpus using a cached model.
+    Evaluate {
+        #[command(subcommand)]
+        action: EvalAction,
+    },
     /// Analyze direct imports, includes, and links without using the RAG index.
     AnalyzeFile {
         #[arg(value_hint = ValueHint::FilePath)]
@@ -104,4 +109,18 @@ pub enum ModelsAction {
     Status,
     /// Download the configured embedding model explicitly.
     Download,
+}
+
+#[derive(Subcommand)]
+pub enum EvalAction {
+    /// Run the real-model retrieval benchmark. This never downloads a model.
+    Retrieval {
+        #[arg(long, default_value = "3")]
+        repetitions: usize,
+    },
+    /// Measure SQLite vector-search scaling with deterministic synthetic vectors.
+    Scaling {
+        #[arg(long, default_value = "5")]
+        repetitions: usize,
+    },
 }

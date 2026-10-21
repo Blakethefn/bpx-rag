@@ -1,13 +1,22 @@
-pub mod model;
-pub mod pool;
-
-use anyhow::{Context, Result};
+use anyhow::{anyhow, Context, Result};
+use fastembed::{EmbeddingModel, TextEmbedding, TextInitOptions};
+use hf_hub::{api::sync::ApiBuilder, Cache};
 use std::path::{Path, PathBuf};
+use std::sync::Mutex;
 
-use model::CandleEmbedder;
-
-/// The embedding dimension for all-MiniLM-L6-v2.
-pub const EMBEDDING_DIM: usize = model::EMBEDDING_DIM;
+/// The legacy MiniLM dimension used by the deterministic mock embedder.
+#[cfg(test)]
+pub const EMBEDDING_DIM: usize = 384;
+pub const DEFAULT_MODEL: &str = "all-MiniLM-L6-v2";
+pub const CODE_MODEL: &str = "jina-embeddings-v2-base-code";
+const MINI_LM_MAX_LENGTH: usize = 256;
+const JINA_CODE_MAX_LENGTH: usize = 8192;
+const TOKENIZER_FILES: [&str; 4] = [
+    "tokenizer.json",
+    "config.json",
+    "special_tokens_map.json",
+    "tokenizer_config.json",
+];
 
 /// Trait for embedding text into vectors. Enables mocking in tests.
 #[allow(dead_code)]
@@ -20,56 +29,138 @@ pub trait Embed: Send + Sync {
 
     /// The dimensionality of the output vectors.
     fn dim(&self) -> usize;
+
+    /// Canonical upstream model identity. Vectors from different identities
+    /// must never be compared or fused.
+    fn model_id(&self) -> &str {
+        "sentence-transformers/all-MiniLM-L6-v2"
+    }
 }
 
-/// Production embedder backed by Candle + all-MiniLM-L6-v2.
-///
-/// Lazily loads the model on first use. Downloads via hf-hub if not cached.
+/// Production ONNX embedder. Model download is separate from cached loading so
+/// query and indexing paths can stay offline unless files are already present.
 pub struct Embedder {
-    inner: CandleEmbedder,
+    inner: Mutex<TextEmbedding>,
+    model_id: String,
+    dim: usize,
 }
 
 impl Embedder {
-    /// Load a model from the given directory, downloading missing files first.
-    /// Use `load_cached` for query paths that must never access the network.
-    pub fn new(model_dir: &Path) -> Result<Self> {
-        Self::download_model(model_dir)?;
-        Self::load_cached(model_dir)
+    /// Explicitly download the selected model, then load it from local cache.
+    pub fn new(model_dir: &Path, model_name: &str) -> Result<Self> {
+        Self::download_model(model_dir, model_name)?;
+        Self::load_cached(model_dir, model_name)
     }
 
-    /// Load only local model files. This never attempts a network request.
-    pub fn load_cached(model_dir: &Path) -> Result<Self> {
-        if !model_files_present(model_dir) {
+    /// Load only a complete local cache entry. This never attempts a network request.
+    pub fn load_cached(model_dir: &Path, model_name: &str) -> Result<Self> {
+        let model = resolve_model(model_name)?;
+        let model_info = TextEmbedding::get_model_info(&model)
+            .map_err(|error| anyhow!("unsupported embedding model: {error}"))?;
+        let model_id = model_info.model_code.clone();
+        let dim = model_info.dim;
+        if !model_files_present(model_dir, model_name) {
             anyhow::bail!(
-                "embedding model is not installed at {}; run `bpx-rag models download`",
+                "embedding model '{}' is not completely cached under {}; run `bpx-rag models download`",
+                model_info.model_code,
                 model_dir.display()
             );
         }
-        let inner = CandleEmbedder::load(model_dir).context("failed to load embedding model")?;
-        Ok(Self { inner })
+        let max_length = max_length_for(&model);
+        let options = TextInitOptions::new(model)
+            .with_cache_dir(model_dir.to_path_buf())
+            .with_max_length(max_length)
+            .with_intra_threads(4)
+            .with_show_download_progress(false);
+        let inner = TextEmbedding::try_new(options)
+            .map_err(|error| anyhow!("failed to load cached embedding model: {error}"))?;
+        Ok(Self {
+            inner: Mutex::new(inner),
+            model_id,
+            dim,
+        })
     }
 
-    /// Download missing model files to the configured cache directory.
-    pub fn download_model(model_dir: &Path) -> Result<PathBuf> {
-        ensure_model_downloaded(model_dir)
-    }
-
-    /// Default model directory: `~/.local/share/bpcontext/models/all-MiniLM-L6-v2`
-    #[allow(dead_code)]
-    pub fn default_model_dir() -> Result<PathBuf> {
-        let data_dir =
-            dirs::data_local_dir().context("could not determine local data directory")?;
-        Ok(data_dir
-            .join("bpcontext")
-            .join("models")
-            .join("all-MiniLM-L6-v2"))
+    /// Download the selected model artifacts explicitly into the local HF cache.
+    pub fn download_model(model_dir: &Path, model_name: &str) -> Result<PathBuf> {
+        let model = resolve_model(model_name)?;
+        let model_info = TextEmbedding::get_model_info(&model)
+            .map_err(|error| anyhow!("unsupported embedding model: {error}"))?;
+        let cache_dir = model_dir.to_path_buf();
+        let api = ApiBuilder::new()
+            .with_cache_dir(cache_dir.clone())
+            .with_progress(true)
+            .build()
+            .context("failed to initialize Hugging Face cache/API")?;
+        let repo = api.model(model_info.model_code.clone());
+        let files = std::iter::once(model_info.model_file.as_str())
+            .chain(TOKENIZER_FILES.iter().copied())
+            .chain(model_info.additional_files.iter().map(String::as_str));
+        for file in files {
+            repo.get(file).with_context(|| {
+                format!("failed to download {file} for {}", model_info.model_code)
+            })?;
+        }
+        Ok(cache_dir)
     }
 }
 
-pub fn model_files_present(model_dir: &Path) -> bool {
-    ["config.json", "model.safetensors", "tokenizer.json"]
-        .iter()
-        .all(|file| model_dir.join(file).is_file())
+pub fn model_files_present(model_dir: &Path, model_name: &str) -> bool {
+    let Ok(model) = resolve_model(model_name) else {
+        return false;
+    };
+    let Ok(model_info) = TextEmbedding::get_model_info(&model) else {
+        return false;
+    };
+    let repo = Cache::new(model_dir.to_path_buf()).model(model_info.model_code.clone());
+    std::iter::once(model_info.model_file.as_str())
+        .chain(TOKENIZER_FILES.iter().copied())
+        .chain(model_info.additional_files.iter().map(String::as_str))
+        .all(|file| repo.get(file).is_some())
+}
+
+pub fn canonical_model_id(model_name: &str) -> Result<String> {
+    let model = resolve_model(model_name)?;
+    let info = TextEmbedding::get_model_info(&model)
+        .map_err(|error| anyhow!("unsupported embedding model: {error}"))?;
+    Ok(info.model_code.clone())
+}
+
+pub fn model_cache_bytes(model_dir: &Path, model_name: &str) -> Result<u64> {
+    let model = resolve_model(model_name)?;
+    let info = TextEmbedding::get_model_info(&model)
+        .map_err(|error| anyhow!("unsupported embedding model: {error}"))?;
+    let repo = Cache::new(model_dir.to_path_buf()).model(info.model_code.clone());
+    std::iter::once(info.model_file.as_str())
+        .chain(TOKENIZER_FILES.iter().copied())
+        .chain(info.additional_files.iter().map(String::as_str))
+        .try_fold(0_u64, |total, file| {
+            let path = repo
+                .get(file)
+                .ok_or_else(|| anyhow!("cached model artifact is missing: {file}"))?;
+            Ok(total + std::fs::metadata(path)?.len())
+        })
+}
+
+fn resolve_model(model_name: &str) -> Result<EmbeddingModel> {
+    match model_name {
+        DEFAULT_MODEL | "sentence-transformers/all-MiniLM-L6-v2" => {
+            Ok(EmbeddingModel::AllMiniLML6V2)
+        }
+        CODE_MODEL | "jinaai/jina-embeddings-v2-base-code" => {
+            Ok(EmbeddingModel::JinaEmbeddingsV2BaseCode)
+        }
+        other => anyhow::bail!(
+            "unsupported embedding model '{other}'; choose '{DEFAULT_MODEL}' or '{CODE_MODEL}'"
+        ),
+    }
+}
+
+fn max_length_for(model: &EmbeddingModel) -> usize {
+    match model {
+        EmbeddingModel::JinaEmbeddingsV2BaseCode => JINA_CODE_MAX_LENGTH,
+        _ => MINI_LM_MAX_LENGTH,
+    }
 }
 
 /// Validate vector shape and values, then normalize to unit length so cosine
@@ -100,54 +191,32 @@ pub fn normalize_embedding(embedding: &[f32], expected_dim: usize) -> Result<Vec
 
 impl Embed for Embedder {
     fn embed_one(&self, text: &str) -> Result<Vec<f32>> {
-        self.inner.embed_one(text)
+        let mut embeddings = self.embed_batch(&[text])?;
+        embeddings
+            .pop()
+            .ok_or_else(|| anyhow!("embedding provider returned no vector"))
     }
 
     fn embed_batch(&self, texts: &[&str]) -> Result<Vec<Vec<f32>>> {
-        self.inner.embed_batch(texts)
+        if texts.is_empty() {
+            return Ok(Vec::new());
+        }
+        let mut inner = self
+            .inner
+            .lock()
+            .map_err(|_| anyhow!("embedding model lock was poisoned"))?;
+        inner
+            .embed(texts, None)
+            .map_err(|error| anyhow!("embedding generation failed: {error}"))
     }
 
     fn dim(&self) -> usize {
-        EMBEDDING_DIM
-    }
-}
-
-/// Ensure model files exist in `model_dir`, downloading via hf-hub if needed.
-///
-/// Returns the path where the model files are located.
-fn ensure_model_downloaded(model_dir: &Path) -> Result<PathBuf> {
-    let config_path = model_dir.join("config.json");
-    let weights_path = model_dir.join("model.safetensors");
-    let tokenizer_path = model_dir.join("tokenizer.json");
-
-    if config_path.exists() && weights_path.exists() && tokenizer_path.exists() {
-        return Ok(model_dir.to_path_buf());
+        self.dim
     }
 
-    eprintln!("[bpx-rag] Downloading all-MiniLM-L6-v2 model (~80MB, one-time)...");
-
-    let api = hf_hub::api::sync::Api::new().context("failed to initialize hf-hub API")?;
-    let repo = api.model("sentence-transformers/all-MiniLM-L6-v2".to_string());
-
-    // Download each required file
-    let files = ["config.json", "model.safetensors", "tokenizer.json"];
-    for filename in &files {
-        let downloaded_path = repo
-            .get(filename)
-            .with_context(|| format!("failed to download {filename} from HuggingFace"))?;
-
-        let target = model_dir.join(filename);
-        if downloaded_path != target {
-            // hf-hub caches files in its own location — copy to our model_dir
-            std::fs::create_dir_all(model_dir)
-                .with_context(|| format!("failed to create {}", model_dir.display()))?;
-            std::fs::copy(&downloaded_path, &target)
-                .with_context(|| format!("failed to copy {filename} to model dir"))?;
-        }
+    fn model_id(&self) -> &str {
+        &self.model_id
     }
-
-    eprintln!("[bpx-rag] Model downloaded successfully.");
-    Ok(model_dir.to_path_buf())
 }
 
 /// Convert a f32 embedding vector to raw bytes for SQLite BLOB storage.
@@ -222,6 +291,27 @@ pub(crate) mod tests {
         for (a, b) in original.iter().zip(recovered.iter()) {
             assert!((a - b).abs() < 1e-7);
         }
+    }
+
+    #[test]
+    fn configured_models_have_distinct_canonical_ids_and_missing_cache_is_offline() {
+        let dir = tempfile::tempdir().unwrap();
+        assert_eq!(
+            canonical_model_id(DEFAULT_MODEL).unwrap(),
+            "Qdrant/all-MiniLM-L6-v2-onnx"
+        );
+        assert_eq!(
+            canonical_model_id(CODE_MODEL).unwrap(),
+            "jinaai/jina-embeddings-v2-base-code"
+        );
+        assert_ne!(
+            canonical_model_id(DEFAULT_MODEL).unwrap(),
+            canonical_model_id(CODE_MODEL).unwrap()
+        );
+        assert!(!model_files_present(dir.path(), DEFAULT_MODEL));
+        assert!(!model_files_present(dir.path(), CODE_MODEL));
+        assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 0);
+        assert!(canonical_model_id("unknown-model").is_err());
     }
 
     #[test]
