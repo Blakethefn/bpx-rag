@@ -10,20 +10,24 @@
   "query_count": 34,
   "corpus_file_count": 34,
   "chunk_count": 38,
-  "repetitions": 5,
-  "model_load_ms": 3870.2092869999997,
-  "indexing_ms": 1390.707473,
-  "database_bytes": 401408,
+  "repetitions": 3,
+  "model_load_ms": 1153.247046,
+  "indexing_ms": 2241.4357370000002,
+  "database_bytes": 385024,
   "model_artifact_bytes": 644080771,
-  "warm_query_p50_ms": 19.264203000000002,
-  "warm_query_p95_ms": 25.717803,
+  "embedding_ms": 2229,
+  "embedding_calls": 1,
+  "embedding_chunks": 38,
+  "sqlite_transaction_ms": 7,
+  "warm_query_p50_ms": 26.548638999999998,
+  "warm_query_p95_ms": 34.188031,
   "overall": {
     "recall_at_5": 0.9362745098039216,
     "recall_at_10": 0.980392156862745,
     "precision_at_5": 0.21764705882352953,
     "precision_at_10": 0.11470588235294124,
-    "mrr_at_10": 0.8351307189542483,
-    "ndcg_at_10": 0.8568846565195568,
+    "mrr_at_10": 0.8803921568627451,
+    "ndcg_at_10": 0.8903866953659799,
     "success_at_5": 0.9705882352941176
   },
   "lexical_only": {
@@ -288,8 +292,8 @@
         "python/fixed_retry.py",
         "lua/counter.lua",
         "php/tax.php",
-        "cpp/pool.cpp",
         "lua/bucket.lua",
+        "cpp/pool.cpp",
         "csharp/idempotency.cs"
       ],
       "lexical_top_paths": [
@@ -301,8 +305,8 @@
         "cpp/task_cancel.cpp",
         "javascript/throttle.js",
         "bash/rollback.sh",
-        "ruby/password.rb",
-        "bash/release.sh"
+        "bash/release.sh",
+        "ruby/password.rb"
       ],
       "vector_top_paths": [
         "javascript/debounce.js",
@@ -354,10 +358,10 @@
         "python/fixed_retry.py",
         "lua/counter.lua",
         "csharp/idempotency.cs",
-        "bash/rollback.sh",
         "csharp/payment_retry.cs",
-        "typescript/retry.ts",
+        "bash/rollback.sh",
         "javascript/debounce.js",
+        "typescript/retry.ts",
         "cpp/task_cancel.cpp"
       ],
       "lexical_top_paths": [
@@ -370,7 +374,7 @@
         "lua/counter.lua",
         "java/expiry.java",
         "python/cache.py",
-        "ruby/password.rb"
+        "bash/release.sh"
       ],
       "vector_top_paths": [
         "go/queue.go",
@@ -419,13 +423,13 @@
       "top_paths": [
         "cpp/pool.cpp",
         "python/retry.py",
-        "cpp/task_cancel.cpp",
         "ruby/password_policy.rb",
+        "cpp/task_cancel.cpp",
         "typescript/timeout.ts",
-        "javascript/debounce.js",
         "python/fixed_retry.py",
-        "rust/auth.rs",
+        "javascript/debounce.js",
         "javascript/throttle.js",
+        "rust/auth.rs",
         "typescript/retry.ts"
       ],
       "lexical_top_paths": [
@@ -438,7 +442,7 @@
         "python/retry.py",
         "php/tax.php",
         "bash/rollback.sh",
-        "ruby/password.rb"
+        "bash/release.sh"
       ],
       "vector_top_paths": [
         "cpp/pool.cpp",
@@ -462,8 +466,8 @@
         "recall_at_10": 1.0,
         "precision_at_5": 0.2,
         "precision_at_10": 0.1,
-        "mrr_at_10": 0.5,
-        "ndcg_at_10": 0.6309297535714575,
+        "mrr_at_10": 1.0,
+        "ndcg_at_10": 1.0,
         "success_at_5": 1.0
       },
       "lexical_only": {
@@ -485,8 +489,8 @@
         "success_at_5": 1.0
       },
       "top_paths": [
-        "csharp/payment_retry.cs",
         "csharp/idempotency.cs",
+        "csharp/payment_retry.cs",
         "dart/refresh.dart",
         "kotlin/read_tx.kt",
         "rust/auth.rs",
@@ -530,8 +534,8 @@
         "recall_at_10": 1.0,
         "precision_at_5": 0.2,
         "precision_at_10": 0.1,
-        "mrr_at_10": 1.0,
-        "ndcg_at_10": 1.0,
+        "mrr_at_10": 0.5,
+        "ndcg_at_10": 0.6309297535714575,
         "success_at_5": 1.0
       },
       "lexical_only": {
@@ -553,15 +557,15 @@
         "success_at_5": 1.0
       },
       "top_paths": [
-        "kotlin/transaction.kt",
         "kotlin/read_tx.kt",
+        "kotlin/transaction.kt",
         "csharp/payment_retry.cs",
         "bash/rollback.sh",
         "c/buffer.c",
         "python/cache.py",
         "csharp/idempotency.cs",
-        "sql/index.sql",
         "go/queue.go",
+        "sql/index.sql",
         "javascript/throttle.js"
       ],
       "lexical_top_paths": [
@@ -628,8 +632,8 @@
         "bash/release.sh",
         "sql/fullscan.sql",
         "kotlin/transaction.kt",
-        "sql/index.sql",
         "csharp/idempotency.cs",
+        "sql/index.sql",
         "java/expiry.java"
       ],
       "lexical_top_paths": [
@@ -641,8 +645,8 @@
         "dart/refresh.dart",
         "javascript/debounce.js",
         "bash/rollback.sh",
-        "ruby/password.rb",
-        "bash/release.sh"
+        "bash/release.sh",
+        "ruby/password.rb"
       ],
       "vector_top_paths": [
         "php/tax.php",
@@ -697,8 +701,7 @@
         "kotlin/read_tx.kt",
         "rust/auth.rs",
         "java/expiry.java",
-        "bash/rollback.sh",
-        "bash/release.sh"
+        "bash/rollback.sh"
       ],
       "lexical_top_paths": [
         "ruby/password.rb",
@@ -762,8 +765,8 @@
         "swift/preferences.swift",
         "python/fixed_retry.py",
         "python/retry.py",
-        "csharp/idempotency.cs",
         "javascript/throttle.js",
+        "csharp/idempotency.cs",
         "ruby/password.rb"
       ],
       "lexical_top_paths": [
@@ -829,10 +832,10 @@
         "typescript/retry.ts",
         "csharp/idempotency.cs",
         "lua/counter.lua",
-        "ruby/password_policy.rb",
         "csharp/payment_retry.cs",
+        "ruby/password_policy.rb",
         "bash/rollback.sh",
-        "ruby/password.rb"
+        "bash/release.sh"
       ],
       "lexical_top_paths": [
         "lua/bucket.lua",
@@ -841,8 +844,8 @@
         "typescript/retry.ts",
         "ruby/password_policy.rb",
         "bash/rollback.sh",
-        "ruby/password.rb",
         "bash/release.sh",
+        "ruby/password.rb",
         "csharp/idempotency.cs",
         "swift/preferences.swift"
       ],
@@ -894,13 +897,13 @@
         "dart/refresh.dart",
         "swift/keychain.swift",
         "dart/decode.dart",
-        "rust/auth.rs",
         "java/expiry.java",
+        "rust/auth.rs",
         "lua/bucket.lua",
         "python/cache.py",
         "c/buffer.c",
-        "kotlin/read_tx.kt",
-        "csharp/payment_retry.cs"
+        "csharp/payment_retry.cs",
+        "kotlin/read_tx.kt"
       ],
       "lexical_top_paths": [
         "dart/refresh.dart",
@@ -1003,8 +1006,8 @@
         "recall_at_10": 1.0,
         "precision_at_5": 0.2,
         "precision_at_10": 0.1,
-        "mrr_at_10": 0.5,
-        "ndcg_at_10": 0.6309297535714575,
+        "mrr_at_10": 1.0,
+        "ndcg_at_10": 1.0,
         "success_at_5": 1.0
       },
       "lexical_only": {
@@ -1026,16 +1029,16 @@
         "success_at_5": 1.0
       },
       "top_paths": [
-        "sql/fullscan.sql",
         "sql/index.sql",
+        "sql/fullscan.sql",
         "javascript/throttle.js",
         "cpp/pool.cpp",
         "kotlin/read_tx.kt",
-        "go/queue_metrics.go",
         "java/session.java",
+        "go/queue_metrics.go",
         "csharp/idempotency.cs",
         "cpp/task_cancel.cpp",
-        "javascript/debounce.js"
+        "lua/bucket.lua"
       ],
       "lexical_top_paths": [
         "sql/index.sql",
@@ -1203,7 +1206,7 @@
         "lua/bucket.lua",
         "java/expiry.java",
         "csharp/payment_retry.cs",
-        "csharp/idempotency.cs"
+        "javascript/debounce.js"
       ],
       "lexical_top_paths": [
         "go/queue.go",
@@ -1371,8 +1374,8 @@
         "recall_at_10": 1.0,
         "precision_at_5": 0.2,
         "precision_at_10": 0.1,
-        "mrr_at_10": 0.2,
-        "ndcg_at_10": 0.38685280723454163,
+        "mrr_at_10": 0.25,
+        "ndcg_at_10": 0.43067655807339306,
         "success_at_5": 1.0
       },
       "lexical_only": {
@@ -1397,8 +1400,8 @@
         "java/session.java",
         "python/fixed_retry.py",
         "lua/counter.lua",
-        "c/buffer.c",
         "javascript/debounce.js",
+        "c/buffer.c",
         "javascript/throttle.js",
         "c/buffer_size.c",
         "csharp/idempotency.cs",
@@ -1439,8 +1442,8 @@
         "recall_at_10": 1.0,
         "precision_at_5": 0.0,
         "precision_at_10": 0.1,
-        "mrr_at_10": 0.1111111111111111,
-        "ndcg_at_10": 0.3010299956639812,
+        "mrr_at_10": 0.1,
+        "ndcg_at_10": 0.2890648263178878,
         "success_at_5": 0.0
       },
       "lexical_only": {
@@ -1466,12 +1469,12 @@
         "cpp/task_cancel.cpp",
         "csharp/idempotency.cs",
         "bash/rollback.sh",
-        "go/queue_metrics.go",
         "lua/bucket.lua",
+        "go/queue_metrics.go",
         "csharp/payment_retry.cs",
         "java/session.java",
-        "go/queue.go",
-        "python/cache.py"
+        "python/cache.py",
+        "go/queue.go"
       ],
       "lexical_top_paths": [
         "go/queue_metrics.go",
@@ -1481,8 +1484,8 @@
         "csharp/idempotency.cs",
         "cpp/task_cancel.cpp",
         "bash/rollback.sh",
-        "ruby/password.rb",
         "bash/release.sh",
+        "ruby/password.rb",
         "javascript/debounce.js"
       ],
       "vector_top_paths": [
@@ -1619,7 +1622,7 @@
         "lua/counter.lua",
         "rust/auth.rs",
         "bash/rollback.sh",
-        "ruby/password.rb"
+        "bash/release.sh"
       ],
       "vector_top_paths": [
         "csharp/idempotency.cs",
@@ -1707,8 +1710,8 @@
         "recall_at_10": 1.0,
         "precision_at_5": 0.2,
         "precision_at_10": 0.1,
-        "mrr_at_10": 0.5,
-        "ndcg_at_10": 0.6309297535714575,
+        "mrr_at_10": 1.0,
+        "ndcg_at_10": 1.0,
         "success_at_5": 1.0
       },
       "lexical_only": {
@@ -1730,16 +1733,16 @@
         "success_at_5": 1.0
       },
       "top_paths": [
-        "php/discount.php",
         "php/tax.php",
+        "php/discount.php",
         "kotlin/read_tx.kt",
         "kotlin/transaction.kt",
         "dart/decode.dart",
         "ruby/password.rb",
         "csharp/idempotency.cs",
         "sql/fullscan.sql",
-        "csharp/payment_retry.cs",
-        "lua/counter.lua"
+        "lua/counter.lua",
+        "csharp/payment_retry.cs"
       ],
       "lexical_top_paths": [
         "php/discount.php",
@@ -1798,8 +1801,8 @@
       },
       "top_paths": [
         "ruby/password.rb",
-        "java/expiry.java",
         "swift/keychain.swift",
+        "java/expiry.java",
         "ruby/password_policy.rb",
         "lua/bucket.lua",
         "rust/auth.rs",
@@ -2001,14 +2004,14 @@
       "top_paths": [
         "dart/refresh.dart",
         "java/expiry.java",
-        "swift/keychain.swift",
         "java/session.java",
+        "swift/keychain.swift",
         "rust/auth.rs",
         "lua/bucket.lua",
         "dart/decode.dart",
         "csharp/payment_retry.cs",
         "csharp/idempotency.cs",
-        "sql/fullscan.sql"
+        "ruby/password.rb"
       ],
       "lexical_top_paths": [
         "dart/refresh.dart",
@@ -2069,11 +2072,11 @@
       "top_paths": [
         "dart/refresh.dart",
         "swift/keychain.swift",
-        "ruby/password.rb",
         "java/expiry.java",
         "python/cache.py",
         "rust/auth.rs",
         "python/fixed_retry.py",
+        "ruby/password.rb",
         "swift/preferences.swift",
         "python/retry.py",
         "c/buffer.c"
@@ -2088,7 +2091,7 @@
         "java/expiry.java",
         "rust/auth.rs",
         "bash/rollback.sh",
-        "ruby/password.rb"
+        "bash/release.sh"
       ],
       "vector_top_paths": [
         "swift/keychain.swift",
@@ -2112,8 +2115,8 @@
         "recall_at_10": 1.0,
         "precision_at_5": 0.2,
         "precision_at_10": 0.1,
-        "mrr_at_10": 0.5,
-        "ndcg_at_10": 0.6309297535714575,
+        "mrr_at_10": 1.0,
+        "ndcg_at_10": 1.0,
         "success_at_5": 1.0
       },
       "lexical_only": {
@@ -2135,8 +2138,8 @@
         "success_at_5": 1.0
       },
       "top_paths": [
-        "sql/fullscan.sql",
         "sql/index.sql",
+        "sql/fullscan.sql",
         "kotlin/read_tx.kt",
         "python/cache.py",
         "python/fixed_retry.py",
@@ -2212,7 +2215,7 @@
         "cpp/task_cancel.cpp",
         "lua/counter.lua",
         "java/session.java",
-        "python/cache.py"
+        "php/tax.php"
       ],
       "lexical_top_paths": [
         "c/buffer.c",
@@ -2276,11 +2279,11 @@
         "rust/auth.rs",
         "java/expiry.java",
         "ruby/password_policy.rb",
-        "ruby/password.rb",
         "lua/bucket.lua",
+        "ruby/password.rb",
         "typescript/timeout.ts",
         "dart/decode.dart",
-        "dart/refresh.dart"
+        "kotlin/read_tx.kt"
       ],
       "lexical_top_paths": [
         "swift/keychain.swift",
@@ -2332,8 +2335,8 @@
       "recall_at_10": 0.9777777777777777,
       "precision_at_5": 0.24000000000000005,
       "precision_at_10": 0.12000000000000002,
-      "mrr_at_10": 0.9333333333333333,
-      "ndcg_at_10": 0.9293037638317012,
+      "mrr_at_10": 0.9666666666666667,
+      "ndcg_at_10": 0.9539084469269373,
       "success_at_5": 1.0
     },
     "paraphrase": {
@@ -2341,8 +2344,8 @@
       "recall_at_10": 0.980392156862745,
       "precision_at_5": 0.20000000000000004,
       "precision_at_10": 0.11176470588235297,
-      "mrr_at_10": 0.7290849673202615,
-      "ndcg_at_10": 0.7761483449523185,
+      "mrr_at_10": 0.7901960784313725,
+      "ndcg_at_10": 0.821442408149368,
       "success_at_5": 0.9411764705882353
     }
   },
@@ -2370,8 +2373,8 @@
       "recall_at_10": 1.0,
       "precision_at_5": 0.2,
       "precision_at_10": 0.1,
-      "mrr_at_10": 0.75,
-      "ndcg_at_10": 0.8154648767857288,
+      "mrr_at_10": 1.0,
+      "ndcg_at_10": 1.0,
       "success_at_5": 1.0
     },
     "dart": {
@@ -2388,8 +2391,8 @@
       "recall_at_10": 1.0,
       "precision_at_5": 0.1,
       "precision_at_10": 0.1,
-      "mrr_at_10": 0.5555555555555556,
-      "ndcg_at_10": 0.6505149978319906,
+      "mrr_at_10": 0.55,
+      "ndcg_at_10": 0.6445324131589439,
       "success_at_5": 0.5
     },
     "java": {
@@ -2406,8 +2409,8 @@
       "recall_at_10": 1.0,
       "precision_at_5": 0.2,
       "precision_at_10": 0.1,
-      "mrr_at_10": 0.6,
-      "ndcg_at_10": 0.6934264036172708,
+      "mrr_at_10": 0.625,
+      "ndcg_at_10": 0.7153382790366966,
       "success_at_5": 1.0
     },
     "kotlin": {
@@ -2415,8 +2418,8 @@
       "recall_at_10": 1.0,
       "precision_at_5": 0.2,
       "precision_at_10": 0.1,
-      "mrr_at_10": 1.0,
-      "ndcg_at_10": 1.0,
+      "mrr_at_10": 0.75,
+      "ndcg_at_10": 0.8154648767857288,
       "success_at_5": 1.0
     },
     "lua": {
@@ -2433,8 +2436,8 @@
       "recall_at_10": 1.0,
       "precision_at_5": 0.2,
       "precision_at_10": 0.1,
-      "mrr_at_10": 0.75,
-      "ndcg_at_10": 0.8154648767857288,
+      "mrr_at_10": 1.0,
+      "ndcg_at_10": 1.0,
       "success_at_5": 1.0
     },
     "python": {
@@ -2478,8 +2481,8 @@
       "recall_at_10": 1.0,
       "precision_at_5": 0.2,
       "precision_at_10": 0.1,
-      "mrr_at_10": 0.5,
-      "ndcg_at_10": 0.6309297535714575,
+      "mrr_at_10": 1.0,
+      "ndcg_at_10": 1.0,
       "success_at_5": 1.0
     },
     "swift": {

@@ -9,21 +9,25 @@
   "host_threads": 12,
   "query_count": 25,
   "corpus_file_count": 55,
-  "chunk_count": 582,
+  "chunk_count": 591,
   "repetitions": 1,
-  "model_load_ms": 1073.3903890000001,
-  "indexing_ms": 288019.84125500004,
-  "database_bytes": 6287360,
+  "model_load_ms": 1082.117244,
+  "indexing_ms": 362466.33739999996,
+  "database_bytes": 6316032,
   "model_artifact_bytes": 644080771,
-  "warm_query_p50_ms": 259.91757,
-  "warm_query_p95_ms": 366.99327999999997,
+  "embedding_ms": 362197,
+  "embedding_calls": 1,
+  "embedding_chunks": 591,
+  "sqlite_transaction_ms": 212,
+  "warm_query_p50_ms": 228.49281599999998,
+  "warm_query_p95_ms": 309.284748,
   "overall": {
     "recall_at_5": 0.6233333333333334,
-    "recall_at_10": 0.66,
+    "recall_at_10": 0.6466666666666667,
     "precision_at_5": 0.344,
-    "precision_at_10": 0.18400000000000002,
+    "precision_at_10": 0.18,
     "mrr_at_10": 0.9466666666666668,
-    "ndcg_at_10": 0.7732940490755057,
+    "ndcg_at_10": 0.7691811144839672,
     "success_at_5": 1.0
   },
   "lexical_only": {
@@ -32,16 +36,16 @@
     "precision_at_5": 0.32000000000000006,
     "precision_at_10": 0.168,
     "mrr_at_10": 0.9033333333333333,
-    "ndcg_at_10": 0.728306258447881,
+    "ndcg_at_10": 0.7303759323580098,
     "success_at_5": 1.0
   },
   "vector_only": {
-    "recall_at_5": 0.6033333333333332,
-    "recall_at_10": 0.6366666666666666,
-    "precision_at_5": 0.336,
-    "precision_at_10": 0.17600000000000005,
+    "recall_at_5": 0.6233333333333332,
+    "recall_at_10": 0.6566666666666666,
+    "precision_at_5": 0.3440000000000001,
+    "precision_at_10": 0.18000000000000005,
     "mrr_at_10": 0.8923809523809524,
-    "ndcg_at_10": 0.7574339939163671,
+    "ndcg_at_10": 0.7748531877191401,
     "success_at_5": 0.92
   },
   "cases": [
@@ -225,7 +229,7 @@
         "knowledge/mod.rs",
         "knowledge/enrichment.rs",
         "knowledge/sync.rs",
-        "knowledge/vector_index.rs"
+        "eval.rs"
       ],
       "vector_top_paths": [
         "knowledge/filter.rs"
@@ -310,14 +314,16 @@
       "top_paths": [
         "knowledge/mod.rs",
         "knowledge/sync.rs",
-        "eval.rs"
+        "eval.rs",
+        "cli.rs"
       ],
       "lexical_top_paths": [
         "knowledge/sync.rs",
         "knowledge/mod.rs",
         "eval.rs",
         "cli.rs",
-        "mcp/tools.rs"
+        "mcp/tools.rs",
+        "store/search.rs"
       ],
       "vector_top_paths": [
         "knowledge/sync.rs",
@@ -358,8 +364,8 @@
       },
       "top_paths": [
         "knowledge/sync.rs",
-        "knowledge/mod.rs",
-        "mcp/tools.rs"
+        "mcp/tools.rs",
+        "knowledge/mod.rs"
       ],
       "lexical_top_paths": [
         "knowledge/sync.rs",
@@ -371,7 +377,8 @@
       ],
       "vector_top_paths": [
         "knowledge/sync.rs",
-        "knowledge/mod.rs"
+        "knowledge/mod.rs",
+        "search_memory.rs"
       ]
     },
     {
@@ -402,7 +409,7 @@
         "precision_at_5": 0.4,
         "precision_at_10": 0.2,
         "mrr_at_10": 1.0,
-        "ndcg_at_10": 0.7098097413968655,
+        "ndcg_at_10": 1.0,
         "success_at_5": 1.0
       },
       "top_paths": [
@@ -410,20 +417,20 @@
         "relationships/scan.rs",
         "relationships/tests.rs",
         "mcp/tools.rs",
-        "cli.rs",
-        "relationships/markdown.rs"
+        "relationships/markdown.rs",
+        "cli.rs"
       ],
       "lexical_top_paths": [
         "knowledge/sync.rs",
         "mcp/tools.rs",
-        "cli.rs",
         "relationships/markdown.rs",
+        "cli.rs",
         "knowledge/vector_index.rs",
         "relationships/scan.rs"
       ],
       "vector_top_paths": [
-        "relationships/scan.rs",
         "knowledge/sync.rs",
+        "relationships/scan.rs",
         "relationships/tests.rs",
         "knowledge/mod.rs"
       ]
@@ -602,7 +609,7 @@
         "precision_at_5": 0.6,
         "precision_at_10": 0.3,
         "mrr_at_10": 1.0,
-        "ndcg_at_10": 0.9172717633239094,
+        "ndcg_at_10": 0.9941825709069458,
         "success_at_5": 1.0
       },
       "vector_only": {
@@ -619,13 +626,12 @@
         "knowledge/search.rs",
         "knowledge/mod.rs",
         "store/search.rs",
-        "knowledge/filter.rs",
-        "relationships/markdown.rs"
+        "knowledge/filter.rs"
       ],
       "lexical_top_paths": [
         "knowledge/vector_index.rs",
-        "knowledge/mod.rs",
         "knowledge/search.rs",
+        "knowledge/mod.rs",
         "knowledge/filter.rs",
         "relationships/markdown.rs",
         "embedder/mod.rs"
@@ -660,12 +666,12 @@
         "success_at_5": 1.0
       },
       "vector_only": {
-        "recall_at_5": 0.5,
-        "recall_at_10": 0.5,
-        "precision_at_5": 0.2,
-        "precision_at_10": 0.1,
+        "recall_at_5": 1.0,
+        "recall_at_10": 1.0,
+        "precision_at_5": 0.4,
+        "precision_at_10": 0.2,
         "mrr_at_10": 1.0,
-        "ndcg_at_10": 0.7871546029909718,
+        "ndcg_at_10": 0.9324441894571632,
         "success_at_5": 1.0
       },
       "top_paths": [
@@ -680,12 +686,14 @@
         "knowledge/vector_index.rs",
         "store/mod.rs",
         "knowledge/filter.rs",
-        "knowledge/search.rs"
+        "knowledge/search.rs",
+        "knowledge/mod.rs"
       ],
       "vector_top_paths": [
         "embedder/mod.rs",
         "store/mod.rs",
-        "store/search.rs"
+        "store/search.rs",
+        "knowledge/sync.rs"
       ]
     },
     {
@@ -730,8 +738,7 @@
         "eval.rs",
         "store/search.rs",
         "knowledge/search.rs",
-        "mcp/tools.rs",
-        "store/schema.rs"
+        "mcp/tools.rs"
       ],
       "vector_top_paths": [
         "store/chunker.rs",
@@ -784,8 +791,8 @@
         "mcp/tools.rs",
         "config.rs",
         "cli.rs",
-        "store/mod.rs",
-        "knowledge/mod.rs"
+        "knowledge/mod.rs",
+        "store/mod.rs"
       ],
       "vector_top_paths": [
         "mcp/server.rs",
@@ -833,8 +840,8 @@
         "cli.rs",
         "knowledge/enrichment.rs",
         "store/search.rs",
-        "knowledge/filter.rs",
-        "store/mod.rs"
+        "store/mod.rs",
+        "knowledge/filter.rs"
       ],
       "lexical_top_paths": [
         "mcp/tools.rs",
@@ -842,10 +849,10 @@
         "knowledge/enrichment.rs",
         "knowledge/filter.rs",
         "store/schema.rs",
-        "knowledge/sync.rs",
-        "embedder/mod.rs",
         "store/chunker.rs",
-        "rag_app.rs"
+        "embedder/mod.rs",
+        "rag_app.rs",
+        "session/snapshot.rs"
       ],
       "vector_top_paths": [
         "knowledge/search.rs",
@@ -936,7 +943,7 @@
         "precision_at_5": 0.2,
         "precision_at_10": 0.2,
         "mrr_at_10": 0.5,
-        "ndcg_at_10": 0.521179458095534,
+        "ndcg_at_10": 0.5160215194230502,
         "success_at_5": 1.0
       },
       "vector_only": {
@@ -952,8 +959,8 @@
         "retrieval.rs",
         "knowledge/mod.rs",
         "rag_app.rs",
-        "knowledge/search.rs",
         "cli.rs",
+        "knowledge/search.rs",
         "truncate.rs"
       ],
       "lexical_top_paths": [
@@ -963,8 +970,8 @@
         "truncate.rs",
         "knowledge/search.rs",
         "embedder/mod.rs",
-        "mcp/tools.rs",
-        "main.rs"
+        "main.rs",
+        "mcp/tools.rs"
       ],
       "vector_top_paths": [
         "retrieval.rs",
@@ -980,11 +987,11 @@
       "language": "rust",
       "hybrid": {
         "recall_at_5": 0.3333333333333333,
-        "recall_at_10": 0.6666666666666666,
+        "recall_at_10": 0.3333333333333333,
         "precision_at_5": 0.2,
-        "precision_at_10": 0.2,
+        "precision_at_10": 0.1,
         "mrr_at_10": 1.0,
-        "ndcg_at_10": 0.7763672830184426,
+        "ndcg_at_10": 0.6735439182299785,
         "success_at_5": 1.0
       },
       "lexical_only": {
@@ -1011,7 +1018,7 @@
         "relationships/format.rs",
         "relationships/types.rs",
         "knowledge/mod.rs",
-        "mcp/server.rs"
+        "mcp/tools.rs"
       ],
       "lexical_top_paths": [
         "relationships/format.rs",
@@ -1114,8 +1121,8 @@
         "success_at_5": 0.0
       },
       "top_paths": [
-        "relationships/polyglot/extractors/scripting.rs",
         "relationships/polyglot/extractors/modules.rs",
+        "relationships/polyglot/extractors/scripting.rs",
         "relationships/polyglot/extract.rs",
         "relationships/polyglot/extractors/python.rs",
         "relationships/polyglot/extractors/c_family.rs",
@@ -1188,8 +1195,7 @@
       ],
       "lexical_top_paths": [
         "knowledge/sync.rs",
-        "knowledge/mod.rs",
-        "relationships/tests.rs"
+        "knowledge/mod.rs"
       ],
       "vector_top_paths": [
         "knowledge/mod.rs",
@@ -1219,7 +1225,7 @@
         "precision_at_5": 0.6,
         "precision_at_10": 0.3,
         "mrr_at_10": 1.0,
-        "ndcg_at_10": 1.0,
+        "ndcg_at_10": 0.9799889788426707,
         "success_at_5": 1.0
       },
       "vector_only": {
@@ -1242,8 +1248,8 @@
       "lexical_top_paths": [
         "retrieval.rs",
         "search_model.rs",
-        "knowledge/mod.rs",
         "store/search.rs",
+        "knowledge/mod.rs",
         "knowledge/search.rs",
         "mcp/tools.rs",
         "session/snapshot.rs"
@@ -1341,8 +1347,8 @@
       },
       "top_paths": [
         "knowledge/mod.rs",
-        "cli.rs",
         "knowledge/sync.rs",
+        "cli.rs",
         "mcp/tools.rs"
       ],
       "lexical_top_paths": [
@@ -1407,11 +1413,11 @@
     },
     "relationships": {
       "recall_at_5": 0.5333333333333333,
-      "recall_at_10": 0.6666666666666666,
+      "recall_at_10": 0.6,
       "precision_at_5": 0.32,
-      "precision_at_10": 0.2,
+      "precision_at_10": 0.18000000000000002,
       "mrr_at_10": 0.8666666666666668,
-      "ndcg_at_10": 0.7558179797997564,
+      "ndcg_at_10": 0.7352533068420636,
       "success_at_5": 1.0
     },
     "retrieval_pipeline": {
@@ -1436,11 +1442,11 @@
   "by_language": {
     "rust": {
       "recall_at_5": 0.6233333333333334,
-      "recall_at_10": 0.66,
+      "recall_at_10": 0.6466666666666667,
       "precision_at_5": 0.344,
-      "precision_at_10": 0.18400000000000002,
+      "precision_at_10": 0.18,
       "mrr_at_10": 0.9466666666666668,
-      "ndcg_at_10": 0.7732940490755057,
+      "ndcg_at_10": 0.7691811144839672,
       "success_at_5": 1.0
     }
   },

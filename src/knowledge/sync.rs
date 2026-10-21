@@ -12,11 +12,10 @@ use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::io::Read;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
 use std::time::Instant;
 use std::{fs, io};
 
-use crate::embedder::{embedding_to_bytes, normalize_embedding, Embed};
+use crate::embedder::{embedding_to_bytes, normalize_embedding};
 use crate::store::chunker::chunk_content;
 
 use super::{KnowledgeSourceInfo, KnowledgeStore};
@@ -31,12 +30,35 @@ pub struct SyncResult {
     pub files_removed: usize,
     pub files_unchanged: usize,
     pub chunks_total: usize,
+    /// Chunks prepared and written by this sync operation.
+    pub chunks_indexed: usize,
     pub links_created: usize,
+    /// Time spent waiting for and running the embedding model, in milliseconds.
+    pub embedding_ms: u64,
+    /// Number of corpus-wide calls made through the Embed trait.
+    pub embedding_calls: usize,
+    /// Number of chunk texts embedded before writing this sync transaction.
+    pub embedding_chunks: usize,
+    /// Time spent in the SQLite write transaction, in milliseconds.
+    pub transaction_ms: u64,
     pub duration_ms: u64,
+}
+
+struct PreparedFile {
+    rel_path: String,
+    abs_path: PathBuf,
+    content: String,
+    hash: String,
+    file_id: Option<i64>,
+    metadata: String,
+    chunks: Vec<crate::store::chunker::Chunk>,
+    vectors: Vec<Vec<f32>>,
 }
 
 /// Sync a single knowledge source. Walks the directory, hashes files,
 /// and re-indexes only changed/new files. Removes chunks for deleted files.
+/// Prepared-file edits are revalidated after embedding; edits to unselected
+/// files during the walk are picked up by the next sync.
 pub fn sync_source(
     store: &KnowledgeStore,
     source: &KnowledgeSourceInfo,
@@ -91,10 +113,94 @@ pub fn sync_source(
     let files_updated = to_update.len();
     let files_removed = to_remove.len();
 
-    // 4. Execute in a single transaction
+    // Prepare all changed files and embeddings before acquiring SQLite's write
+    // lock. The embedder applies its configured internal batch size to this
+    // corpus-wide call, avoiding one model invocation per file.
+    let mut prepared_files = Vec::with_capacity(files_added + files_updated);
+    let mut embedding_texts = Vec::new();
+    for (rel_path, abs_path, content, hash) in &to_add {
+        prepared_files.push(prepare_file(
+            rel_path.clone(),
+            abs_path.clone(),
+            content.clone(),
+            hash.clone(),
+            None,
+            enrichment_fn,
+        ));
+    }
+    for (file_id, abs_path, content, hash) in &to_update {
+        let rel_path = abs_path
+            .strip_prefix(base_path)
+            .unwrap_or(abs_path)
+            .to_string_lossy()
+            .to_string();
+        prepared_files.push(prepare_file(
+            rel_path,
+            abs_path.clone(),
+            content.clone(),
+            hash.clone(),
+            Some(*file_id),
+            enrichment_fn,
+        ));
+    }
+    for file in &prepared_files {
+        embedding_texts.extend(
+            file.chunks
+                .iter()
+                .map(|chunk| format!("{} {}", chunk.title, chunk.content)),
+        );
+    }
+
+    let embedding_start = Instant::now();
+    let embedding_calls = usize::from(embedder.is_some() && !embedding_texts.is_empty());
+    if let Some(emb) = embedder.filter(|_| !embedding_texts.is_empty()) {
+        let refs: Vec<&str> = embedding_texts.iter().map(String::as_str).collect();
+        let embeddings = emb
+            .embed_batch(&refs)
+            .context("failed to embed changed corpus chunks")?;
+        if embeddings.len() != embedding_texts.len() {
+            anyhow::bail!(
+                "embedder returned {} vectors for {} chunks",
+                embeddings.len(),
+                embedding_texts.len()
+            );
+        }
+        let normalized = embeddings
+            .iter()
+            .map(|vector| normalize_embedding(vector, emb.dim()))
+            .collect::<Result<Vec<_>>>()?;
+        let mut vectors = normalized.into_iter();
+        for file in &mut prepared_files {
+            file.vectors = vectors.by_ref().take(file.chunks.len()).collect();
+        }
+    }
+    let embedding_ms = embedding_start.elapsed().as_millis() as u64;
+    let chunks_indexed = prepared_files.iter().map(|file| file.chunks.len()).sum();
+
+    // Avoid committing vectors for file contents that changed during a long
+    // embedding pass. The next sync can retry against the newer snapshot.
+    for file in &prepared_files {
+        let current_bytes = fs::read(&file.abs_path)
+            .with_context(|| format!("failed to recheck {}", file.abs_path.display()))?;
+        if sha256_hex(&current_bytes) != file.hash {
+            anyhow::bail!(
+                "source file changed while embeddings were being prepared: {}; retry sync",
+                file.abs_path.display()
+            );
+        }
+    }
+
+    // Apply all database changes in one transaction after CPU/model work.
+    let transaction_start = Instant::now();
     conn.execute_batch("BEGIN IMMEDIATE")?;
 
     let inner = (|| -> Result<usize> {
+        // Another process may have synced/reindexed this source while model
+        // inference ran. Refuse to apply work based on a stale file-row map.
+        if load_db_files(conn, source.id)? != db_files {
+            anyhow::bail!("knowledge source changed during sync preparation; retry sync");
+        }
+
         // 4a. Remove deleted files
         for file_id in &to_remove {
             delete_file_chunks(conn, *file_id)?;
@@ -104,40 +210,28 @@ pub fn sync_source(
             )?;
         }
 
-        // 4b. Update changed files (delete old chunks, re-index)
-        for (file_id, abs_path, content, hash) in &to_update {
-            delete_file_chunks(conn, *file_id)?;
-            index_file_inner(
+        // 4b. Replace changed files and add new files using prepared vectors.
+        for file in &prepared_files {
+            let file_id = match file.file_id {
+                Some(file_id) => {
+                    delete_file_chunks(conn, file_id)?;
+                    file_id
+                }
+                None => {
+                    conn.execute(
+                        "INSERT INTO knowledge_files (source_id, rel_path, content_hash, size_bytes)
+                         VALUES (?1, ?2, ?3, ?4)",
+                        params![source.id, file.rel_path, file.hash, file.content.len() as i64],
+                    )?;
+                    conn.last_insert_rowid()
+                }
+            };
+            index_prepared_file(
                 conn,
-                embedder,
-                source.id,
-                *file_id,
-                content,
-                abs_path,
-                hash,
-                content.len(),
-                enrichment_fn,
-            )?;
-        }
-
-        // 4c. Add new files
-        for (rel_path, abs_path, content, hash) in &to_add {
-            conn.execute(
-                "INSERT INTO knowledge_files (source_id, rel_path, content_hash, size_bytes)
-                 VALUES (?1, ?2, ?3, ?4)",
-                params![source.id, rel_path, hash, content.len() as i64],
-            )?;
-            let file_id = conn.last_insert_rowid();
-            index_file_inner(
-                conn,
-                embedder,
                 source.id,
                 file_id,
-                content,
-                abs_path,
-                hash,
-                content.len(),
-                enrichment_fn,
+                file,
+                embedder.map(|emb| emb.model_id()),
             )?;
         }
 
@@ -158,15 +252,16 @@ pub fn sync_source(
     })();
 
     let links_created = match inner {
-        Ok(lc) => {
+        Ok(links_created) => {
             conn.execute_batch("COMMIT")?;
-            lc
+            links_created
         }
         Err(e) => {
             let _ = conn.execute_batch("ROLLBACK");
             return Err(e);
         }
     };
+    let transaction_ms = transaction_start.elapsed().as_millis() as u64;
 
     let chunks_total: i64 = conn.query_row(
         "SELECT chunk_count FROM knowledge_sources WHERE id = ?1",
@@ -182,7 +277,16 @@ pub fn sync_source(
         files_removed,
         files_unchanged: unchanged,
         chunks_total: chunks_total as usize,
+        chunks_indexed,
         links_created,
+        embedding_ms,
+        embedding_calls,
+        embedding_chunks: if embedder.is_some() {
+            chunks_indexed
+        } else {
+            0
+        },
+        transaction_ms,
         duration_ms: start.elapsed().as_millis() as u64,
     })
 }
@@ -240,21 +344,69 @@ pub fn reindex_file(
         }
     }
 
+    let mut prepared = prepare_file(
+        rel_path.clone(),
+        abs_path.to_path_buf(),
+        content.clone(),
+        hash.clone(),
+        existing.as_ref().map(|(file_id, _)| *file_id),
+        enrichment_fn,
+    );
+    if let Some(emb) = embedder {
+        let texts: Vec<String> = prepared
+            .chunks
+            .iter()
+            .map(|chunk| format!("{} {}", chunk.title, chunk.content))
+            .collect();
+        if !texts.is_empty() {
+            let refs: Vec<&str> = texts.iter().map(String::as_str).collect();
+            let vectors = emb.embed_batch(&refs)?;
+            if vectors.len() != texts.len() {
+                anyhow::bail!(
+                    "embedder returned {} vectors for {} chunks",
+                    vectors.len(),
+                    texts.len()
+                );
+            }
+            prepared.vectors = vectors
+                .iter()
+                .map(|vector| normalize_embedding(vector, emb.dim()))
+                .collect::<Result<Vec<_>>>()?;
+        }
+    }
+
+    let current_content =
+        fs::read(abs_path).with_context(|| format!("failed to recheck {}", abs_path.display()))?;
+    if sha256_hex(&current_content) != hash {
+        anyhow::bail!(
+            "source file changed while embeddings were being prepared: {}; retry reindex",
+            abs_path.display()
+        );
+    }
+
     conn.execute_batch("BEGIN IMMEDIATE")?;
 
     let inner = (|| -> Result<()> {
+        let current: Option<(i64, String)> = conn
+            .query_row(
+                "SELECT id, content_hash FROM knowledge_files
+                 WHERE source_id = ?1 AND rel_path = ?2",
+                params![source.id, rel_path],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .optional()?;
+        if current.as_ref() != existing.as_ref() {
+            anyhow::bail!("file index changed while reindex was preparing; retry reindex");
+        }
+
         if let Some((file_id, _)) = existing {
             delete_file_chunks(conn, file_id)?;
-            index_file_inner(
+            index_prepared_file(
                 conn,
-                embedder,
                 source.id,
                 file_id,
-                &content,
-                abs_path,
-                &hash,
-                content.len(),
-                enrichment_fn,
+                &prepared,
+                embedder.map(|emb| emb.model_id()),
             )?;
         } else {
             conn.execute(
@@ -263,16 +415,12 @@ pub fn reindex_file(
                 params![source.id, rel_path, hash, content.len() as i64],
             )?;
             let file_id = conn.last_insert_rowid();
-            index_file_inner(
+            index_prepared_file(
                 conn,
-                embedder,
                 source.id,
                 file_id,
-                &content,
-                abs_path,
-                &hash,
-                content.len(),
-                enrichment_fn,
+                &prepared,
+                embedder.map(|emb| emb.model_id()),
             )?;
         }
 
@@ -394,32 +542,44 @@ fn load_db_files(
     Ok(files)
 }
 
-/// Index a single file: chunk content, insert FTS5 + trigram + meta + embeddings,
-/// and update the file record with hash and chunk count.
-fn index_file_inner(
-    conn: &rusqlite::Connection,
-    embedder: Option<&Arc<dyn Embed>>,
-    source_id: i64,
-    file_id: i64,
-    content: &str,
-    abs_path: &Path,
-    hash: &str,
-    size_bytes: usize,
+fn prepare_file(
+    rel_path: String,
+    abs_path: PathBuf,
+    content: String,
+    hash: String,
+    file_id: Option<i64>,
     enrichment_fn: Option<&dyn Fn(&str, &Path) -> serde_json::Value>,
-) -> Result<usize> {
-    let chunks = chunk_content(content);
-
+) -> PreparedFile {
     let metadata = match enrichment_fn {
-        Some(f) => f(content, abs_path),
+        Some(f) => f(&content, &abs_path),
         None => serde_json::json!({}),
     };
-    let metadata_str = metadata.to_string();
+    let chunks = chunk_content(&content);
+    PreparedFile {
+        rel_path,
+        abs_path,
+        content,
+        hash,
+        file_id,
+        metadata: metadata.to_string(),
+        chunks,
+        vectors: Vec::new(),
+    }
+}
 
-    let mut texts_for_embedding: Vec<String> = Vec::new();
-    let mut chunk_rowids: Vec<i64> = Vec::new();
-    let mut chunk_count: usize = 0;
-
-    for chunk in &chunks {
+/// Insert pre-chunked content and precomputed vectors within the caller's
+/// transaction. All expensive enrichment and model inference happened earlier.
+fn index_prepared_file(
+    conn: &rusqlite::Connection,
+    source_id: i64,
+    file_id: i64,
+    file: &PreparedFile,
+    model_id: Option<&str>,
+) -> Result<usize> {
+    if model_id.is_some() && file.vectors.len() != file.chunks.len() {
+        anyhow::bail!("prepared embedding count does not match prepared chunk count");
+    }
+    for (chunk_index, chunk) in file.chunks.iter().enumerate() {
         // FTS5 (BM25)
         conn.execute(
             "INSERT INTO knowledge_chunks(title, content) VALUES (?1, ?2)",
@@ -444,33 +604,16 @@ fn index_file_inner(
                 source_id,
                 chunk.line_start,
                 chunk.line_end,
-                metadata_str
+                file.metadata
             ],
         )?;
-
-        texts_for_embedding.push(format!("{} {}", chunk.title, chunk.content));
-        chunk_rowids.push(rowid);
-        chunk_count += 1;
-    }
-
-    // Batch embed if embedder available
-    if let Some(emb) = embedder {
-        let refs: Vec<&str> = texts_for_embedding.iter().map(|s| s.as_str()).collect();
-        let embeddings = emb.embed_batch(&refs)?;
-        if embeddings.len() != chunk_rowids.len() {
-            anyhow::bail!(
-                "embedder returned {} vectors for {} chunks",
-                embeddings.len(),
-                chunk_rowids.len()
-            );
-        }
-        for (rowid, embedding) in chunk_rowids.iter().zip(embeddings.iter()) {
-            let normalized = normalize_embedding(embedding, emb.dim())?;
-            let blob = embedding_to_bytes(&normalized);
+        if let Some(model_id) = model_id {
+            let embedding = &file.vectors[chunk_index];
+            let blob = embedding_to_bytes(embedding);
             conn.execute(
                 "INSERT INTO knowledge_embeddings (chunk_rowid, embedding, dim, model_id)
                  VALUES (?1, ?2, ?3, ?4)",
-                params![rowid, blob, normalized.len() as i64, emb.model_id()],
+                params![rowid, blob, embedding.len() as i64, model_id],
             )?;
         }
     }
@@ -480,10 +623,15 @@ fn index_file_inner(
         "UPDATE knowledge_files SET content_hash = ?1, size_bytes = ?2,
             chunk_count = ?3, indexed_at = datetime('now')
          WHERE id = ?4",
-        params![hash, size_bytes as i64, chunk_count as i64, file_id],
+        params![
+            file.hash,
+            file.content.len() as i64,
+            file.chunks.len() as i64,
+            file_id
+        ],
     )?;
 
-    Ok(chunk_count)
+    Ok(file.chunks.len())
 }
 
 /// Delete all chunks (FTS5, trigram, embeddings, metadata) for a given file.
@@ -645,10 +793,68 @@ fn resolve_wikilinks_for_source(conn: &rusqlite::Connection, source_id: i64) -> 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::Arc;
     use tempfile::tempdir;
 
     use crate::embedder::tests::MockEmbedder;
+    use crate::embedder::Embed;
+
+    struct CountingEmbedder {
+        calls: Arc<AtomicUsize>,
+        embedded_texts: Arc<AtomicUsize>,
+    }
+
+    impl Embed for CountingEmbedder {
+        fn embed_one(&self, _text: &str) -> Result<Vec<f32>> {
+            Ok(vec![1.0, 0.0, 0.0, 0.0])
+        }
+
+        fn embed_batch(&self, texts: &[&str]) -> Result<Vec<Vec<f32>>> {
+            self.calls.fetch_add(1, Ordering::SeqCst);
+            self.embedded_texts.fetch_add(texts.len(), Ordering::SeqCst);
+            Ok(texts.iter().map(|_| vec![1.0, 0.0, 0.0, 0.0]).collect())
+        }
+
+        fn dim(&self) -> usize {
+            4
+        }
+    }
+
+    struct FailingEmbedder;
+
+    impl Embed for FailingEmbedder {
+        fn embed_one(&self, _text: &str) -> Result<Vec<f32>> {
+            anyhow::bail!("synthetic embedding failure")
+        }
+
+        fn embed_batch(&self, _texts: &[&str]) -> Result<Vec<Vec<f32>>> {
+            anyhow::bail!("synthetic embedding failure")
+        }
+
+        fn dim(&self) -> usize {
+            4
+        }
+    }
+
+    struct MutatingEmbedder {
+        file_path: PathBuf,
+    }
+
+    impl Embed for MutatingEmbedder {
+        fn embed_one(&self, _text: &str) -> Result<Vec<f32>> {
+            Ok(vec![1.0, 0.0, 0.0, 0.0])
+        }
+
+        fn embed_batch(&self, texts: &[&str]) -> Result<Vec<Vec<f32>>> {
+            fs::write(&self.file_path, "# Concurrent version\nlatest content")?;
+            Ok(texts.iter().map(|_| vec![1.0, 0.0, 0.0, 0.0]).collect())
+        }
+
+        fn dim(&self) -> usize {
+            4
+        }
+    }
 
     fn make_store() -> KnowledgeStore {
         crate::knowledge::open_in_memory().expect("in-memory knowledge store")
@@ -942,6 +1148,142 @@ mod tests {
             })
             .unwrap();
         assert!(count > 0, "embeddings should be generated");
+    }
+
+    #[test]
+    fn sync_embeds_all_changed_files_in_one_corpus_call_before_persisting() {
+        let mut store = make_store();
+        let calls = Arc::new(AtomicUsize::new(0));
+        let embedded_texts = Arc::new(AtomicUsize::new(0));
+        store.set_embedder(Arc::new(CountingEmbedder {
+            calls: Arc::clone(&calls),
+            embedded_texts: Arc::clone(&embedded_texts),
+        }));
+        let dir = tempdir().unwrap();
+        fs::write(dir.path().join("first.md"), "# First\nfirst document").unwrap();
+        fs::write(dir.path().join("second.md"), "# Second\nsecond document").unwrap();
+        let source = register_source(&store, dir.path());
+
+        let result = sync_source(&store, &source, None).unwrap();
+
+        assert_eq!(calls.load(Ordering::SeqCst), 1);
+        assert_eq!(result.embedding_calls, 1);
+        assert_eq!(
+            result.embedding_chunks,
+            embedded_texts.load(Ordering::SeqCst)
+        );
+        assert_eq!(result.embedding_chunks, result.chunks_indexed);
+        assert!(result.transaction_ms <= result.duration_ms);
+        let persisted_count: i64 = store
+            .conn()
+            .query_row("SELECT COUNT(*) FROM knowledge_embeddings", [], |row| {
+                row.get(0)
+            })
+            .unwrap();
+        assert_eq!(persisted_count as usize, result.embedding_chunks);
+    }
+
+    #[test]
+    fn embedding_failure_happens_before_the_sync_transaction_and_preserves_index() {
+        let mut store = make_store();
+        let dir = tempdir().unwrap();
+        let existing_path = dir.path().join("existing.md");
+        fs::write(&existing_path, "# Original\nExisting indexed content").unwrap();
+        let source = register_source(&store, dir.path());
+        sync_source(&store, &source, None).unwrap();
+
+        fs::write(&existing_path, "# Changed\nNew replacement content").unwrap();
+        fs::write(dir.path().join("new.md"), "# New file\nNew indexed content").unwrap();
+        store.set_embedder(Arc::new(FailingEmbedder));
+
+        let error = sync_source(&store, &source, None).unwrap_err();
+
+        assert!(error
+            .to_string()
+            .contains("failed to embed changed corpus chunks"));
+        assert!(store.conn().is_autocommit());
+        assert_eq!(file_count_for_source(&store, source.id), 1);
+        assert_eq!(chunk_count_for_source(&store, source.id), 1);
+        let retained_content: String = store
+            .conn()
+            .query_row("SELECT content FROM knowledge_chunks", [], |row| row.get(0))
+            .unwrap();
+        assert!(retained_content.contains("Existing indexed content"));
+        assert!(!retained_content.contains("replacement"));
+    }
+
+    #[test]
+    fn changed_file_during_embedding_aborts_before_stale_content_is_committed() {
+        let mut store = make_store();
+        let dir = tempdir().unwrap();
+        let file_path = dir.path().join("existing.md");
+        fs::write(&file_path, "# Original\nExisting indexed content").unwrap();
+        let source = register_source(&store, dir.path());
+        sync_source(&store, &source, None).unwrap();
+        let original_hash: String = store
+            .conn()
+            .query_row(
+                "SELECT content_hash FROM knowledge_files WHERE source_id = ?1",
+                params![source.id],
+                |row| row.get(0),
+            )
+            .unwrap();
+
+        fs::write(&file_path, "# Prepared\nContent before model inference").unwrap();
+        store.set_embedder(Arc::new(MutatingEmbedder {
+            file_path: file_path.clone(),
+        }));
+
+        let error = sync_source(&store, &source, None).unwrap_err();
+
+        assert!(error
+            .to_string()
+            .contains("changed while embeddings were being prepared"));
+        assert!(store.conn().is_autocommit());
+        let stored_hash: String = store
+            .conn()
+            .query_row(
+                "SELECT content_hash FROM knowledge_files WHERE source_id = ?1",
+                params![source.id],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(stored_hash, original_hash);
+        let stored_content: String = store
+            .conn()
+            .query_row("SELECT content FROM knowledge_chunks", [], |row| row.get(0))
+            .unwrap();
+        assert!(stored_content.contains("Existing indexed content"));
+        assert!(!stored_content.contains("Prepared"));
+        assert_eq!(file_count_for_source(&store, source.id), 1);
+    }
+
+    #[test]
+    fn reindex_file_does_not_commit_older_content_after_a_concurrent_edit() {
+        let mut store = make_store();
+        let dir = tempdir().unwrap();
+        let file_path = dir.path().join("existing.md");
+        fs::write(&file_path, "# Original\nExisting indexed content").unwrap();
+        let source = register_source(&store, dir.path());
+        sync_source(&store, &source, None).unwrap();
+
+        fs::write(&file_path, "# Prepared\nContent before model inference").unwrap();
+        store.set_embedder(Arc::new(MutatingEmbedder {
+            file_path: file_path.clone(),
+        }));
+
+        let error = reindex_file(&store, &source, &file_path, None).unwrap_err();
+
+        assert!(error
+            .to_string()
+            .contains("changed while embeddings were being prepared"));
+        assert!(store.conn().is_autocommit());
+        let stored_content: String = store
+            .conn()
+            .query_row("SELECT content FROM knowledge_chunks", [], |row| row.get(0))
+            .unwrap();
+        assert!(stored_content.contains("Existing indexed content"));
+        assert!(!stored_content.contains("Prepared"));
     }
 
     #[test]
