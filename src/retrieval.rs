@@ -130,6 +130,7 @@ pub fn run_query(
                 request.profile,
                 scoped,
                 filter_hint.as_deref(),
+                source_hint.as_deref(),
             )?;
             if filter_hint.is_some() {
                 for result in &mut results {
@@ -333,6 +334,7 @@ fn apply_graph_rerank(
     profile: SearchProfile,
     scoped_filtering: bool,
     filter_hint: Option<&str>,
+    source_scope: Option<&str>,
 ) -> Result<()> {
     let boost = profile.graph_boost(scoped_filtering);
     if boost <= 0.0 || results.is_empty() {
@@ -359,8 +361,20 @@ fn apply_graph_rerank(
 
     let mut neighbor_by_file: std::collections::HashMap<i64, crate::knowledge::RelatedChunk> =
         std::collections::HashMap::new();
+    let mut source_by_file: std::collections::HashMap<i64, (String, i64)> =
+        std::collections::HashMap::new();
     for chunk in linked_chunks {
-        neighbor_by_file.entry(chunk.file_id).or_insert(chunk);
+        if neighbor_by_file.contains_key(&chunk.file_id) {
+            continue;
+        }
+        if let Some(scope) = source_scope {
+            let source = knowledge_source_for_file(ks, chunk.file_id)?;
+            if scope != source.0 {
+                continue;
+            }
+            source_by_file.insert(chunk.file_id, source);
+        }
+        neighbor_by_file.insert(chunk.file_id, chunk);
     }
 
     let existing_files: std::collections::HashSet<i64> =
@@ -380,7 +394,10 @@ fn apply_graph_rerank(
             if injected >= 2 || existing_files.contains(&file_id) {
                 continue;
             }
-            let (source_label, source_id) = knowledge_source_for_file(ks, file_id)?;
+            let (source_label, source_id) = match source_by_file.get(&file_id) {
+                Some((label, id)) => (label.clone(), *id),
+                None => knowledge_source_for_file(ks, file_id)?,
+            };
             let mut why = crate::search_model::SearchWhy::default();
             why.layers.graph_boost = boost;
             why.graph_neighbor = true;
