@@ -25,7 +25,7 @@ use super::{KnowledgeSourceInfo, KnowledgeStore};
 pub struct SyncResult {
     pub source_label: String,
     pub files_scanned: usize,
-    /// Files reached by this scan that were excluded by the sensitive-path policy.
+    /// Files reached by this scan that were excluded by the sensitive path/content policy.
     pub sensitive_files_skipped: usize,
     pub files_added: usize,
     pub files_updated: usize,
