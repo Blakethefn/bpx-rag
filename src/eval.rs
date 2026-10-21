@@ -646,6 +646,21 @@ pub fn generate_judgment_pool(
             }
         }
 
+        if query.answerability == QueryAnswerability::UnanswerableInCorpus {
+            for (path, evidence) in indexed_corpus_evidence(&store, source.id)? {
+                let candidate = candidates.entry(path.clone()).or_default();
+                for evidence in evidence {
+                    let evidence_key = format!(
+                        "{}:{}:{}",
+                        evidence.lines,
+                        evidence.title,
+                        sha256(&evidence.snippet)
+                    );
+                    candidate.evidence.entry(evidence_key).or_insert(evidence);
+                }
+            }
+        }
+
         for (path, candidate) in candidates {
             let candidate_id =
                 opaque_id(seed, "candidate", &format!("{}:{path}", blinded_query_id));
@@ -730,6 +745,43 @@ pub fn generate_judgment_pool(
         dataset_queries_sha256,
         corpus_manifest_sha256,
     })
+}
+
+fn indexed_corpus_evidence(
+    store: &knowledge::KnowledgeStore,
+    source_id: i64,
+) -> Result<BTreeMap<String, Vec<JudgmentPoolEvidence>>> {
+    let mut statement = store.conn().prepare(
+        "SELECT kf.rel_path, kc.title, kc.content, kcm.line_start, kcm.line_end
+         FROM knowledge_files kf
+         LEFT JOIN knowledge_chunk_meta kcm ON kcm.file_id = kf.id
+         LEFT JOIN knowledge_chunks kc ON kc.rowid = kcm.chunk_rowid
+         WHERE kf.source_id = ?1
+         ORDER BY kf.rel_path, kcm.line_start, kcm.line_end, kcm.chunk_rowid",
+    )?;
+    let mut files: BTreeMap<String, Vec<JudgmentPoolEvidence>> = BTreeMap::new();
+    let rows = statement.query_map([source_id], |row| {
+        let path: String = row.get(0)?;
+        let title: Option<String> = row.get(1)?;
+        let snippet: Option<String> = row.get(2)?;
+        let line_start: Option<i64> = row.get(3)?;
+        let line_end: Option<i64> = row.get(4)?;
+        Ok((path, title, snippet, line_start, line_end))
+    })?;
+    for row in rows {
+        let (path, title, snippet, line_start, line_end) = row?;
+        let evidence = files.entry(path).or_default();
+        if let (Some(title), Some(snippet), Some(line_start), Some(line_end)) =
+            (title, snippet, line_start, line_end)
+        {
+            evidence.push(JudgmentPoolEvidence {
+                title,
+                lines: format!("{line_start}-{line_end}"),
+                snippet,
+            });
+        }
+    }
+    Ok(files)
 }
 
 /// Import completed human grades from a pool and its separate reveal key.
@@ -1714,6 +1766,9 @@ fn validate_qrels(
     {
         anyhow::bail!("relevance judgments reference unknown query {query_id}");
     }
+    let indexable_paths = crate::knowledge::sync::walk_source_dir(corpus_dir, None)?
+        .into_keys()
+        .collect::<std::collections::HashSet<_>>();
     for query in queries {
         let judgments = qrels.get(&query.query_id);
         let has_positive =
@@ -1727,14 +1782,25 @@ fn validate_qrels(
                 "unanswerable query {} has a positive relevance judgment",
                 query.query_id
             ),
-            QueryAnswerability::UnanswerableInCorpus
-                if !judgments
-                    .is_some_and(|judgments| judgments.values().any(|grade| *grade == 0)) =>
-            {
-                anyhow::bail!(
-                    "unanswerable query {} requires at least one explicit grade-0 judgment",
-                    query.query_id
-                );
+            QueryAnswerability::UnanswerableInCorpus => {
+                let judgments = judgments.cloned().unwrap_or_default();
+                let unjudged_count = indexable_paths
+                    .iter()
+                    .filter(|path| !judgments.contains_key(*path))
+                    .count();
+                if unjudged_count > 0 {
+                    anyhow::bail!(
+                        "unanswerable query {} must have explicit grade-0 judgments for every indexable corpus file; {} files are unjudged",
+                        query.query_id,
+                        unjudged_count
+                    );
+                }
+                if judgments.values().any(|grade| *grade != 0) {
+                    anyhow::bail!(
+                        "unanswerable query {} must have only explicit grade-0 judgments",
+                        query.query_id
+                    );
+                }
             }
             _ => {}
         }
@@ -1745,9 +1811,6 @@ fn validate_qrels(
             corpus_dir.display()
         )
     })?;
-    let indexable_paths = crate::knowledge::sync::walk_source_dir(corpus_dir, None)?
-        .into_keys()
-        .collect::<std::collections::HashSet<_>>();
     for path in qrels.values().flat_map(|judgments| judgments.keys()) {
         let relative = Path::new(path);
         if relative.as_os_str().is_empty()
