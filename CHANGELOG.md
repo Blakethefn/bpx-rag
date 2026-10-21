@@ -9,7 +9,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Added
 
 - On-demand `analyze-file` CLI and `bpx_file_relationships` MCP tool for direct Markdown wikilinks, Rust module/import paths, and TypeScript/JavaScript imports.
-- Lazy MCP runtime initialization so relationship-only sessions do not open local databases or load embeddings.
+- A focused MCP server that starts without configuration, databases, or embedding models.
+
+### Changed
+
+- Reorganized the relationship analyzer into scan, path, language, formatting, and test modules.
+- Reduced the CLI and MCP tool surface to direct file relationship analysis.
+- Simplified Cargo dependencies to the filesystem analyzer, CLI, and MCP transport.
+
+### Removed
+
+- Database-backed indexing/search, knowledge-store management, embedding, context-budget, command capture, and web-fetch product features.
 
 ## [0.1.0] - 2025-04-02
 

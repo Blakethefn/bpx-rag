@@ -3,59 +3,20 @@ name = "bpx-rag"
 version = "0.3.0"
 edition = "2021"
 default-run = "bpx-rag"
-description = "Local-first RAG for coding agents with hybrid search and persistent knowledge"
+description = "Filesystem-first file relationship analysis for coding agents"
 license = "MIT"
 repository = "https://github.com/Blakethefn/bpx-rag"
 homepage = "https://github.com/Blakethefn/bpx-rag"
 authors = ["Blake Paulson"]
-keywords = ["rag", "code-search", "llm", "mcp", "knowledge"]
+keywords = ["code-analysis", "mcp", "imports", "wikilinks", "repository"]
 categories = ["command-line-utilities", "development-tools"]
 
-[features]
-default = []
-cuda = ["candle-core/cuda"]
-
 [dependencies]
-# CLI
+anyhow = "1"
 clap = { version = "4", features = ["derive"] }
-
-# SQLite with FTS5
-rusqlite = { version = "0.39", features = ["bundled"] }
-
-# Serialization
+ignore = "0.4"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-serde_yaml = "0.9"
-toml = "0.8"
-
-# Config & paths
-dirs = "6"
-
-# Utils
-anyhow = "1"
-chrono = "0.4"
-colored = "3"
-sha2 = "0.10"
-
-# Fuzzy matching
-strsim = "0.11"
-
-# Directory walking (gitignore-aware)
-ignore = "0.4"
-
-# Glob pattern matching
-glob = "0.3"
-
-# HTTP fetch
-ureq = "3"
-htmd = "0.1"
-
-# Embeddings (Candle ML)
-candle-core = "0.9"
-candle-nn = "0.9"
-candle-transformers = "0.9"
-tokenizers = "0.21"
-hf-hub = "0.4"
 
 [dev-dependencies]
 tempfile = "3"

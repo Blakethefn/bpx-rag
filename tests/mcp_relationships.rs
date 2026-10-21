@@ -6,8 +6,9 @@ use tempfile::tempdir;
 #[test]
 fn mcp_relationship_tool_scans_files_without_opening_any_database() {
     let project = tempdir().unwrap();
-    let config = tempdir().unwrap();
+    let config_dir = project.path().join("runtime-config");
     let data_dir = project.path().join("runtime-data");
+    let cache_dir = project.path().join("runtime-cache");
     std::fs::create_dir_all(project.path().join("src/lib/api")).unwrap();
     std::fs::create_dir_all(project.path().join("src/hooks")).unwrap();
     std::fs::write(
@@ -26,8 +27,9 @@ fn mcp_relationship_tool_scans_files_without_opening_any_database() {
     let mut child = Command::new(executable)
         .arg("serve")
         .current_dir(project.path())
-        .env("XDG_CONFIG_HOME", config.path())
+        .env("XDG_CONFIG_HOME", &config_dir)
         .env("XDG_DATA_HOME", &data_dir)
+        .env("XDG_CACHE_HOME", &cache_dir)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -62,11 +64,8 @@ fn mcp_relationship_tool_scans_files_without_opening_any_database() {
         .map(|line| serde_json::from_str::<Value>(line).unwrap())
         .collect::<Vec<_>>();
     let tool_list = &parsed[1]["result"]["tools"];
-    assert!(tool_list
-        .as_array()
-        .unwrap()
-        .iter()
-        .any(|tool| tool["name"] == "bpx_file_relationships"));
+    assert_eq!(tool_list.as_array().unwrap().len(), 1);
+    assert_eq!(tool_list[0]["name"], "bpx_file_relationships");
 
     let result_text = parsed[2]["result"]["content"][0]["text"].as_str().unwrap();
     assert!(result_text.contains("Incoming (1)"));
@@ -76,13 +75,22 @@ fn mcp_relationship_tool_scans_files_without_opening_any_database() {
         !data_dir.exists(),
         "relationship-only MCP call must not create a database directory"
     );
+    assert!(
+        !config_dir.exists(),
+        "MCP startup must not create config files"
+    );
+    assert!(
+        !cache_dir.exists(),
+        "MCP startup must not create cache files"
+    );
 }
 
 #[test]
 fn cli_analyze_file_uses_the_same_database_free_relationship_scan() {
     let project = tempdir().unwrap();
-    let config = tempdir().unwrap();
+    let config_dir = project.path().join("runtime-config");
     let data_dir = project.path().join("runtime-data");
+    let cache_dir = project.path().join("runtime-cache");
     std::fs::create_dir_all(project.path().join("src/api")).unwrap();
     std::fs::write(
         project.path().join("src/api/quotes.ts"),
@@ -104,8 +112,9 @@ fn cli_analyze_file_uses_the_same_database_free_relationship_scan() {
             project.path().to_str().unwrap(),
         ])
         .current_dir(project.path())
-        .env("XDG_CONFIG_HOME", config.path())
+        .env("XDG_CONFIG_HOME", &config_dir)
         .env("XDG_DATA_HOME", &data_dir)
+        .env("XDG_CACHE_HOME", &cache_dir)
         .output()
         .unwrap();
 
@@ -117,4 +126,42 @@ fn cli_analyze_file_uses_the_same_database_free_relationship_scan() {
         !data_dir.exists(),
         "CLI relationship scan must not create a database directory"
     );
+    assert!(
+        !config_dir.exists(),
+        "CLI analyzer must not create config files"
+    );
+    assert!(
+        !cache_dir.exists(),
+        "CLI analyzer must not create cache files"
+    );
+}
+
+#[test]
+fn cli_exposes_only_analyze_file_and_mcp_server_commands() {
+    let executable = std::env::var("CARGO_BIN_EXE_bpx-rag").unwrap();
+    let output = Command::new(executable).arg("--help").output().unwrap();
+
+    assert!(output.status.success());
+    let help = String::from_utf8(output.stdout).unwrap();
+    assert!(help.contains("analyze-file"));
+    assert!(help.contains("serve"));
+    let command_lines = help
+        .lines()
+        .filter_map(|line| line.trim().split_once(' '))
+        .map(|(command, _)| command)
+        .collect::<Vec<_>>();
+    assert!(!command_lines.contains(&"knowledge"));
+    assert!(!command_lines.contains(&"search"));
+    assert!(!command_lines.contains(&"index"));
+}
+
+#[test]
+fn bpcontext_compatibility_launcher_forwards_to_bpx_rag() {
+    let executable = std::env::var("CARGO_BIN_EXE_bpcontext").unwrap();
+    let output = Command::new(executable).arg("--help").output().unwrap();
+
+    assert!(output.status.success());
+    let help = String::from_utf8(output.stdout).unwrap();
+    assert!(help.contains("Filesystem-first file relationship analysis"));
+    assert!(help.contains("analyze-file"));
 }
