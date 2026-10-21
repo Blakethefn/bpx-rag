@@ -1,4 +1,5 @@
 /target
+/eval/
 docs/
 !eval/retrieval/corpus/docs/
 !eval/retrieval/corpus/docs/**
