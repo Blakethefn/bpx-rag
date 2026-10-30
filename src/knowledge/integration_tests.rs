@@ -13,7 +13,7 @@ fn link_count(store: &KnowledgeStore, source_id: i64) -> i64 {
         .unwrap()
 }
 
-use crate::knowledge::{enrichment, search, sync};
+use crate::knowledge::{enrichment, query, sync};
 use crate::knowledge::query::SearchWeights;
 use rusqlite::params;
 use std::fs;
@@ -165,7 +165,7 @@ fn enrichment_to_filtered_search_pipeline() {
     let weights = SearchWeights::default();
 
     // Filter type:task → should find only the task
-    let results = search::knowledge_search(
+    let results = query::knowledge_search(
         &store,
         "prediction engine",
         Some("type:task"),
@@ -179,7 +179,7 @@ fn enrichment_to_filtered_search_pipeline() {
     assert_eq!(results[0].metadata["frontmatter"]["type"], "task");
 
     // Filter type:project → should find nothing
-    let results = search::knowledge_search(
+    let results = query::knowledge_search(
         &store,
         "prediction engine",
         Some("type:project"),
@@ -192,7 +192,7 @@ fn enrichment_to_filtered_search_pipeline() {
     assert!(results.is_empty(), "type:project should match nothing");
 
     // Filter tag:implementation → should find only the task
-    let results = search::knowledge_search(
+    let results = query::knowledge_search(
         &store,
         "prediction engine",
         Some("tag:implementation"),
@@ -210,7 +210,7 @@ fn enrichment_to_filtered_search_pipeline() {
     assert_eq!(results[0].metadata["frontmatter"]["type"], "task");
 
     // Filter status:active → should find only the task
-    let results = search::knowledge_search(
+    let results = query::knowledge_search(
         &store,
         "prediction engine",
         Some("status:active"),
@@ -225,7 +225,7 @@ fn enrichment_to_filtered_search_pipeline() {
 
     // No filter → should find all three
     let results =
-        search::knowledge_search(&store, "prediction engine", None, None, 10, &weights, 2000)
+        query::knowledge_search(&store, "prediction engine", None, None, 10, &weights, 2000)
             .unwrap();
     assert_eq!(
         results.len(),
@@ -269,7 +269,7 @@ fn sync_after_new_file_is_searchable() {
 
     // Search should find the new content immediately
     let weights = SearchWeights::default();
-    let results = search::knowledge_search(
+    let results = query::knowledge_search(
         &store,
         "xylophone integration",
         None,
@@ -310,7 +310,7 @@ fn sync_after_edit_updates_content() {
     // Verify original content is searchable
     let weights = SearchWeights::default();
     let results =
-        search::knowledge_search(&store, "quasar protocol", None, None, 10, &weights, 2000)
+        query::knowledge_search(&store, "quasar protocol", None, None, 10, &weights, 2000)
             .unwrap();
     assert!(!results.is_empty(), "original content should be searchable");
 
@@ -326,7 +326,7 @@ fn sync_after_edit_updates_content() {
 
     // New content is searchable
     let results =
-        search::knowledge_search(&store, "nebula framework", None, None, 10, &weights, 2000)
+        query::knowledge_search(&store, "nebula framework", None, None, 10, &weights, 2000)
             .unwrap();
     assert!(
         !results.is_empty(),
@@ -335,7 +335,7 @@ fn sync_after_edit_updates_content() {
 
     // Old content is no longer present
     let results =
-        search::knowledge_search(&store, "quasar protocol", None, None, 10, &weights, 2000)
+        query::knowledge_search(&store, "quasar protocol", None, None, 10, &weights, 2000)
             .unwrap();
     assert!(
         results.is_empty(),
@@ -502,7 +502,7 @@ fn empty_knowledge_search_returns_empty() {
     let store = make_store();
     let weights = SearchWeights::default();
     let results =
-        search::knowledge_search(&store, "anything at all", None, None, 10, &weights, 2000)
+        query::knowledge_search(&store, "anything at all", None, None, 10, &weights, 2000)
             .unwrap();
     assert!(results.is_empty());
 }
@@ -511,7 +511,7 @@ fn empty_knowledge_search_returns_empty() {
 fn empty_knowledge_filtered_search_returns_empty() {
     let store = make_store();
     let weights = SearchWeights::default();
-    let results = search::knowledge_search(
+    let results = query::knowledge_search(
         &store,
         "anything",
         Some("type:task status:active"),
@@ -557,7 +557,7 @@ fn all_enrichments_indexed_and_searchable() {
     let weights = SearchWeights::default();
 
     // Verify frontmatter filter works
-    let results = search::knowledge_search(
+    let results = query::knowledge_search(
         &store,
         "waveform analyzer",
         Some("type:spec"),
@@ -570,7 +570,7 @@ fn all_enrichments_indexed_and_searchable() {
     assert_eq!(results.len(), 1);
 
     // Verify folder filter works
-    let results = search::knowledge_search(
+    let results = query::knowledge_search(
         &store,
         "waveform analyzer",
         Some("folder:01-projects"),
@@ -583,7 +583,7 @@ fn all_enrichments_indexed_and_searchable() {
     assert_eq!(results.len(), 1);
 
     // Verify tag filter works
-    let results = search::knowledge_search(
+    let results = query::knowledge_search(
         &store,
         "waveform analyzer",
         Some("tag:architecture"),
@@ -657,7 +657,7 @@ fn no_frontmatter_still_searchable() {
 
     let weights = SearchWeights::default();
     let results =
-        search::knowledge_search(&store, "crystallography", None, None, 10, &weights, 2000)
+        query::knowledge_search(&store, "crystallography", None, None, 10, &weights, 2000)
             .unwrap();
     assert!(
         !results.is_empty(),
@@ -697,7 +697,7 @@ fn glob_filter_restricts_sync_and_search() {
 
     let weights = SearchWeights::default();
     let results =
-        search::knowledge_search(&store, "photosynthesis", None, None, 10, &weights, 2000)
+        query::knowledge_search(&store, "photosynthesis", None, None, 10, &weights, 2000)
             .unwrap();
     assert_eq!(
         results.len(),
@@ -740,7 +740,7 @@ fn multi_source_with_source_filter() {
     let weights = SearchWeights::default();
 
     // Unfiltered → both sources
-    let results = search::knowledge_search(
+    let results = query::knowledge_search(
         &store,
         "holographic rendering",
         None,
@@ -757,7 +757,7 @@ fn multi_source_with_source_filter() {
     );
 
     // Source filter → only vault
-    let results = search::knowledge_search(
+    let results = query::knowledge_search(
         &store,
         "holographic rendering",
         Some("source:vault"),
@@ -771,7 +771,7 @@ fn multi_source_with_source_filter() {
     assert_eq!(results[0].source_label, "vault");
 
     // Source label param → only docs
-    let results = search::knowledge_search(
+    let results = query::knowledge_search(
         &store,
         "holographic rendering",
         None,
@@ -850,7 +850,7 @@ fn filter_never_returns_non_matching_chunks() {
     let weights = SearchWeights::default();
 
     // Filter for type:task — every result must have type=task
-    let results = search::knowledge_search(
+    let results = query::knowledge_search(
         &store,
         "electron microscope",
         Some("type:task"),
@@ -897,7 +897,7 @@ fn reindex_with_enrichments_updates_metadata() {
 
     // Verify initial state: searchable with type:task
     let weights = SearchWeights::default();
-    let results = search::knowledge_search(
+    let results = query::knowledge_search(
         &store,
         "quantum simulator",
         Some("type:task"),
@@ -920,7 +920,7 @@ fn reindex_with_enrichments_updates_metadata() {
     sync::sync_source(&store, &source, enrich_ref).unwrap();
 
     // Old filter should no longer match
-    let results = search::knowledge_search(
+    let results = query::knowledge_search(
         &store,
         "quantum simulator",
         Some("type:task"),
@@ -936,7 +936,7 @@ fn reindex_with_enrichments_updates_metadata() {
     );
 
     // New filter should match
-    let results = search::knowledge_search(
+    let results = query::knowledge_search(
         &store,
         "quantum simulator",
         Some("type:spec"),
@@ -1053,7 +1053,7 @@ fn compound_filter_roundtrip() {
     let weights = SearchWeights::default();
 
     // Compound filter: type:task AND tag:urgent AND folder:tasks
-    let results = search::knowledge_search(
+    let results = query::knowledge_search(
         &store,
         "spectral analysis",
         Some("type:task tag:urgent folder:tasks"),
