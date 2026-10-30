@@ -29,7 +29,9 @@ pub fn tool_definitions() -> Value {
                     "properties": {
                         "path": { "type": "string", "description": "Directory to index." },
                         "label": { "type": "string", "description": "Unique source label." },
-                        "glob": { "type": "string", "description": "Optional relative file glob." },
+                        "include": { "type": "array", "items": { "type": "string" }, "description": "Optional glob patterns. When present, only matching paths are indexed." },
+                        "exclude": { "type": "array", "items": { "type": "string" }, "description": "Optional glob patterns to skip, such as `**/*.test.ts`." },
+                        "glob": { "type": "string", "description": "Deprecated alias for one `include` pattern." },
                         "enrichments": { "type": "array", "items": { "type": "string" }, "description": "Optional metadata enrichments such as frontmatter and wikilinks." }
                     },
                     "required": ["path", "label"]

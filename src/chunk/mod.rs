@@ -1,13 +1,13 @@
 use std::path::Path;
 
-mod syntax;
 mod code;
-mod text;
 mod lines;
-use syntax::*;
+mod syntax;
+mod text;
 use code::*;
-use text::*;
 use lines::*;
+use syntax::*;
+use text::*;
 
 /// Maximum chunk size in bytes
 const MAX_CHUNK_BYTES: usize = 4096;

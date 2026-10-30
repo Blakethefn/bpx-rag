@@ -1,5 +1,5 @@
-use tree_sitter::Node;
 use super::*;
+use tree_sitter::Node;
 
 #[derive(Debug)]
 pub(super) struct SyntaxBoundary {

@@ -1,4 +1,3 @@
-
 pub(super) fn truncate_title(value: &str, max_chars: usize) -> String {
     let mut chars = value.chars();
     let prefix = chars.by_ref().take(max_chars).collect::<String>();

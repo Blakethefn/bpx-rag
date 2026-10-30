@@ -15,8 +15,8 @@ use anyhow::{anyhow, Result};
 use clap::Parser;
 use std::path::PathBuf;
 
-use cli::{Cli, Commands, EvalAction, ModelsAction};
 use app::{RagApp, SearchOptions};
+use cli::{Cli, Commands, EvalAction, ModelsAction};
 use knowledge::query::SearchWeights;
 
 fn main() -> Result<()> {
@@ -168,11 +168,12 @@ fn run_sources(command: Commands) -> Result<()> {
         Commands::Add {
             path,
             label,
-            glob,
+            include,
+            exclude,
             enrich,
         } => println!(
             "{}",
-            app.add_source(&path, &label, glob.as_deref(), &enrich)?
+            app.add_source(&path, &label, &include, &exclude, &enrich)?
         ),
         Commands::Sync { label } => {
             let results = app.sync_sources(label.as_deref())?;
@@ -212,7 +213,11 @@ fn run_sources(command: Commands) -> Result<()> {
                 app.read_chunks(&label, max_chunks, path.as_deref(), line_start, line_end,)?
             );
         }
-        _ => return Err(anyhow!("internal error: non-source command routed to run_sources")),
+        _ => {
+            return Err(anyhow!(
+                "internal error: non-source command routed to run_sources"
+            ))
+        }
     }
     Ok(())
 }

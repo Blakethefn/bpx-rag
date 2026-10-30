@@ -1,8 +1,8 @@
+use super::*;
+use crate::embed::{embedding_to_bytes, normalize_embedding};
 use anyhow::{Context, Result};
 use rusqlite::params;
 use std::collections::HashMap;
-use crate::embed::{embedding_to_bytes, normalize_embedding};
-use super::*;
 
 pub(super) fn embed_pending_batch(
     embedder: &dyn crate::embed::Embed,
@@ -164,7 +164,10 @@ pub(super) fn resolve_wikilink(target: &str, files: &HashMap<String, i64>) -> Op
 /// metadata. Runs inside the sync transaction after all files are indexed.
 ///
 /// Returns the number of links created.
-pub(super) fn resolve_wikilinks_for_source(conn: &rusqlite::Connection, source_id: i64) -> Result<usize> {
+pub(super) fn resolve_wikilinks_for_source(
+    conn: &rusqlite::Connection,
+    source_id: i64,
+) -> Result<usize> {
     // Delete existing links for this source's files
     conn.execute(
         "DELETE FROM knowledge_links WHERE source_file_id IN

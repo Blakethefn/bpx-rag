@@ -5,12 +5,13 @@
 //! ContentStore — shares the same chunker and embedder but uses a separate
 //! global database that survives across sessions.
 
-pub mod schema;
+pub mod ann;
 pub mod enrichment;
 pub mod filter;
 pub mod query;
+pub mod schema;
+pub mod scope;
 pub mod sync;
-pub mod ann;
 
 use anyhow::{anyhow, Result};
 use rusqlite::{Connection, OptionalExtension};
@@ -42,7 +43,7 @@ pub struct KnowledgeSourceInfo {
     pub id: i64,
     pub label: String,
     pub path: String,
-    pub glob: Option<String>,
+    pub patterns: Vec<String>,
     pub enrichments: Vec<String>,
     pub created_at: String,
     pub last_sync: Option<String>,
@@ -81,7 +82,7 @@ fn row_to_source(row: &rusqlite::Row<'_>) -> rusqlite::Result<KnowledgeSourceInf
         id: row.get(0)?,
         label: row.get(1)?,
         path: row.get(2)?,
-        glob: row.get(3)?,
+        patterns: scope::decode(row.get::<_, Option<String>>(3)?.as_deref()),
         enrichments: parse_enrichments(&enrichments_json),
         created_at: row.get(5)?,
         last_sync: row.get(6)?,
@@ -120,14 +121,15 @@ impl KnowledgeStore {
         &self,
         label: &str,
         path: &str,
-        glob: Option<&str>,
+        patterns: &[String],
         enrichments: &[String],
     ) -> Result<i64> {
         let enrichments_json = serde_json::to_string(enrichments)?;
+        let stored_scope = scope::encode(patterns);
         self.conn.execute(
             "INSERT INTO knowledge_sources (label, path, glob, enrichments)
              VALUES (?1, ?2, ?3, ?4)",
-            rusqlite::params![label, path, glob, enrichments_json],
+            rusqlite::params![label, path, stored_scope, enrichments_json],
         )?;
         Ok(self.conn.last_insert_rowid())
     }
@@ -339,7 +341,7 @@ impl KnowledgeStore {
     ///
     /// Finds the file for `chunk_rowid`, traverses graph edges in the given
     /// direction, and returns chunks from linked files.
-     /// Chunks from files that link to, or are linked from, `file_id`.
+    /// Chunks from files that link to, or are linked from, `file_id`.
     ///
     /// When `filter_predicates` is provided, only chunks whose metadata matches
     /// all predicates are returned. Predicates are ANDed.

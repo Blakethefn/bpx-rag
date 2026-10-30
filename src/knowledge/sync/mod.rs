@@ -3,25 +3,24 @@
 //! Walks registered source directories, compares content hashes against the
 //! database, and re-indexes only changed files.
 
+use crate::chunk::chunker_version_for_path;
+use crate::knowledge::{scope, KnowledgeSourceInfo, KnowledgeStore};
 use anyhow::{Context, Result};
-use ignore::overrides::OverrideBuilder;
 use ignore::WalkBuilder;
 use rusqlite::params;
 use std::collections::{HashMap, HashSet};
+use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::Instant;
-use std::fs;
-use crate::chunk::chunker_version_for_path;
-use crate::knowledge::{KnowledgeSourceInfo, KnowledgeStore};
 
-mod scrub;
-mod policy;
 mod files;
 mod index;
-pub use scrub::*;
-use policy::*;
+mod policy;
+mod scrub;
 use files::*;
 use index::*;
+use policy::*;
+pub use scrub::*;
 
 /// Result of a knowledge sync operation.
 #[derive(Debug, serde::Serialize)]
@@ -70,7 +69,7 @@ pub fn sync_source(
     let base_path = Path::new(&source.path);
 
     // 1. Walk directory (respects .gitignore and skips binary/empty/sensitive files)
-    let walk = walk_source_dir_with_report(base_path, source.glob.as_deref())?;
+    let walk = walk_source_dir_with_report(base_path, &source.patterns)?;
     let disk_files = walk.files;
     let mut sensitive_files_skipped = walk.sensitive_files_skipped;
 
@@ -319,9 +318,9 @@ pub fn sync_source(
 /// mistake an incomplete scan for deleted files.
 pub(crate) fn walk_source_dir(
     base_path: &Path,
-    glob_pattern: Option<&str>,
+    patterns: &[String],
 ) -> Result<HashMap<String, PathBuf>> {
-    Ok(walk_source_dir_with_report(base_path, glob_pattern)?.files)
+    Ok(walk_source_dir_with_report(base_path, patterns)?.files)
 }
 
 pub(crate) struct SourceWalkReport {
@@ -331,7 +330,7 @@ pub(crate) struct SourceWalkReport {
 
 pub(crate) fn walk_source_dir_with_report(
     base_path: &Path,
-    glob_pattern: Option<&str>,
+    patterns: &[String],
 ) -> Result<SourceWalkReport> {
     if !base_path.is_dir() {
         return Err(anyhow::anyhow!(
@@ -353,10 +352,8 @@ pub(crate) fn walk_source_dir_with_report(
         .git_global(true)
         .git_exclude(true);
 
-    if let Some(pattern) = glob_pattern {
-        let mut overrides = OverrideBuilder::new(base_path);
-        overrides.add(pattern).context("invalid glob pattern")?;
-        builder.overrides(overrides.build()?);
+    if let Some(overrides) = scope::build_overrides(base_path, patterns)? {
+        builder.overrides(overrides);
     }
 
     let mut files = HashMap::new();

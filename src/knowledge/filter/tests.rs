@@ -78,8 +78,7 @@ fn parse_multiple_predicates_anded() {
 
 #[test]
 fn parse_mixed_predicates() {
-    let preds =
-        parse_filter(Some("source:vault type:task tag:foo folder:01-projects")).unwrap();
+    let preds = parse_filter(Some("source:vault type:task tag:foo folder:01-projects")).unwrap();
     assert_eq!(preds.len(), 4);
     assert_eq!(preds[0], FilterPredicate::Source("vault".to_string()));
     assert_eq!(

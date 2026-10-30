@@ -67,12 +67,7 @@ fn knowledge_cli_add_sync_search_and_read_work_without_auto_downloading_model() 
         &config_home,
         &data_home,
         &cache_home,
-        &[
-            "add",
-            source.to_str().unwrap(),
-            "--label",
-            "atlas",
-        ],
+        &["add", source.to_str().unwrap(), "--label", "atlas"],
     );
     assert!(
         add.status.success(),

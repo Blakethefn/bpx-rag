@@ -1,6 +1,6 @@
-use std::collections::HashMap;
-use crate::search::profile::SearchWhy;
 use super::*;
+use crate::search::profile::SearchWhy;
+use std::collections::HashMap;
 
 /// Keep the highest-scoring passage from each file before returning repeated
 /// files. If fewer files than `limit` are available, duplicate passages fill

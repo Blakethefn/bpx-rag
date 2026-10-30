@@ -1,3 +1,4 @@
+use crate::chunk::{chunk_content_for_path, chunker_version_for_path};
 use anyhow::{Context, Result};
 use rusqlite::params;
 use sha2::{Digest, Sha256};
@@ -5,7 +6,6 @@ use std::collections::HashMap;
 use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::{fs, io};
-use crate::chunk::{chunk_content_for_path, chunker_version_for_path};
 
 pub(super) struct PreparedFile {
     pub(super) rel_path: String,

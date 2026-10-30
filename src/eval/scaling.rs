@@ -1,11 +1,11 @@
+use super::*;
+use crate::embed::{self};
+use crate::knowledge;
+use crate::knowledge::query::SearchWeights;
 use anyhow::{anyhow, Result};
 use serde::Serialize;
 use std::sync::Arc;
 use std::time::Instant;
-use crate::embed::{self};
-use crate::knowledge;
-use crate::knowledge::query::SearchWeights;
-use super::*;
 
 #[derive(Debug, Serialize)]
 pub struct ScalingPoint {
@@ -56,7 +56,7 @@ pub(super) fn run_scaling_point(
 ) -> Result<ScalingPoint> {
     let mut store = knowledge::open_in_memory()?;
     store.set_embedder(Arc::new(ScalingEmbedder));
-    store.add_source("scaling", "/synthetic/bpx-rag-scaling", None, &[])?;
+    store.add_source("scaling", "/synthetic/bpx-rag-scaling", &[], &[])?;
     let source = store
         .get_source("scaling")?
         .ok_or_else(|| anyhow!("could not load synthetic scaling source"))?;

@@ -5,14 +5,14 @@ use std::fs::{self};
 use std::path::Path;
 use std::time::Duration;
 
-mod retrieval;
-mod scaling;
 mod embeddings;
 mod pool;
-pub use retrieval::*;
-pub use scaling::*;
+mod retrieval;
+mod scaling;
 pub use embeddings::*;
 pub use pool::*;
+pub use retrieval::*;
+pub use scaling::*;
 
 const TOP_K: usize = 10;
 
@@ -27,7 +27,7 @@ fn sha256_file(path: &Path) -> Result<String> {
 }
 
 fn corpus_manifest_sha256(corpus_root: &Path) -> Result<String> {
-    let mut files = crate::knowledge::sync::walk_source_dir(corpus_root, None)?
+    let mut files = crate::knowledge::sync::walk_source_dir(corpus_root, &[])?
         .into_iter()
         .collect::<Vec<_>>();
     files.sort_by(|left, right| left.0.cmp(&right.0));

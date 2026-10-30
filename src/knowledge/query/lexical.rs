@@ -1,6 +1,6 @@
+use super::*;
 use anyhow::Result;
 use rusqlite::Connection;
-use super::*;
 
 /// BM25 search on knowledge_chunks FTS5 table.
 pub(super) fn knowledge_bm25_search(

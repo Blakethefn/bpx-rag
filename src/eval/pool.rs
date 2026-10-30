@@ -1,3 +1,8 @@
+use super::*;
+use crate::config::Config;
+use crate::embed::{self, Embed, Embedder};
+use crate::knowledge;
+use crate::knowledge::query::SearchWeights;
 use anyhow::{anyhow, Context, Result};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -6,11 +11,6 @@ use std::fs::{self, OpenOptions};
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use crate::config::Config;
-use crate::embed::{self, Embed, Embedder};
-use crate::knowledge;
-use crate::knowledge::query::SearchWeights;
-use super::*;
 
 pub(super) const JUDGMENT_POOL_SCHEMA_VERSION: u8 = 1;
 
@@ -164,7 +164,7 @@ pub fn generate_judgment_pool(
     store.add_source(
         "judgment-pool",
         &corpus_dir.to_string_lossy(),
-        None,
+        &[],
         &["frontmatter".into()],
     )?;
     let source = store

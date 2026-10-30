@@ -13,8 +13,8 @@ fn link_count(store: &KnowledgeStore, source_id: i64) -> i64 {
         .unwrap()
 }
 
-use crate::knowledge::{enrichment, query, sync};
 use crate::knowledge::query::SearchWeights;
+use crate::knowledge::{enrichment, query, sync};
 use rusqlite::params;
 use std::fs;
 use std::sync::Arc;
@@ -51,7 +51,7 @@ fn full_sync_crud_cycle() {
     // Register and initial sync
     let enrichments = vec!["frontmatter".to_string()];
     store
-        .add_source("vault", dir.path().to_str().unwrap(), None, &enrichments)
+        .add_source("vault", dir.path().to_str().unwrap(), &[], &enrichments)
         .unwrap();
     let source = store.get_source("vault").unwrap().unwrap();
     let enrich = enrichment::build_enrichment_fn(&enrichments, dir.path());
@@ -153,7 +153,7 @@ fn enrichment_to_filtered_search_pipeline() {
 
     let enrichments = vec!["frontmatter".to_string()];
     store
-        .add_source("vault", dir.path().to_str().unwrap(), None, &enrichments)
+        .add_source("vault", dir.path().to_str().unwrap(), &[], &enrichments)
         .unwrap();
     let source = store.get_source("vault").unwrap().unwrap();
     let enrich = enrichment::build_enrichment_fn(&enrichments, dir.path());
@@ -250,7 +250,7 @@ fn sync_after_new_file_is_searchable() {
     .unwrap();
 
     store
-        .add_source("docs", dir.path().to_str().unwrap(), None, &[])
+        .add_source("docs", dir.path().to_str().unwrap(), &[], &[])
         .unwrap();
     let source = store.get_source("docs").unwrap().unwrap();
     sync::sync_source(&store, &source, None).unwrap();
@@ -302,7 +302,7 @@ fn sync_after_edit_updates_content() {
     .unwrap();
 
     store
-        .add_source("docs", dir.path().to_str().unwrap(), None, &[])
+        .add_source("docs", dir.path().to_str().unwrap(), &[], &[])
         .unwrap();
     let source = store.get_source("docs").unwrap().unwrap();
     sync::sync_source(&store, &source, None).unwrap();
@@ -310,8 +310,7 @@ fn sync_after_edit_updates_content() {
     // Verify original content is searchable
     let weights = SearchWeights::default();
     let results =
-        query::knowledge_search(&store, "quasar protocol", None, None, 10, &weights, 2000)
-            .unwrap();
+        query::knowledge_search(&store, "quasar protocol", None, None, 10, &weights, 2000).unwrap();
     assert!(!results.is_empty(), "original content should be searchable");
 
     // Edit the file (simulating Edit tool)
@@ -335,8 +334,7 @@ fn sync_after_edit_updates_content() {
 
     // Old content is no longer present
     let results =
-        query::knowledge_search(&store, "quasar protocol", None, None, 10, &weights, 2000)
-            .unwrap();
+        query::knowledge_search(&store, "quasar protocol", None, None, 10, &weights, 2000).unwrap();
     assert!(
         results.is_empty(),
         "old content should be gone after reindex"
@@ -354,16 +352,14 @@ fn cascading_deletion_leaves_zero_orphans() {
     for i in 0..5 {
         std::fs::write(
             dir.path().join(format!("f{i}.md")),
-            format!(
-                "---\ntype: task\n---\n# File {i}\n\nContent for file {i} with unique terms.",
-            ),
+            format!("---\ntype: task\n---\n# File {i}\n\nContent for file {i} with unique terms.",),
         )
         .unwrap();
     }
 
     let enrichments = vec!["frontmatter".to_string()];
     store
-        .add_source("doomed", dir.path().to_str().unwrap(), None, &enrichments)
+        .add_source("doomed", dir.path().to_str().unwrap(), &[], &enrichments)
         .unwrap();
     let source = store.get_source("doomed").unwrap().unwrap();
     let enrich = enrichment::build_enrichment_fn(&enrichments, dir.path());
@@ -458,7 +454,7 @@ fn idempotent_sync_no_changes() {
     }
 
     store
-        .add_source("stable", dir.path().to_str().unwrap(), None, &[])
+        .add_source("stable", dir.path().to_str().unwrap(), &[], &[])
         .unwrap();
     let source = store.get_source("stable").unwrap().unwrap();
     sync::sync_source(&store, &source, None).unwrap();
@@ -502,8 +498,7 @@ fn empty_knowledge_search_returns_empty() {
     let store = make_store();
     let weights = SearchWeights::default();
     let results =
-        query::knowledge_search(&store, "anything at all", None, None, 10, &weights, 2000)
-            .unwrap();
+        query::knowledge_search(&store, "anything at all", None, None, 10, &weights, 2000).unwrap();
     assert!(results.is_empty());
 }
 
@@ -545,7 +540,7 @@ fn all_enrichments_indexed_and_searchable() {
         "folder_tags".to_string(),
     ];
     store
-        .add_source("vault", dir.path().to_str().unwrap(), None, &enrichments)
+        .add_source("vault", dir.path().to_str().unwrap(), &[], &enrichments)
         .unwrap();
     let source = store.get_source("vault").unwrap().unwrap();
     let enrich = enrichment::build_enrichment_fn(&enrichments, dir.path());
@@ -646,7 +641,7 @@ fn no_frontmatter_still_searchable() {
 
     let enrichments = vec!["frontmatter".to_string()];
     store
-        .add_source("vault", dir.path().to_str().unwrap(), None, &enrichments)
+        .add_source("vault", dir.path().to_str().unwrap(), &[], &enrichments)
         .unwrap();
     let source = store.get_source("vault").unwrap().unwrap();
     let enrich = enrichment::build_enrichment_fn(&enrichments, dir.path());
@@ -657,8 +652,7 @@ fn no_frontmatter_still_searchable() {
 
     let weights = SearchWeights::default();
     let results =
-        query::knowledge_search(&store, "crystallography", None, None, 10, &weights, 2000)
-            .unwrap();
+        query::knowledge_search(&store, "crystallography", None, None, 10, &weights, 2000).unwrap();
     assert!(
         !results.is_empty(),
         "file without frontmatter should still be searchable by content"
@@ -689,7 +683,12 @@ fn glob_filter_restricts_sync_and_search() {
     .unwrap();
 
     store
-        .add_source("md-only", dir.path().to_str().unwrap(), Some("*.md"), &[])
+        .add_source(
+            "md-only",
+            dir.path().to_str().unwrap(),
+            &["*.md".to_string()],
+            &[],
+        )
         .unwrap();
     let source = store.get_source("md-only").unwrap().unwrap();
     let r = sync::sync_source(&store, &source, None).unwrap();
@@ -697,13 +696,64 @@ fn glob_filter_restricts_sync_and_search() {
 
     let weights = SearchWeights::default();
     let results =
-        query::knowledge_search(&store, "photosynthesis", None, None, 10, &weights, 2000)
-            .unwrap();
+        query::knowledge_search(&store, "photosynthesis", None, None, 10, &weights, 2000).unwrap();
     assert_eq!(
         results.len(),
         1,
         "search should only find the .md file content"
     );
+}
+
+#[test]
+fn include_and_exclude_scope_index_only_the_chosen_parts() {
+    let store = make_store();
+    let dir = tempdir().unwrap();
+    std::fs::create_dir_all(dir.path().join("docs")).unwrap();
+    std::fs::create_dir_all(dir.path().join("vendor")).unwrap();
+    std::fs::write(
+        dir.path().join("docs/guide.md"),
+        "# Guide\n\nkestrel handbook",
+    )
+    .unwrap();
+    std::fs::write(
+        dir.path().join("docs/draft.md"),
+        "# Draft\n\nkestrel scratch notes",
+    )
+    .unwrap();
+    std::fs::write(
+        dir.path().join("vendor/lib.md"),
+        "# Vendored\n\nkestrel upstream copy",
+    )
+    .unwrap();
+
+    let patterns = crate::knowledge::scope::patterns_from(
+        &["docs/**".to_string()],
+        &["docs/draft.md".to_string()],
+    );
+    store
+        .add_source("scoped", dir.path().to_str().unwrap(), &patterns, &[])
+        .unwrap();
+    let source = store.get_source("scoped").unwrap().unwrap();
+    assert_eq!(
+        source.patterns, patterns,
+        "scope round-trips through the store"
+    );
+
+    let r = sync::sync_source(&store, &source, None).unwrap();
+    assert_eq!(r.files_added, 1, "only docs/guide.md is in scope");
+
+    let results = query::knowledge_search(
+        &store,
+        "kestrel",
+        None,
+        None,
+        10,
+        &SearchWeights::default(),
+        2000,
+    )
+    .unwrap();
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0].file_path, "docs/guide.md");
 }
 
 // ── Multiple sources with source filter ────────────────────────────────
@@ -726,10 +776,10 @@ fn multi_source_with_source_filter() {
     .unwrap();
 
     store
-        .add_source("vault", dir1.path().to_str().unwrap(), None, &[])
+        .add_source("vault", dir1.path().to_str().unwrap(), &[], &[])
         .unwrap();
     store
-        .add_source("docs", dir2.path().to_str().unwrap(), None, &[])
+        .add_source("docs", dir2.path().to_str().unwrap(), &[], &[])
         .unwrap();
 
     let s1 = store.get_source("vault").unwrap().unwrap();
@@ -838,7 +888,7 @@ fn filter_never_returns_non_matching_chunks() {
 
     let enrichments = vec!["frontmatter".to_string()];
     store
-        .add_source("vault", dir.path().to_str().unwrap(), None, &enrichments)
+        .add_source("vault", dir.path().to_str().unwrap(), &[], &enrichments)
         .unwrap();
     let source = store.get_source("vault").unwrap().unwrap();
     let enrich = enrichment::build_enrichment_fn(&enrichments, dir.path());
@@ -886,7 +936,7 @@ fn reindex_with_enrichments_updates_metadata() {
 
     let enrichments = vec!["frontmatter".to_string()];
     store
-        .add_source("vault", dir.path().to_str().unwrap(), None, &enrichments)
+        .add_source("vault", dir.path().to_str().unwrap(), &[], &enrichments)
         .unwrap();
     let source = store.get_source("vault").unwrap().unwrap();
     let enrich = enrichment::build_enrichment_fn(&enrichments, dir.path());
@@ -958,7 +1008,7 @@ fn sync_nonexistent_source_path_errors_gracefully() {
     let dir = tempdir().unwrap();
     let path_str = dir.path().to_str().unwrap().to_string();
 
-    store.add_source("temp", &path_str, None, &[]).unwrap();
+    store.add_source("temp", &path_str, &[], &[]).unwrap();
     let source = store.get_source("temp").unwrap().unwrap();
 
     // Remove the directory
@@ -986,7 +1036,7 @@ fn sync_with_embedder_produces_embeddings() {
     .unwrap();
 
     store
-        .add_source("emb", dir.path().to_str().unwrap(), None, &[])
+        .add_source("emb", dir.path().to_str().unwrap(), &[], &[])
         .unwrap();
     let source = store.get_source("emb").unwrap().unwrap();
     sync::sync_source(&store, &source, None).unwrap();
@@ -1041,7 +1091,7 @@ fn compound_filter_roundtrip() {
 
     let enrichments = vec!["frontmatter".to_string(), "folder_tags".to_string()];
     store
-        .add_source("vault", dir.path().to_str().unwrap(), None, &enrichments)
+        .add_source("vault", dir.path().to_str().unwrap(), &[], &enrichments)
         .unwrap();
     let source = store.get_source("vault").unwrap().unwrap();
     let enrich = enrichment::build_enrichment_fn(&enrichments, dir.path());
@@ -1085,14 +1135,12 @@ fn sync_and_traverse_wikilinks() {
 
     let enrichments = vec!["wikilinks".to_string()];
     store
-        .add_source("graph", dir.path().to_str().unwrap(), None, &enrichments)
+        .add_source("graph", dir.path().to_str().unwrap(), &[], &enrichments)
         .unwrap();
     let source = store.get_source("graph").unwrap().unwrap();
 
-    let enrich_fn = enrichment::build_enrichment_fn(
-        &source.enrichments,
-        std::path::Path::new(&source.path),
-    );
+    let enrich_fn =
+        enrichment::build_enrichment_fn(&source.enrichments, std::path::Path::new(&source.path));
     let enrich_ref = enrich_fn
         .as_ref()
         .map(|f| f.as_ref() as &dyn Fn(&str, &std::path::Path) -> serde_json::Value);
@@ -1129,14 +1177,12 @@ fn remove_source_cleans_up_links() {
 
     let enrichments = vec!["wikilinks".to_string()];
     store
-        .add_source("doomed", dir.path().to_str().unwrap(), None, &enrichments)
+        .add_source("doomed", dir.path().to_str().unwrap(), &[], &enrichments)
         .unwrap();
     let source = store.get_source("doomed").unwrap().unwrap();
 
-    let enrich_fn = enrichment::build_enrichment_fn(
-        &source.enrichments,
-        std::path::Path::new(&source.path),
-    );
+    let enrich_fn =
+        enrichment::build_enrichment_fn(&source.enrichments, std::path::Path::new(&source.path));
     let enrich_ref = enrich_fn
         .as_ref()
         .map(|f| f.as_ref() as &dyn Fn(&str, &std::path::Path) -> serde_json::Value);

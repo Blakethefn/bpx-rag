@@ -41,8 +41,12 @@ pub enum Commands {
         path: PathBuf,
         #[arg(long)]
         label: String,
-        #[arg(long)]
-        glob: Option<String>,
+        /// Index only paths matching this glob. Repeat for several patterns.
+        #[arg(long = "include", alias = "glob", value_name = "GLOB")]
+        include: Vec<String>,
+        /// Skip paths matching this glob. Repeat for several patterns.
+        #[arg(long, value_name = "GLOB")]
+        exclude: Vec<String>,
         #[arg(long, value_delimiter = ',')]
         enrich: Vec<String>,
     },

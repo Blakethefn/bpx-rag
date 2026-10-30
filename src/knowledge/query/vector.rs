@@ -1,7 +1,7 @@
+use super::*;
+use crate::embed;
 use anyhow::Result;
 use rusqlite::Connection;
-use crate::embed;
-use super::*;
 
 /// Vector similarity search over knowledge embeddings.
 pub(super) fn knowledge_vector_search(

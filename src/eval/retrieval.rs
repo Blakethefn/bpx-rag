@@ -1,3 +1,8 @@
+use super::*;
+use crate::config::Config;
+use crate::embed::{self, Embed, Embedder};
+use crate::knowledge;
+use crate::knowledge::query::SearchWeights;
 use anyhow::{anyhow, Context, Result};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap};
@@ -5,11 +10,6 @@ use std::fs::{self};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Instant;
-use crate::config::Config;
-use crate::embed::{self, Embed, Embedder};
-use crate::knowledge;
-use crate::knowledge::query::SearchWeights;
-use super::*;
 
 #[derive(Debug, Deserialize, Clone)]
 pub(super) struct EvalQuery {
@@ -352,7 +352,7 @@ pub fn run_retrieval_evaluation(
     store.add_source(
         "retrieval-eval",
         &corpus_dir.to_string_lossy(),
-        None,
+        &[],
         &["frontmatter".into()],
     )?;
     let source = store
@@ -695,7 +695,7 @@ pub(super) fn validate_qrels(
     {
         anyhow::bail!("relevance judgments reference unknown query {query_id}");
     }
-    let indexable_paths = crate::knowledge::sync::walk_source_dir(corpus_dir, None)?
+    let indexable_paths = crate::knowledge::sync::walk_source_dir(corpus_dir, &[])?
         .into_keys()
         .collect::<std::collections::HashSet<_>>();
     for query in queries {
@@ -791,7 +791,10 @@ pub(super) fn validate_queries(queries: &[EvalQuery]) -> Result<std::collections
     Ok(query_ids)
 }
 
-pub(super) fn measure_query(ranked_paths: &[String], judgments: &BTreeMap<String, u8>) -> QualityMetrics {
+pub(super) fn measure_query(
+    ranked_paths: &[String],
+    judgments: &BTreeMap<String, u8>,
+) -> QualityMetrics {
     let unique_paths = unique_paths(ranked_paths, usize::MAX);
     let relevant_total = judgments
         .values()

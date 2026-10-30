@@ -1,11 +1,11 @@
+use super::*;
+use crate::config::Config;
+use crate::embed::{self, Embed, Embedder};
 use anyhow::{Context, Result};
 use serde::Serialize;
 use std::fs::{self};
 use std::path::Path;
 use std::time::Instant;
-use crate::config::Config;
-use crate::embed::{self, Embed, Embedder};
-use super::*;
 
 #[derive(Debug, Serialize)]
 pub struct EmbeddingBenchmarkReport {
@@ -90,7 +90,10 @@ pub fn run_embedding_benchmark(
         );
     }
 
-    let walk = crate::knowledge::sync::walk_source_dir_with_report(corpus_root, glob_pattern)?;
+    let patterns: Vec<String> = glob_pattern
+        .map(|pattern| vec![pattern.to_string()])
+        .unwrap_or_default();
+    let walk = crate::knowledge::sync::walk_source_dir_with_report(corpus_root, &patterns)?;
     let sensitive_files_skipped = walk.sensitive_files_skipped;
     let mut files = walk.files.into_iter().collect::<Vec<_>>();
     files.sort_by(|left, right| left.0.cmp(&right.0));

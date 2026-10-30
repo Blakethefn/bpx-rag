@@ -132,10 +132,13 @@ fn dense_retrieval_can_find_a_chunk_with_no_lexical_hit() {
         (semantic, "blue ocean migration paths of large mammals"),
     ] {
         let embedding = SemanticTestEmbedder.embed_one(content).unwrap();
-        store.conn().execute(
-            "INSERT INTO knowledge_embeddings (chunk_rowid, embedding, dim) VALUES (?1, ?2, 2)",
-            params![rowid, embed::embedding_to_bytes(&embedding)],
-        ).unwrap();
+        store
+            .conn()
+            .execute(
+                "INSERT INTO knowledge_embeddings (chunk_rowid, embedding, dim) VALUES (?1, ?2, 2)",
+                params![rowid, embed::embedding_to_bytes(&embedding)],
+            )
+            .unwrap();
     }
 
     let results = knowledge_search(
@@ -289,10 +292,13 @@ fn deterministic_retrieval_eval_measures_recall_mrr_and_ndcg() {
     for (source, path, title, content) in corpus {
         let rowid = seed_chunk(&store, source, "/eval", path, title, content, "{}");
         let embedding = EvaluationEmbedder::vector(&format!("{title} {content}"));
-        store.conn().execute(
-            "INSERT INTO knowledge_embeddings (chunk_rowid, embedding, dim) VALUES (?1, ?2, 4)",
-            params![rowid, embed::embedding_to_bytes(&embedding)],
-        ).unwrap();
+        store
+            .conn()
+            .execute(
+                "INSERT INTO knowledge_embeddings (chunk_rowid, embedding, dim) VALUES (?1, ?2, 4)",
+                params![rowid, embed::embedding_to_bytes(&embedding)],
+            )
+            .unwrap();
     }
 
     let cases = [

@@ -1,18 +1,18 @@
 //! Knowledge search: BM25, trigram, fuzzy, and vector layers fused with RRF.
 
-use anyhow::Result;
-use std::collections::HashMap;
 use crate::embed;
-use crate::search::profile::SearchWhy;
 use crate::knowledge::filter::{parse_filter, predicates_to_sql};
 use crate::knowledge::KnowledgeStore;
+use crate::search::profile::SearchWhy;
+use anyhow::Result;
+use std::collections::HashMap;
 
 mod lexical;
-mod vector;
 mod rank;
+mod vector;
 use lexical::*;
-use vector::*;
 use rank::*;
+use vector::*;
 
 /// Weight configuration for RRF layer blending
 pub struct SearchWeights {

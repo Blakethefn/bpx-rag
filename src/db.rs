@@ -107,5 +107,4 @@ pub fn cleanup_stale_dbs(stale_days: u64) -> Result<u32> {
 }
 
 /// Hex encoding helper (avoids adding the hex crate)
-mod hex {
-}
+mod hex {}

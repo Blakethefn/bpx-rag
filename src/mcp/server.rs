@@ -61,19 +61,11 @@ fn dispatch_tool(
     let result = match name {
         "bpx_relate" => handle_file_relationships(args, project_dir),
         "bpx_search" => with_app(app_slot, |app| handle_search(args, app)),
-        "bpx_add" => {
-            with_app(app_slot, |app| handle_knowledge_add(args, app))
-        }
-        "bpx_sync" => with_app(app_slot, |app| {
-            handle_knowledge_sync(args, app)
-        }),
+        "bpx_add" => with_app(app_slot, |app| handle_knowledge_add(args, app)),
+        "bpx_sync" => with_app(app_slot, |app| handle_knowledge_sync(args, app)),
         "bpx_status" => with_app(app_slot, |app| app.source_status()),
-        "bpx_remove" => with_app(app_slot, |app| {
-            handle_knowledge_remove(args, app)
-        }),
-        "bpx_read" => with_app(app_slot, |app| {
-            handle_knowledge_read(args, app)
-        }),
+        "bpx_remove" => with_app(app_slot, |app| handle_knowledge_remove(args, app)),
+        "bpx_read" => with_app(app_slot, |app| handle_knowledge_read(args, app)),
         "bpx_models" => with_app(app_slot, |app| handle_models(args, app)),
         "bpx_embed" => with_app(app_slot, |app| handle_embed(args, app)),
         _ => Err(anyhow!("unknown tool: {name}")),
@@ -162,17 +154,30 @@ fn handle_search(args: &Value, app: &mut RagApp) -> Result<String> {
 fn handle_knowledge_add(args: &Value, app: &mut RagApp) -> Result<String> {
     let path = required_string(args, "path")?;
     let label = required_string(args, "label")?;
-    let enrichments: Vec<String> = args["enrichments"]
-        .as_array()
-        .map(|values| {
-            values
-                .iter()
-                .filter_map(Value::as_str)
-                .map(str::to_string)
-                .collect()
-        })
-        .unwrap_or_default();
-    app.add_source(Path::new(path), label, args["glob"].as_str(), &enrichments)
+    let enrichments = string_list(args, "enrichments")?;
+    let mut include = string_list(args, "include")?;
+    if let Some(glob) = args["glob"].as_str() {
+        include.insert(0, glob.to_string());
+    }
+    let exclude = string_list(args, "exclude")?;
+    app.add_source(Path::new(path), label, &include, &exclude, &enrichments)
+}
+
+/// Read an optional array of strings. Any other shape is an error, not an empty list.
+fn string_list(args: &Value, key: &str) -> Result<Vec<String>> {
+    match args.get(key) {
+        None | Some(Value::Null) => Ok(Vec::new()),
+        Some(Value::Array(values)) => values
+            .iter()
+            .map(|value| {
+                value
+                    .as_str()
+                    .map(str::to_string)
+                    .ok_or_else(|| anyhow!("'{key}' must contain only strings"))
+            })
+            .collect(),
+        Some(_) => Err(anyhow!("'{key}' must be an array of strings")),
+    }
 }
 
 fn handle_knowledge_sync(args: &Value, app: &mut RagApp) -> Result<String> {

@@ -1,9 +1,9 @@
+use super::*;
+use crate::knowledge::KnowledgeStore;
 use anyhow::Result;
 use rusqlite::{params, OptionalExtension};
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
-use crate::knowledge::KnowledgeStore;
-use super::*;
 
 #[derive(Debug, Default)]
 pub struct SensitiveIndexScrubReport {

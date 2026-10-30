@@ -8,8 +8,8 @@ use serde_json::json;
 use crate::config::Config;
 use crate::embed::{self, Embed, Embedder};
 use crate::knowledge::{self, KnowledgeSourceInfo, KnowledgeStore};
-use crate::search::{self, QueryRequest};
 use crate::search::profile::SearchProfile;
+use crate::search::{self, QueryRequest};
 
 pub struct RagApp {
     config: Config,
@@ -121,26 +121,30 @@ impl RagApp {
         &mut self,
         path: &Path,
         label: &str,
-        glob: Option<&str>,
+        include: &[String],
+        exclude: &[String],
         enrichments: &[String],
     ) -> Result<String> {
         validate_label(label)?;
         knowledge::enrichment::validate_enrichments(enrichments)?;
-        if let Some(pattern) = glob {
-            glob::Pattern::new(pattern).context("invalid source glob pattern")?;
-        }
         let canonical_path = path
             .canonicalize()
             .with_context(|| format!("could not resolve source path {}", path.display()))?;
         if !canonical_path.is_dir() {
             return Err(anyhow!("source path must be a directory"));
         }
+        let patterns = knowledge::scope::patterns_from(include, exclude);
+        knowledge::scope::validate(&canonical_path, &patterns)?;
         if self.knowledge.get_source(label)?.is_some() {
             return Err(anyhow!("a knowledge source named '{label}' already exists"));
         }
         self.ensure_embedder();
-        self.knowledge
-            .add_source(label, &canonical_path.to_string_lossy(), glob, enrichments)?;
+        self.knowledge.add_source(
+            label,
+            &canonical_path.to_string_lossy(),
+            &patterns,
+            enrichments,
+        )?;
         let source = self
             .knowledge
             .get_source(label)?
