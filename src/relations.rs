@@ -16,7 +16,7 @@ pub(crate) use languages::Grammar;
 use tree_sitter::Tree;
 
 pub use format::format_analysis;
-pub use scan::analyze_file;
+pub use scan::{analyze_file, project_edges};
 
 /// Parse a supported source file for the shared indexing and relationship paths.
 pub(crate) fn parse_tree_for_path(path: &Path, content: &str) -> Option<(Grammar, Tree)> {

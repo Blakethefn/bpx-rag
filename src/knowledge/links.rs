@@ -5,6 +5,12 @@ use rusqlite::params;
 
 use super::{filter, KnowledgeStore, RelatedChunk};
 
+/// Top hits that keep their rank when linked files are merged in.
+pub const RELATION_KEEP_TOP: usize = 5;
+
+/// Most linked files added from the top hit's relations.
+pub const RELATION_NEIGHBOR_LIMIT: usize = 2;
+
 impl KnowledgeStore {
     /// Get chunks from files linked to the given chunk's file.
     ///
@@ -104,5 +110,65 @@ impl KnowledgeStore {
             row.get::<_, String>(0)
         })?;
         Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
+    }
+}
+
+/// Place `neighbors` after the first `keep_top` ranked items, then the rest of
+/// the ranking, without duplicates and capped at `limit`.
+///
+/// The top hits keep their order. Linked items fill the next slots, so a
+/// relation can surface a file the ranking missed without displacing the best
+/// matches. `key` identifies duplicates, such as a file path.
+pub fn merge_neighbors<T, K: PartialEq>(
+    ranked: Vec<T>,
+    neighbors: Vec<T>,
+    keep_top: usize,
+    limit: usize,
+    key: impl Fn(&T) -> K,
+) -> Vec<T> {
+    let mut tail = ranked;
+    let split = keep_top.min(tail.len());
+    let rest = tail.split_off(split);
+    let mut merged = tail;
+    for neighbor in neighbors {
+        if merged.len() >= limit {
+            break;
+        }
+        let neighbor_key = key(&neighbor);
+        let duplicate = merged
+            .iter()
+            .chain(rest.iter())
+            .any(|item| key(item) == neighbor_key);
+        if !duplicate {
+            merged.push(neighbor);
+        }
+    }
+    for item in rest {
+        if merged.len() >= limit {
+            break;
+        }
+        merged.push(item);
+    }
+    merged
+}
+
+#[cfg(test)]
+mod merge_tests {
+    use super::merge_neighbors;
+
+    #[test]
+    fn neighbors_follow_the_top_hits_without_duplicates() {
+        let ranked = vec!["a", "b", "c", "d", "e"];
+        let neighbors = vec!["x", "a", "y"];
+        let merged = merge_neighbors(ranked, neighbors, 2, 6, |item| item.to_string());
+        assert_eq!(merged, vec!["a", "b", "x", "y", "c", "d"]);
+    }
+
+    #[test]
+    fn neighbors_never_push_out_the_top_hits() {
+        let ranked = vec!["a", "b"];
+        let neighbors = vec!["x", "y", "z"];
+        let merged = merge_neighbors(ranked, neighbors, 2, 2, |item| item.to_string());
+        assert_eq!(merged, vec!["a", "b"]);
     }
 }

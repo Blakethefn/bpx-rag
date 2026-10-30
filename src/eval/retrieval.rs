@@ -128,6 +128,8 @@ pub fn run_retrieval_evaluation(
     let indexing_ms = index_start.elapsed().as_secs_f64() * 1000.0;
 
     let mut overall = MetricSums::default();
+    let mut with_relations = MetricSums::default();
+    let mut queries_with_neighbors = 0usize;
     let mut lexical_only = MetricSums::default();
     let mut vector_only = MetricSums::default();
     let mut categories: BTreeMap<String, MetricSums> = BTreeMap::new();
@@ -203,6 +205,23 @@ pub fn run_retrieval_evaluation(
             .map(|result| result.file_path.clone())
             .collect::<Vec<_>>();
         let metrics = measure_query(&ranked_paths, judgments);
+        // The shipped rule: merge linked files of the top hit into the ranking.
+        let expanded = crate::search::attach_relation_neighbors(
+            &store,
+            results.clone(),
+            knowledge::links::RELATION_NEIGHBOR_LIMIT,
+            TOP_K,
+        )?;
+        if expanded.len() != results.len()
+            || expanded.iter().any(|result| result.why.graph_neighbor)
+        {
+            queries_with_neighbors += 1;
+        }
+        let expanded_paths = expanded
+            .iter()
+            .map(|result| result.file_path.clone())
+            .collect::<Vec<_>>();
+        with_relations.push(&measure_query(&expanded_paths, judgments));
         let lexical_metrics = measure_query(
             &lexical_results
                 .iter()
@@ -384,6 +403,8 @@ pub fn run_retrieval_evaluation(
         warm_query_p50_ms: percentile(&latency_ms, 0.50),
         warm_query_p95_ms: percentile(&latency_ms, 0.95),
         overall: overall.average(),
+        with_relation_neighbors: with_relations.average(),
+        queries_with_relation_neighbors: queries_with_neighbors,
         lexical_only: lexical_only.average(),
         vector_only: vector_only.average(),
         unanswerable_hybrid: unanswerable_hybrid.average(),

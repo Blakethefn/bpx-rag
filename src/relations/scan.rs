@@ -1,7 +1,7 @@
 use anyhow::{bail, Context, Result};
 use ignore::WalkBuilder;
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use super::languages::{grammar_for_path, Grammar};
 use super::markdown::markdown_references;
@@ -16,6 +16,57 @@ use super::types::{FileAnalysis, FileRelationship, RawReference, SourceFile};
 const MAX_FILES: usize = 20_000;
 const MAX_FILE_BYTES: u64 = 2 * 1024 * 1024;
 const MAX_TOTAL_BYTES: u64 = 128 * 1024 * 1024;
+/// A reference from one project file to another, both as project-relative paths.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProjectEdge {
+    pub from: String,
+    pub to: String,
+    pub kind: String,
+}
+
+/// Resolve references among `paths` in one pass.
+///
+/// Only the listed files are read. Callers that index a subset, such as a
+/// source with a sensitive-path policy, never touch the rest of the project.
+/// Unsupported, unreadable, and self-referencing entries are skipped.
+pub fn project_edges(root: &Path, paths: &[PathBuf]) -> Result<Vec<ProjectEdge>> {
+    let mut files = Vec::new();
+    for path in paths {
+        if !is_supported(path) {
+            continue;
+        }
+        if let Ok(content) = fs::read_to_string(path) {
+            files.push(SourceFile {
+                path: path.clone(),
+                content,
+            });
+        }
+    }
+
+    let metadata = ProjectMetadata::read(root);
+    let mut parsers = ParserCache::default();
+    let mut edges = Vec::new();
+    for source in &files {
+        let from = display_relative(&source.path, root)?;
+        for reference in extract_references(source, root, &files, &metadata, &mut parsers) {
+            let Some(target) = reference.target.as_deref() else {
+                continue;
+            };
+            let Ok(to) = display_relative(target, root) else {
+                continue;
+            };
+            if to != from {
+                edges.push(ProjectEdge {
+                    from: from.clone(),
+                    to,
+                    kind: reference.kind.to_string(),
+                });
+            }
+        }
+    }
+    Ok(edges)
+}
+
 pub fn analyze_file(path: &Path, root: Option<&Path>) -> Result<FileAnalysis> {
     let unresolved_path = match root {
         Some(root) if !path.is_absolute() => root.join(path),

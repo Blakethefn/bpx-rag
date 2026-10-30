@@ -63,6 +63,10 @@ pub struct SearchConfig {
     /// Number of top-ranked results that get the larger snippet size (default 3)
     #[serde(default = "default_top_result_count")]
     pub top_result_count: usize,
+    /// Linked files from the top hit's relations to merge into default results;
+    /// 0 turns relation neighbors off (default 2)
+    #[serde(default = "default_relation_neighbors")]
+    pub relation_neighbors: usize,
     /// Multiplier for vector (semantic) RRF scores (default 1.0)
     #[serde(default = "default_weight")]
     pub vector_weight: f64,
@@ -85,6 +89,10 @@ fn default_secondary_snippet_bytes() -> usize {
 
 fn default_top_result_count() -> usize {
     3
+}
+
+fn default_relation_neighbors() -> usize {
+    crate::knowledge::links::RELATION_NEIGHBOR_LIMIT
 }
 
 fn default_weight() -> f64 {
@@ -255,6 +263,7 @@ impl Default for Config {
                 snippet_bytes: default_snippet_bytes(),
                 secondary_snippet_bytes: default_secondary_snippet_bytes(),
                 top_result_count: default_top_result_count(),
+                relation_neighbors: default_relation_neighbors(),
                 vector_weight: 1.0,
                 keyword_weight: 1.0,
             },

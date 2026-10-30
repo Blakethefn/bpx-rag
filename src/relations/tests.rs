@@ -725,3 +725,24 @@ fn project_markers_infer_roots_for_go_java_dart_and_csharp() {
         );
     }
 }
+
+#[test]
+fn project_edges_resolve_rust_modules_in_one_pass() {
+    let dir = tempdir().unwrap();
+    fs::create_dir_all(dir.path().join("src")).unwrap();
+    fs::write(dir.path().join("src/lib.rs"), "mod util;\n").unwrap();
+    fs::write(dir.path().join("src/util.rs"), "pub fn helper() {}\n").unwrap();
+    fs::write(dir.path().join("src/secret.rs"), "mod never_read;\n").unwrap();
+    let root = dir.path().canonicalize().unwrap();
+    let paths = vec![root.join("src/lib.rs"), root.join("src/util.rs")];
+
+    let edges = project_edges(&root, &paths).unwrap();
+
+    assert!(edges
+        .iter()
+        .any(|edge| edge.from == "src/lib.rs" && edge.to == "src/util.rs"));
+    assert!(
+        edges.iter().all(|edge| edge.from != "src/secret.rs"),
+        "files outside the given list are never read"
+    );
+}

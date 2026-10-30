@@ -66,6 +66,10 @@ pub struct RetrievalEvalReport {
     pub warm_query_p50_ms: f64,
     pub warm_query_p95_ms: f64,
     pub overall: QualityMetrics,
+    /// Same queries after linked files from the top hit are merged into the ranking.
+    pub with_relation_neighbors: QualityMetrics,
+    /// Queries whose top hit had at least one linked file.
+    pub queries_with_relation_neighbors: usize,
     pub lexical_only: QualityMetrics,
     pub vector_only: QualityMetrics,
     pub unanswerable_hybrid: UnanswerableMetrics,

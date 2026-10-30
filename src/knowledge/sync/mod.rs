@@ -261,8 +261,22 @@ pub fn sync_source(
             params![source.id],
         )?;
 
-        // 4e. Resolve wikilinks to graph edges
+        // 4e. Resolve wikilinks and code relations to graph edges. Code edges
+        // depend on the whole indexed set, so they are rebuilt only when this
+        // sync changed something or the source has none yet.
         let lc = resolve_wikilinks_for_source(conn, source.id)?;
+        let changed = files_added + files_updated + files_removed > 0;
+        let has_code_edges: bool = conn.query_row(
+            "SELECT EXISTS(SELECT 1 FROM knowledge_links kl
+             JOIN knowledge_files kf ON kf.id = kl.source_file_id
+             WHERE kf.source_id = ?1 AND kl.link_type LIKE 'code:%')",
+            params![source.id],
+            |row| row.get(0),
+        )?;
+        if changed || !has_code_edges {
+            let root = Path::new(&source.path).canonicalize()?;
+            resolve_code_edges(conn, source.id, &root)?;
+        }
 
         Ok(lc)
     })();
