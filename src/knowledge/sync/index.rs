@@ -1,0 +1,245 @@
+use anyhow::{Context, Result};
+use rusqlite::params;
+use std::collections::HashMap;
+use crate::embed::{embedding_to_bytes, normalize_embedding};
+use super::*;
+
+pub(super) fn embed_pending_batch(
+    embedder: &dyn crate::embed::Embed,
+    prepared_files: &mut [PreparedFile],
+    pending: &mut Vec<(usize, usize, String)>,
+) -> Result<()> {
+    let texts = pending
+        .iter()
+        .map(|(_, _, text)| text.as_str())
+        .collect::<Vec<_>>();
+    let embeddings = embedder
+        .embed_batch(&texts)
+        .context("failed to embed changed corpus chunks")?;
+    if embeddings.len() != pending.len() {
+        anyhow::bail!(
+            "embedder returned {} vectors for {} chunks",
+            embeddings.len(),
+            pending.len()
+        );
+    }
+    for ((file_index, chunk_index, _), vector) in pending.drain(..).zip(embeddings) {
+        prepared_files[file_index].vectors[chunk_index] =
+            normalize_embedding(&vector, embedder.dim())?;
+    }
+    Ok(())
+}
+
+/// Insert pre-chunked content and precomputed vectors within the caller's
+/// transaction. All expensive enrichment and model inference happened earlier.
+pub(super) fn index_prepared_file(
+    conn: &rusqlite::Connection,
+    source_id: i64,
+    file_id: i64,
+    file: &PreparedFile,
+    model_id: Option<&str>,
+) -> Result<usize> {
+    if model_id.is_some() && file.vectors.len() != file.chunks.len() {
+        anyhow::bail!("prepared embedding count does not match prepared chunk count");
+    }
+    for (chunk_index, chunk) in file.chunks.iter().enumerate() {
+        // FTS5 (BM25)
+        conn.execute(
+            "INSERT INTO knowledge_chunks(title, content) VALUES (?1, ?2)",
+            params![chunk.title, chunk.content],
+        )?;
+        let rowid = conn.last_insert_rowid();
+
+        // Trigram FTS5 with explicit rowid
+        conn.execute(
+            "INSERT INTO knowledge_chunks_trigram(rowid, title, content) VALUES (?1, ?2, ?3)",
+            params![rowid, chunk.title, chunk.content],
+        )?;
+
+        // Chunk metadata
+        conn.execute(
+            "INSERT INTO knowledge_chunk_meta
+                (chunk_rowid, file_id, source_id, line_start, line_end, metadata)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            params![
+                rowid,
+                file_id,
+                source_id,
+                chunk.line_start,
+                chunk.line_end,
+                file.metadata
+            ],
+        )?;
+        if let Some(model_id) = model_id {
+            let embedding = &file.vectors[chunk_index];
+            let blob = embedding_to_bytes(embedding);
+            conn.execute(
+                "INSERT INTO knowledge_embeddings (chunk_rowid, embedding, dim, model_id)
+                 VALUES (?1, ?2, ?3, ?4)",
+                params![rowid, blob, embedding.len() as i64, model_id],
+            )?;
+        }
+    }
+
+    // Update file record
+    conn.execute(
+        "UPDATE knowledge_files SET content_hash = ?1, size_bytes = ?2,
+            chunk_count = ?3, chunker_version = ?4, indexed_at = datetime('now')
+         WHERE id = ?5",
+        params![
+            file.hash,
+            file.size_bytes,
+            file.chunks.len() as i64,
+            file.chunker_version,
+            file_id
+        ],
+    )?;
+
+    Ok(file.chunks.len())
+}
+
+/// Delete all chunks (FTS5, trigram, embeddings, metadata) for a given file.
+pub(super) fn delete_file_chunks(conn: &rusqlite::Connection, file_id: i64) -> Result<()> {
+    let rowids: Vec<i64> = {
+        let mut stmt =
+            conn.prepare("SELECT chunk_rowid FROM knowledge_chunk_meta WHERE file_id = ?1")?;
+        let rows = stmt.query_map(params![file_id], |row| row.get(0))?;
+        rows.filter_map(|r| r.ok()).collect()
+    };
+
+    // FTS5 tables: delete one at a time (safest for all SQLite versions)
+    for rowid in &rowids {
+        conn.execute(
+            "DELETE FROM knowledge_chunks WHERE rowid = ?1",
+            params![rowid],
+        )?;
+        conn.execute(
+            "DELETE FROM knowledge_chunks_trigram WHERE rowid = ?1",
+            params![rowid],
+        )?;
+    }
+
+    // Embeddings and metadata (regular tables, bulk delete is fine)
+    conn.execute(
+        "DELETE FROM knowledge_embeddings WHERE chunk_rowid IN
+         (SELECT chunk_rowid FROM knowledge_chunk_meta WHERE file_id = ?1)",
+        params![file_id],
+    )?;
+    conn.execute(
+        "DELETE FROM knowledge_chunk_meta WHERE file_id = ?1",
+        params![file_id],
+    )?;
+
+    Ok(())
+}
+
+/// Resolve an Obsidian wikilink target to a file ID.
+///
+/// Resolution order:
+/// 1. Exact match on rel_path
+/// 2. Exact match with `.md` appended
+/// 3. Basename match (target matches the filename portion of any rel_path)
+pub(super) fn resolve_wikilink(target: &str, files: &HashMap<String, i64>) -> Option<i64> {
+    // Exact match
+    if let Some(&id) = files.get(target) {
+        return Some(id);
+    }
+    // With .md extension
+    let with_md = format!("{}.md", target);
+    if let Some(&id) = files.get(&with_md) {
+        return Some(id);
+    }
+    // Basename match: target is just a note name without path
+    let suffix_md = format!("/{}.md", target);
+    let suffix_plain = format!("/{}", target);
+    for (path, &id) in files {
+        if path.ends_with(&suffix_md) || path.ends_with(&suffix_plain) {
+            return Some(id);
+        }
+    }
+    None
+}
+
+/// Delete all wikilink graph edges for a source, then re-resolve from stored
+/// metadata. Runs inside the sync transaction after all files are indexed.
+///
+/// Returns the number of links created.
+pub(super) fn resolve_wikilinks_for_source(conn: &rusqlite::Connection, source_id: i64) -> Result<usize> {
+    // Delete existing links for this source's files
+    conn.execute(
+        "DELETE FROM knowledge_links WHERE source_file_id IN
+         (SELECT id FROM knowledge_files WHERE source_id = ?1)",
+        params![source_id],
+    )?;
+
+    // Load all file rel_paths → IDs for this source
+    let files: HashMap<String, i64> = {
+        let mut stmt =
+            conn.prepare("SELECT id, rel_path FROM knowledge_files WHERE source_id = ?1")?;
+        let rows = stmt.query_map(params![source_id], |row| {
+            Ok((row.get::<_, String>(1)?, row.get::<_, i64>(0)?))
+        })?;
+        rows.filter_map(|r| r.ok()).collect()
+    };
+
+    if files.is_empty() {
+        return Ok(0);
+    }
+
+    // For each file, get one metadata row and extract wikilinks
+    let file_wikilinks: Vec<(i64, Vec<String>)> = {
+        let mut stmt = conn.prepare(
+            "SELECT kf.id, kcm.metadata
+             FROM knowledge_files kf
+             JOIN knowledge_chunk_meta kcm ON kcm.file_id = kf.id
+             WHERE kf.source_id = ?1
+             GROUP BY kf.id",
+        )?;
+        let rows = stmt.query_map(params![source_id], |row| {
+            Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?))
+        })?;
+        rows.filter_map(|r| r.ok())
+            .filter_map(|(file_id, meta_json)| {
+                let meta: serde_json::Value = serde_json::from_str(&meta_json).ok()?;
+                let links = meta.get("wikilinks")?.as_array()?;
+                let targets: Vec<String> = links
+                    .iter()
+                    .filter_map(|v| v.as_str().map(String::from))
+                    .collect();
+                if targets.is_empty() {
+                    None
+                } else {
+                    Some((file_id, targets))
+                }
+            })
+            .collect()
+    };
+
+    // Resolve and insert links
+    let mut links_created = 0usize;
+    let mut insert_stmt = conn.prepare(
+        "INSERT OR IGNORE INTO knowledge_links
+            (source_file_id, target_file_id, link_type, confidence)
+         VALUES (?1, ?2, ?3, ?4)",
+    )?;
+
+    for (source_file_id, targets) in &file_wikilinks {
+        for target in targets {
+            if let Some(target_file_id) = resolve_wikilink(target, &files) {
+                if target_file_id != *source_file_id {
+                    insert_stmt.execute(params![
+                        source_file_id,
+                        target_file_id,
+                        "wikilink",
+                        1.0
+                    ])?;
+                    links_created += 1;
+                }
+            }
+        }
+    }
+
+    Ok(links_created)
+}
+
+// ── Tests ───────────────────────────────────────────────────────────────────
