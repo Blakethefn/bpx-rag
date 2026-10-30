@@ -6,20 +6,35 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
-### Added
-
-- On-demand `relate` CLI and `bpx_relate` MCP tool for direct Markdown wikilinks, Rust module/import paths, and TypeScript/JavaScript imports.
-- A focused MCP server that starts without configuration, databases, or embedding models.
-
 ### Changed
 
-- Reorganized the relationship analyzer into scan, path, language, formatting, and test modules.
-- Reduced the CLI and MCP tool surface to direct file relationship analysis.
-- Simplified Cargo dependencies to the filesystem analyzer, CLI, and MCP transport.
+- **Breaking:** commands are flat verbs. `knowledge add|sync|status|remove|read` became `add|sync|status|remove|read`. `knowledge embed-backfill` is now `embed`, `knowledge scrub-sensitive` is now `scrub`, `analyze-file` is now `relate`, and `evaluate` is now `eval`.
+- **Breaking:** MCP tools use short names. `bpx_knowledge_add|sync|status|remove|read` are now `bpx_add|sync|status|remove|read`. `bpx_file_relationships` is now `bpx_relate`. `bpx_embeddings` is split into `bpx_models` (status and download) and `bpx_embed` (backfill).
+- **Breaking:** the data and config directories are `bpx-rag`, not `bpcontext`. When only the old directory exists, bpx-rag refuses to start with an empty store and prints the `mv` or `ln -s` command.
+- Search runs only against the knowledge store. The per-project content index and session memory were removed, along with the `bpcontext` compatibility launcher.
+- Source scope: `add` takes repeatable `--include` and `--exclude` globs. The MCP `bpx_add` tool accepts `include` and `exclude` arrays. The old single `glob` still works as one include.
+- Top search results list the files they link to or are linked from.
+- Source status shows how many chunks still have vectors from another model, and names the `embed` command to fix it.
+
+### Fixed
+
+- A failed query embedding is reported in the search output as a warning. Lexical results still return.
+- Database row decode errors propagate instead of being dropped.
+- Unknown enrichment names are rejected when a source is added.
+- Status no longer double counts chunks that have vectors from more than one model.
+- The store directory is created owner-only, and the database file is restricted to its owner on Unix.
+- The CUDA wrapper no longer carries machine-specific paths. Those move to the untracked `scripts/bpx-rag-cuda.env`.
 
 ### Removed
 
-- Database-backed indexing/search, knowledge-store management, embedding, context-budget, command capture, and web-fetch product features.
+- Session content index, search-memory learning, and the `bpcontext` launcher binary.
+- Unused helpers and the knowledge graph's multi-hop and link-count API. Graph queries use one filtered lookup.
+
+### Internal
+
+- The build has no warnings.
+- Code is organized by feature: `search/`, `knowledge/` (with `query/`, `sync/`, `ann/`, `schema/`, `links.rs`, `scope.rs`), `chunk/`, `embed/`, `relations/`, `eval/`, and `mcp/`.
+- Inline test modules live in sibling `tests.rs` files.
 
 ## [0.1.0] - 2025-04-02
 

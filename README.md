@@ -36,7 +36,7 @@ bpx-rag embed
 bpx-rag embed --label my-project
 ```
 
-The default `jina-embeddings-v2-base-code` model is tuned for code retrieval across 30 programming languages and supports an 8K token input window ([upstream model card](https://huggingface.co/jinaai/jina-embeddings-v2-base-code)). bpx-rag caps each embedded chunk at 1,024 tokens to control local inference cost; the full local model artifacts take about 644 MB. Set `embeddings.model` in `~/.config/bpcontext/config.toml` to `all-MiniLM-L6-v2` to use the smaller 91 MB general-purpose model.
+The default `jina-embeddings-v2-base-code` model is tuned for code retrieval across 30 programming languages and supports an 8K token input window ([upstream model card](https://huggingface.co/jinaai/jina-embeddings-v2-base-code)). bpx-rag caps each embedded chunk at 1,024 tokens to control local inference cost; the full local model artifacts take about 644 MB. Set `embeddings.model` in `~/.config/bpx-rag/config.toml` to `all-MiniLM-L6-v2` to use the smaller 91 MB general-purpose model.
 
 Vectors are stored with a canonical model ID. Switching models never mixes vectors from different spaces; run `embed` to replace vectors for existing chunks. Use `--label <source-label>` to backfill just one registered source; omitting it retains all-source behavior. Backfill processes bounded batches, rechecks chunks before writing to account for concurrent syncs/removals, and reports remaining chunks for the active model. Search reports incomplete active-model coverage and continues to use lexical results while backfill is pending. The `bpx_embed` MCP tool accepts the same optional `label`.
 
@@ -55,7 +55,7 @@ Embedding batches default to 16 chunks and ONNX uses the available logical CPUs;
 
 CPU is the default. To enable CUDA, build with `--features gpu-cuda`, set `embeddings.device = "cuda"`, and make the CUDA and cuDNN runtime libraries discoverable by the process. The CUDA execution provider is configured to fail clearly when it cannot register.
 
-The pinned ONNX Runtime CUDA provider requires CUDA 13.2 or newer and cuDNN 9.23 or newer. Set `ORT_CACHE_DIR` to a location on the desired data drive when building. On this workstation, the ignored local `.cargo/config.toml` points it to `/media/blakethefn/2000HDD1/dev/project-assets/bpcontext/ort-cache`. Run CUDA-enabled commands through `scripts/bpx-rag-cuda`; it exposes the local CUDA/cuDNN libraries from the same HDD path. Existing configurations without a `device` field continue to use CPU.
+The pinned ONNX Runtime CUDA provider requires CUDA 13.2 or newer and cuDNN 9.23 or newer. Set `ORT_CACHE_DIR` to a location on a drive with room for the provider binaries when building, for example in the ignored `.cargo/config.toml`. Run CUDA-enabled commands through `scripts/bpx-rag-cuda`. It reads the CUDA runtime directory from `BPX_RAG_CUDA_RUNTIME_DIR` and the binary from `BPX_RAG_BINARY`. Put those machine-specific paths in the untracked `scripts/bpx-rag-cuda.env`. Existing configurations without a `device` field continue to use CPU.
 
 Build the optional provider with:
 
@@ -66,15 +66,33 @@ cargo build --release --features gpu-cuda
 ## CLI
 
 ```text
-bpx-rag add <path> --label <label> [--glob <pattern>]
+bpx-rag serve                                   start the MCP server on stdio
+bpx-rag search <query> [--source <label>] [--filter <key:value>] [--limit N]
+bpx-rag add <path> --label <label> [--include <glob>]... [--exclude <glob>]...
 bpx-rag sync [--label <label>]
 bpx-rag status
+bpx-rag remove <label>
 bpx-rag read <label> [--path <relative-path>] [--line-start N] [--line-end N]
-bpx-rag search <query> [--source <label>] [--filter <key:value>] [--limit N]
-bpx-rag relate <path> [--root <project>]
+bpx-rag embed [--label <label>]                 compute missing vectors
+bpx-rag scrub [--label <label>]                 delete rows matching the sensitive-data policy
+bpx-rag relate <path> [--root <project>]        direct imports and links, no index needed
+bpx-rag models status|download
+bpx-rag eval retrieval|scaling|embeddings|pool|import-pool
 ```
 
 `read` accepts a relative path and an overlapping 1-based line range from a search citation. This lets agents expand a specific result instead of receiving only the first chunks from a source.
+
+### Index only part of a project
+
+`add` takes repeatable `--include` and `--exclude` globs, so a source can cover a subtree and skip what does not matter:
+
+```bash
+bpx-rag add ~/code/api --label api --include 'src/**' --include 'docs/**' --exclude '**/*.test.ts'
+```
+
+A scope is set when a source is added. Invalid patterns fail immediately. The sensitive-data policy still applies to everything in scope.
+
+Each top search result lists the files it links to or is linked from, as `related:` under the hit. Wikilink and frontmatter edges provide these links.
 
 The `language:<name>` filter matches source-file extensions for common languages as well as an optional YAML frontmatter `language` value. For example, `--filter language:rust` works on ordinary `.rs` files without requiring frontmatter or reindexing existing sources. Registered aliases include names such as `c++`/`cpp` and `c#`/`csharp`; unregistered safe names such as `nix` or `tf` match that extension. `.h` is intentionally included in both C and C++ filters because the extension is ambiguous.
 
@@ -91,7 +109,7 @@ The `language:<name>` filter matches source-file extensions for common languages
 }
 ```
 
-RAG tools include `bpx_search`, `bpx_add`, `bpx_sync`, `bpx_status`, `bpx_remove`, `bpx_read`, and `bpx_embeddings`. `bpx_read` accepts the cited source-relative path and line range. `bpx_relate` analyzes the current filesystem and does not need the RAG index.
+RAG tools include `bpx_search`, `bpx_add` (with `include` and `exclude` arrays), `bpx_sync`, `bpx_status`, `bpx_remove`, `bpx_read`, `bpx_embed`, and `bpx_models` (status and download). `bpx_read` accepts the cited source-relative path and line range. `bpx_relate` analyzes the current filesystem and does not need the RAG index.
 
 ## Direct file relationships
 
@@ -109,4 +127,25 @@ Syntax-aware Tree-sitter chunking supports 29 source grammars. Parse-error and o
 cargo build --release
 ```
 
-`bpcontext` remains as a compatibility launcher for older installations; new integrations should run `bpx-rag serve`.
+## Data and privacy
+
+bpx-rag runs locally and has no telemetry. The only network access is an explicit model download, either `models download` or the `bpx_models` download action, which fetches the embedding model from Hugging Face. Search, sync, and the MCP server otherwise make no network calls.
+
+What is stored, and where:
+
+- `knowledge.db` holds the indexed chunks, file hashes, source paths, and links. It lives in the local application data directory (`~/.local/share/bpx-rag` on Linux). The directory is created owner-only (0700), and the database file is restricted to its owner (0600) on Unix.
+- Model files live in `models/` under the same directory. They are public weights and contain none of your data.
+- Source configuration lives in `~/.config/bpx-rag/config.toml`. It holds settings only and no content.
+- Nothing is written into the indexed projects.
+
+What is indexed:
+
+- The source walker skips credential directories and files, key and certificate containers, Terraform state, and high-confidence API-key signatures, even when they are not in `.gitignore`.
+- `--include` and `--exclude` narrow what gets indexed. Use them to keep out generated, vendored, or personal folders.
+- `scrub` removes rows that already match the policy. It reports counts only.
+
+What is returned:
+
+- Search results and `bpx_read` return snippets of indexed files to whichever client called the tool. Treat MCP clients as having read access to every source they can query.
+
+Migrating from the old `bpcontext` name: if only `~/.local/share/bpcontext` or `~/.config/bpcontext` exists, bpx-rag refuses to start with an empty store and prints the `mv` or `ln -s` command to move it.
