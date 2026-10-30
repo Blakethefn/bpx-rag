@@ -16,7 +16,7 @@ use crate::db::data_dir;
 /// `~/.local/share/bpx-rag/knowledge.db`
 pub fn knowledge_db_path() -> Result<PathBuf> {
     let dir = data_dir()?;
-    std::fs::create_dir_all(&dir)?;
+    crate::db::create_private_dir(&dir)?;
     Ok(dir.join("knowledge.db"))
 }
 

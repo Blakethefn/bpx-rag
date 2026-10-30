@@ -30,10 +30,36 @@ pub(crate) fn app_dir_under(base: &Path) -> Result<PathBuf> {
     Ok(current)
 }
 
-/// Open a SQLite connection with WAL mode and recommended pragmas
+/// Create a directory that only the current user can read or enter.
+pub(crate) fn create_private_dir(dir: &Path) -> Result<()> {
+    if dir.is_dir() {
+        return Ok(());
+    }
+    let mut builder = fs::DirBuilder::new();
+    builder.recursive(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::DirBuilderExt;
+        builder.mode(0o700);
+    }
+    builder
+        .create(dir)
+        .with_context(|| format!("Failed to create {}", dir.display()))
+}
+
+/// Open a SQLite connection with WAL mode and recommended pragmas.
+///
+/// On Unix the database file is restricted to its owner, because it holds
+/// indexed source and notes.
 pub fn open_db(path: &Path) -> Result<Connection> {
     let conn = Connection::open(path)
         .with_context(|| format!("Failed to open database at {}", path.display()))?;
+    #[cfg(unix)]
+    if path.is_file() {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(path, fs::Permissions::from_mode(0o600))
+            .with_context(|| format!("Failed to restrict {}", path.display()))?;
+    }
     conn.execute_batch(
         "PRAGMA journal_mode = WAL;
          PRAGMA synchronous = NORMAL;

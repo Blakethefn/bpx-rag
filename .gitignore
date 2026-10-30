@@ -23,3 +23,7 @@ Thumbs.db
 # Environment
 .env
 .env.local
+
+# Machine-specific local settings
+.claude/
+scripts/bpx-rag-cuda.env
