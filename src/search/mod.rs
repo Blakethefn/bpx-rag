@@ -1,6 +1,9 @@
 pub mod profile;
 pub mod truncate;
 
+/// Linked files listed under each top result.
+const RELATED_FILES_PER_RESULT: usize = 5;
+
 use anyhow::Result;
 
 use crate::config::Config;
@@ -95,15 +98,30 @@ pub fn run_query(
         .profile
         .secondary_snippet_override()
         .unwrap_or(config.search.secondary_snippet_bytes);
+    let related = related_files_for(knowledge, &results, config.search.top_result_count)?;
     Ok(format_results(
         request.query,
         request.explain,
         &warnings,
         &results,
+        &related,
         top_snippet_bytes,
         secondary_snippet_bytes,
         config.search.top_result_count,
     ))
+}
+
+/// Linked files to list under each top result, aligned by index with `results`.
+fn related_files_for(
+    knowledge: &KnowledgeStore,
+    results: &[KnowledgeSearchResult],
+    top_result_count: usize,
+) -> Result<Vec<Vec<String>>> {
+    results
+        .iter()
+        .take(top_result_count)
+        .map(|result| knowledge.related_files(result.file_id, RELATED_FILES_PER_RESULT))
+        .collect()
 }
 
 fn count_summary(
@@ -269,6 +287,7 @@ fn format_results(
     explain: bool,
     warnings: &[String],
     results: &[KnowledgeSearchResult],
+    related: &[Vec<String>],
     top_snippet_bytes: usize,
     secondary_snippet_bytes: usize,
     top_result_count: usize,
@@ -293,14 +312,20 @@ fn format_results(
         if result.snippet.len() > max_bytes {
             truncated_any = true;
         }
+        let related_line = related
+            .get(idx)
+            .filter(|files| !files.is_empty())
+            .map(|files| format!("related: {}\n", files.join(", ")))
+            .unwrap_or_default();
         output.push_str(&format!(
-            "**[{}]** (source: {}, type: knowledge, file: {}, score: {:.4} (lines {}))\n{}\n{}\n\n",
+            "**[{}]** (source: {}, type: knowledge, file: {}, score: {:.4} (lines {}))\n{}\n{}{}\n\n",
             result.title,
             result.source_label,
             result.file_path,
             result.score,
             result.lines,
             result.why.compact_line(),
+            related_line,
             snippet
         ));
         if explain {
@@ -313,3 +338,6 @@ fn format_results(
     }
     output
 }
+
+#[cfg(test)]
+mod tests;
