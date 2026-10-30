@@ -148,4 +148,6 @@ What is returned:
 
 - Search results and `bpx_read` return snippets of indexed files to whichever client called the tool. Treat MCP clients as having read access to every source they can query.
 
+Limits, reporting, and what is excluded are in [SECURITY.md](SECURITY.md).
+
 Migrating from the old `bpcontext` name: if only `~/.local/share/bpcontext` or `~/.config/bpcontext` exists, bpx-rag refuses to start with an empty store and prints the `mv` or `ln -s` command to move it.
