@@ -22,7 +22,7 @@ pub fn tool_definitions() -> Value {
                 }
             },
             {
-                "name": "bpx_knowledge_add",
+                "name": "bpx_add",
                 "description": "Register and initially index a local project or documentation directory in the persistent RAG store.",
                 "inputSchema": {
                     "type": "object",
@@ -36,7 +36,7 @@ pub fn tool_definitions() -> Value {
                 }
             },
             {
-                "name": "bpx_knowledge_sync",
+                "name": "bpx_sync",
                 "description": "Incrementally update registered sources, replacing changed files and removing files deleted since the last successful sync.",
                 "inputSchema": {
                     "type": "object",
@@ -45,12 +45,12 @@ pub fn tool_definitions() -> Value {
                 }
             },
             {
-                "name": "bpx_knowledge_status",
+                "name": "bpx_status",
                 "description": "List registered sources, sync state, chunk totals, and embedding coverage.",
                 "inputSchema": { "type": "object", "properties": {}, "required": [] }
             },
             {
-                "name": "bpx_knowledge_remove",
+                "name": "bpx_remove",
                 "description": "Remove a registered source and all of its indexed data.",
                 "inputSchema": {
                     "type": "object",
@@ -59,7 +59,7 @@ pub fn tool_definitions() -> Value {
                 }
             },
             {
-                "name": "bpx_knowledge_read",
+                "name": "bpx_read",
                 "description": "Read full indexed chunks from a source. Use the cited relative path and line range from bpx_search to expand the specific hit.",
                 "inputSchema": {
                     "type": "object",
@@ -74,19 +74,29 @@ pub fn tool_definitions() -> Value {
                 }
             },
             {
-                "name": "bpx_embeddings",
-                "description": "Inspect or explicitly download the local embedding model, or backfill vectors for indexed chunks. Backfill can be restricted to one registered source label.",
+                "name": "bpx_models",
+                "description": "Inspect or explicitly download the local embedding model.",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
-                        "action": { "type": "string", "enum": ["status", "download", "backfill"] },
-                        "label": { "type": "string", "description": "Optional exact knowledge source label for backfill; omitted means all registered sources." }
+                        "action": { "type": "string", "enum": ["status", "download"] }
                     },
                     "required": ["action"]
                 }
             },
             {
-                "name": "bpx_file_relationships",
+                "name": "bpx_embed",
+                "description": "Compute missing vectors for indexed chunks with the configured model. Can be restricted to one registered source label.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "label": { "type": "string", "description": "Optional exact source label; omitted means all registered sources." }
+                    },
+                    "required": []
+                }
+            },
+            {
+                "name": "bpx_relate",
                 "description": "Analyze direct imports, includes, and links for one current file. Returns exact paths and line evidence without querying the RAG index.",
                 "inputSchema": {
                     "type": "object",

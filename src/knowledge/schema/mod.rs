@@ -1,7 +1,7 @@
 //! Knowledge database schema and connection management.
 //!
 //! The knowledge database is a single, global SQLite file at
-//! `~/.local/share/bpcontext/knowledge.db`. It is separate from the per-project
+//! `~/.local/share/bpx-rag/knowledge.db`. It is separate from the per-project
 //! session and content databases.
 
 use anyhow::Result;
@@ -13,7 +13,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use crate::db::data_dir;
 
 /// Returns the path to the knowledge database.
-/// `~/.local/share/bpcontext/knowledge.db`
+/// `~/.local/share/bpx-rag/knowledge.db`
 pub fn knowledge_db_path() -> Result<PathBuf> {
     let dir = data_dir()?;
     std::fs::create_dir_all(&dir)?;

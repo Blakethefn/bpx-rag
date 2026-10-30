@@ -15,9 +15,9 @@ pub struct Cli {
 
 #[derive(Subcommand)]
 pub enum Commands {
-    /// Start the MCP server.
+    /// Start the MCP server on stdio.
     Serve,
-    /// Search indexed project knowledge and return cited evidence chunks.
+    /// Search registered sources and return cited evidence chunks.
     Search {
         query: String,
         #[arg(short, long)]
@@ -35,33 +35,7 @@ pub enum Commands {
         #[arg(long)]
         count_only: bool,
     },
-    /// Manage persistent sources in the local knowledge index.
-    Knowledge {
-        #[command(subcommand)]
-        action: KnowledgeAction,
-    },
-    /// Inspect or explicitly download the configured embedding model.
-    Models {
-        #[command(subcommand)]
-        action: ModelsAction,
-    },
-    /// Evaluate retrieval against a judged dataset using a cached model.
-    Evaluate {
-        #[command(subcommand)]
-        action: EvalAction,
-    },
-    /// Analyze direct imports, includes, and links without using the RAG index.
-    AnalyzeFile {
-        #[arg(value_hint = ValueHint::FilePath)]
-        path: PathBuf,
-        #[arg(long, value_hint = ValueHint::DirPath)]
-        root: Option<PathBuf>,
-    },
-}
-
-#[derive(Subcommand)]
-pub enum KnowledgeAction {
-    /// Register and initially index a project or documents directory.
+    /// Register a directory as a source and index it.
     Add {
         #[arg(value_hint = ValueHint::DirPath)]
         path: PathBuf,
@@ -70,30 +44,18 @@ pub enum KnowledgeAction {
         #[arg(long)]
         glob: Option<String>,
         #[arg(long, value_delimiter = ',')]
-        enrichments: Vec<String>,
+        enrich: Vec<String>,
     },
-    /// Incrementally re-index changed files and remove deleted files.
+    /// Re-index changed files and drop deleted ones, for one source or all.
     Sync {
         #[arg(long)]
         label: Option<String>,
     },
-    /// List sources, file/chunk counts, and embedding coverage.
+    /// List sources, file and chunk counts, and embedding coverage.
     Status,
-    /// Remove one source and its indexed chunks.
+    /// Unregister a source and delete its indexed chunks.
     Remove { label: String },
-    /// Backfill missing embeddings after installing the configured model.
-    EmbedBackfill {
-        /// Restrict backfill to one registered source label. Omit to process all sources.
-        #[arg(long)]
-        label: Option<String>,
-    },
-    /// Remove previously indexed files matched by the sensitive path/content policy.
-    ScrubSensitive {
-        /// Restrict cleanup to one registered source label. Omit to scan all stored index rows.
-        #[arg(long)]
-        label: Option<String>,
-    },
-    /// Read indexed chunks for a source in original order.
+    /// Print stored chunks for a source in original order.
     Read {
         label: String,
         #[arg(long, default_value = "20")]
@@ -107,6 +69,35 @@ pub enum KnowledgeAction {
         /// Include chunks overlapping this 1-based ending line.
         #[arg(long)]
         line_end: Option<u32>,
+    },
+    /// Compute missing vectors for the configured embedding model.
+    Embed {
+        /// Restrict to one source label. Omit to process all sources.
+        #[arg(long)]
+        label: Option<String>,
+    },
+    /// Delete indexed files that match the sensitive-data policy.
+    Scrub {
+        /// Restrict to one source label. Omit to scan every stored row.
+        #[arg(long)]
+        label: Option<String>,
+    },
+    /// Show direct imports, includes, and links for one file. Does not use the index.
+    Relate {
+        #[arg(value_hint = ValueHint::FilePath)]
+        path: PathBuf,
+        #[arg(long, value_hint = ValueHint::DirPath)]
+        root: Option<PathBuf>,
+    },
+    /// Show or download the configured embedding model.
+    Models {
+        #[command(subcommand)]
+        action: ModelsAction,
+    },
+    /// Benchmarks and relevance-judgment tools.
+    Eval {
+        #[command(subcommand)]
+        action: EvalAction,
     },
 }
 

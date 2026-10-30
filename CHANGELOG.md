@@ -8,7 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
-- On-demand `analyze-file` CLI and `bpx_file_relationships` MCP tool for direct Markdown wikilinks, Rust module/import paths, and TypeScript/JavaScript imports.
+- On-demand `relate` CLI and `bpx_relate` MCP tool for direct Markdown wikilinks, Rust module/import paths, and TypeScript/JavaScript imports.
 - A focused MCP server that starts without configuration, databases, or embedding models.
 
 ### Changed

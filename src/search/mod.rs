@@ -300,7 +300,7 @@ fn format_results(
     }
 
     if truncated_any {
-        output.push_str("Some results were truncated. Use bpx_knowledge_read with the source label, cited relative path, and line range to read the matching full chunk.\n");
+        output.push_str("Some results were truncated. Use bpx_read with the source label, cited relative path, and line range to read the matching full chunk.\n");
     }
     output
 }

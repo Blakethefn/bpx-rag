@@ -15,7 +15,7 @@ use anyhow::{anyhow, Result};
 use clap::Parser;
 use std::path::PathBuf;
 
-use cli::{Cli, Commands, EvalAction, KnowledgeAction, ModelsAction};
+use cli::{Cli, Commands, EvalAction, ModelsAction};
 use app::{RagApp, SearchOptions};
 use knowledge::query::SearchWeights;
 
@@ -31,7 +31,7 @@ fn main() -> Result<()> {
 
     match command {
         Commands::Serve => mcp::server::run(&project_dir),
-        Commands::AnalyzeFile { path, root } => {
+        Commands::Relate { path, root } => {
             let analysis = relations::analyze_file(&path, root.as_deref())?;
             println!("{}", relations::format_analysis(&analysis));
             Ok(())
@@ -60,9 +60,15 @@ fn main() -> Result<()> {
             println!("{output}");
             Ok(())
         }
-        Commands::Knowledge { action } => run_knowledge(action),
+        Commands::Add { .. }
+        | Commands::Sync { .. }
+        | Commands::Status
+        | Commands::Remove { .. }
+        | Commands::Read { .. }
+        | Commands::Embed { .. }
+        | Commands::Scrub { .. } => run_sources(command),
         Commands::Models { action } => run_models(action),
-        Commands::Evaluate { action } => run_evaluation(action),
+        Commands::Eval { action } => run_evaluation(action),
     }
 }
 
@@ -156,19 +162,19 @@ fn run_evaluation(action: EvalAction) -> Result<()> {
     Ok(())
 }
 
-fn run_knowledge(action: KnowledgeAction) -> Result<()> {
+fn run_sources(command: Commands) -> Result<()> {
     let mut app = RagApp::open()?;
-    match action {
-        KnowledgeAction::Add {
+    match command {
+        Commands::Add {
             path,
             label,
             glob,
-            enrichments,
+            enrich,
         } => println!(
             "{}",
-            app.add_source(&path, &label, glob.as_deref(), &enrichments)?
+            app.add_source(&path, &label, glob.as_deref(), &enrich)?
         ),
-        KnowledgeAction::Sync { label } => {
+        Commands::Sync { label } => {
             let results = app.sync_sources(label.as_deref())?;
             if results.is_empty() {
                 println!("No knowledge sources are registered.");
@@ -178,23 +184,23 @@ fn run_knowledge(action: KnowledgeAction) -> Result<()> {
                 }
             }
         }
-        KnowledgeAction::Status => println!("{}", app.source_status()?),
-        KnowledgeAction::Remove { label } => {
+        Commands::Status => println!("{}", app.source_status()?),
+        Commands::Remove { label } => {
             let result = app.remove_source(&label)?;
             println!(
                 "Removed source '{label}' ({} files, {} chunks).",
                 result.files_removed, result.chunks_removed
             );
         }
-        KnowledgeAction::EmbedBackfill { label } => {
+        Commands::Embed { label } => {
             let report = app.backfill_embeddings(label.as_deref())?;
             println!("{}", report.summary());
         }
-        KnowledgeAction::ScrubSensitive { label } => {
+        Commands::Scrub { label } => {
             let report = app.scrub_sensitive_index(label.as_deref())?;
             println!("{}", report.summary());
         }
-        KnowledgeAction::Read {
+        Commands::Read {
             label,
             max_chunks,
             path,
@@ -206,6 +212,7 @@ fn run_knowledge(action: KnowledgeAction) -> Result<()> {
                 app.read_chunks(&label, max_chunks, path.as_deref(), line_start, line_end,)?
             );
         }
+        _ => return Err(anyhow!("internal error: non-source command routed to run_sources")),
     }
     Ok(())
 }

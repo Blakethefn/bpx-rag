@@ -45,7 +45,7 @@ fn mcp_relationship_tool_scans_files_without_creating_runtime_state() {
             "id":3,
             "method":"tools/call",
             "params":{
-                "name":"bpx_file_relationships",
+                "name":"bpx_relate",
                 "arguments":{"path":"src/lib/api/quotes.ts","root":"project"}
             }
         }),
@@ -73,12 +73,13 @@ fn mcp_relationship_tool_scans_files_without_creating_runtime_state() {
         .collect::<Vec<_>>();
     for expected in [
         "bpx_search",
-        "bpx_knowledge_add",
-        "bpx_knowledge_sync",
-        "bpx_knowledge_status",
-        "bpx_knowledge_read",
-        "bpx_embeddings",
-        "bpx_file_relationships",
+        "bpx_add",
+        "bpx_sync",
+        "bpx_status",
+        "bpx_read",
+        "bpx_models",
+        "bpx_embed",
+        "bpx_relate",
     ] {
         assert!(tool_names.contains(&expected), "missing tool {expected}");
     }
@@ -122,7 +123,7 @@ fn cli_analyze_file_scans_current_files_without_creating_runtime_state() {
 
     let output = Command::new(executable)
         .args([
-            "analyze-file",
+            "relate",
             "src/api/quotes.ts",
             "--root",
             project.path().to_str().unwrap(),
@@ -159,11 +160,11 @@ fn cli_exposes_rag_commands_alongside_file_analysis_and_mcp_server() {
 
     assert!(output.status.success());
     let help = String::from_utf8(output.stdout).unwrap();
-    assert!(help.contains("analyze-file"));
+    assert!(help.contains("relate"));
     assert!(help.contains("serve"));
     assert!(help.contains("search"));
-    assert!(help.contains("knowledge"));
+    assert!(help.contains("sync"));
     assert!(help.contains("models"));
-    assert!(help.contains("analyze-file"));
+    assert!(help.contains("relate"));
     assert!(help.contains("serve"));
 }

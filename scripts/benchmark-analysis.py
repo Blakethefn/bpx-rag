@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Measure end-to-end analyze-file latency on a repeatable polyglot fixture."""
+"""Measure end-to-end relate latency on a repeatable polyglot fixture."""
 
 from __future__ import annotations
 
@@ -67,7 +67,7 @@ def main() -> int:
             for label, executable in run_order:
                 start = time.perf_counter()
                 subprocess.run(
-                    [str(executable), "analyze-file", str(target), "--root", str(root)],
+                    [str(executable), "relate", str(target), "--root", str(root)],
                     check=True,
                     stdout=subprocess.DEVNULL,
                     stderr=subprocess.DEVNULL,

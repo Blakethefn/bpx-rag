@@ -59,22 +59,23 @@ fn dispatch_tool(
     let name = request["params"]["name"].as_str().unwrap_or("");
     let args = &request["params"]["arguments"];
     let result = match name {
-        "bpx_file_relationships" => handle_file_relationships(args, project_dir),
+        "bpx_relate" => handle_file_relationships(args, project_dir),
         "bpx_search" => with_app(app_slot, |app| handle_search(args, app)),
-        "bpx_knowledge_add" => {
+        "bpx_add" => {
             with_app(app_slot, |app| handle_knowledge_add(args, app))
         }
-        "bpx_knowledge_sync" => with_app(app_slot, |app| {
+        "bpx_sync" => with_app(app_slot, |app| {
             handle_knowledge_sync(args, app)
         }),
-        "bpx_knowledge_status" => with_app(app_slot, |app| app.source_status()),
-        "bpx_knowledge_remove" => with_app(app_slot, |app| {
+        "bpx_status" => with_app(app_slot, |app| app.source_status()),
+        "bpx_remove" => with_app(app_slot, |app| {
             handle_knowledge_remove(args, app)
         }),
-        "bpx_knowledge_read" => with_app(app_slot, |app| {
+        "bpx_read" => with_app(app_slot, |app| {
             handle_knowledge_read(args, app)
         }),
-        "bpx_embeddings" => with_app(app_slot, |app| handle_embeddings(args, app)),
+        "bpx_models" => with_app(app_slot, |app| handle_models(args, app)),
+        "bpx_embed" => with_app(app_slot, |app| handle_embed(args, app)),
         _ => Err(anyhow!("unknown tool: {name}")),
     };
 
@@ -206,20 +207,21 @@ fn handle_knowledge_read(args: &Value, app: &RagApp) -> Result<String> {
     )
 }
 
-fn handle_embeddings(args: &Value, app: &mut RagApp) -> Result<String> {
+fn handle_models(args: &Value, app: &mut RagApp) -> Result<String> {
     match args["action"].as_str().unwrap_or("") {
         "status" => Ok(app.embedding_model_status()),
         "download" => app.download_embedding_model(),
-        "backfill" => {
-            let label = match args.get("label") {
-                None | Some(Value::Null) => None,
-                Some(Value::String(label)) => Some(label.as_str()),
-                Some(_) => return Err(anyhow!("'label' must be a string")),
-            };
-            Ok(app.backfill_embeddings(label)?.summary())
-        }
-        action => Err(anyhow!("unknown embeddings action '{action}'")),
+        action => Err(anyhow!("unknown models action '{action}'")),
     }
+}
+
+fn handle_embed(args: &Value, app: &mut RagApp) -> Result<String> {
+    let label = match args.get("label") {
+        None | Some(Value::Null) => None,
+        Some(Value::String(label)) => Some(label.as_str()),
+        Some(_) => return Err(anyhow!("'label' must be a string")),
+    };
+    Ok(app.backfill_embeddings(label)?.summary())
 }
 
 fn handle_file_relationships(args: &Value, project_dir: &Path) -> Result<String> {

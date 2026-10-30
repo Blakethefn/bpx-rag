@@ -255,7 +255,7 @@ impl RagApp {
     pub fn source_status(&self) -> Result<String> {
         let sources = self.knowledge.list_sources()?;
         if sources.is_empty() {
-            return Ok("No sources are registered. Add one with `bpx-rag knowledge add`.".into());
+            return Ok("No sources are registered. Add one with `bpx-rag add`.".into());
         }
         let mut output = String::from("# Knowledge sources\n\n");
         for source in sources {
@@ -563,7 +563,7 @@ impl RagApp {
         )?;
         if total > current_model {
             Ok(Some(format!(
-                "The active model has vectors for {current_model}/{total} indexed chunks; run `bpx-rag knowledge embed-backfill` to build or replace the remaining vectors."
+                "The active model has vectors for {current_model}/{total} indexed chunks; run `bpx-rag embed` to build or replace the remaining vectors."
             )))
         } else {
             Ok(None)

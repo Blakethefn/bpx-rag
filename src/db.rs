@@ -3,12 +3,31 @@ use rusqlite::Connection;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-/// Base directory for all bpcontext data
+pub(crate) const APP_NAME: &str = "bpx-rag";
+const LEGACY_APP_NAME: &str = "bpcontext";
+
+/// Base directory for all bpx-rag data.
 pub(crate) fn data_dir() -> Result<PathBuf> {
-    let dir = dirs::data_local_dir()
-        .context("Could not find local data directory")?
-        .join("bpcontext");
-    Ok(dir)
+    let base = dirs::data_local_dir().context("Could not find local data directory")?;
+    app_dir_under(&base)
+}
+
+/// Resolve `<base>/bpx-rag`.
+///
+/// Data written under the old `bpcontext` name is never silently ignored: if the
+/// new directory is missing and the legacy one exists, this fails with the exact
+/// command to move or link it.
+pub(crate) fn app_dir_under(base: &Path) -> Result<PathBuf> {
+    let current = base.join(APP_NAME);
+    let legacy = base.join(LEGACY_APP_NAME);
+    if !current.exists() && legacy.exists() {
+        anyhow::bail!(
+            "found data from the old bpcontext name at {legacy}; run `ln -s {legacy} {current}` or `mv {legacy} {current}`",
+            legacy = legacy.display(),
+            current = current.display()
+        );
+    }
+    Ok(current)
 }
 
 /// Open a SQLite connection with WAL mode and recommended pragmas

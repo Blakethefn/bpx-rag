@@ -34,7 +34,7 @@ fn knowledge_cli_add_sync_search_and_read_work_without_auto_downloading_model() 
     let data_home = temp.path().join("data");
     let cache_home = temp.path().join("cache");
     let model_dir = data_home
-        .join("bpcontext/models")
+        .join("bpx-rag/models")
         .join("jina-embeddings-v2-base-code");
     fs::create_dir_all(&project).unwrap();
     fs::create_dir_all(&source).unwrap();
@@ -68,7 +68,6 @@ fn knowledge_cli_add_sync_search_and_read_work_without_auto_downloading_model() 
         &data_home,
         &cache_home,
         &[
-            "knowledge",
             "add",
             source.to_str().unwrap(),
             "--label",
@@ -122,7 +121,7 @@ fn knowledge_cli_add_sync_search_and_read_work_without_auto_downloading_model() 
         &config_home,
         &data_home,
         &cache_home,
-        &["knowledge", "sync", "--label", "atlas"],
+        &["sync", "--label", "atlas"],
     );
     assert!(
         sync.status.success(),
@@ -136,7 +135,7 @@ fn knowledge_cli_add_sync_search_and_read_work_without_auto_downloading_model() 
         &config_home,
         &data_home,
         &cache_home,
-        &["knowledge", "read", "atlas"],
+        &["read", "atlas"],
     );
     assert!(
         read.status.success(),
@@ -156,7 +155,6 @@ fn knowledge_cli_add_sync_search_and_read_work_without_auto_downloading_model() 
         &data_home,
         &cache_home,
         &[
-            "knowledge",
             "read",
             "atlas",
             "--path",
@@ -175,7 +173,7 @@ fn knowledge_cli_add_sync_search_and_read_work_without_auto_downloading_model() 
         &config_home,
         &data_home,
         &cache_home,
-        &["knowledge", "read", "atlas", "--path", "../outside.md"],
+        &["read", "atlas", "--path", "../outside.md"],
     );
     assert!(!unsafe_read.status.success());
 
@@ -225,7 +223,7 @@ fn model_download_is_an_explicit_cli_action() {
     assert!(status.status.success());
     assert!(stdout(&status).contains("not installed"));
     assert!(!data_home
-        .join("bpcontext/models/jina-embeddings-v2-base-code")
+        .join("bpx-rag/models/jina-embeddings-v2-base-code")
         .exists());
 
     let evaluation = run_cli(
@@ -233,7 +231,7 @@ fn model_download_is_an_explicit_cli_action() {
         &config_home,
         &data_home,
         &cache_home,
-        &["evaluate", "retrieval"],
+        &["eval", "retrieval"],
     );
     assert!(!evaluation.status.success());
     assert!(
@@ -243,6 +241,6 @@ fn model_download_is_an_explicit_cli_action() {
         String::from_utf8_lossy(&evaluation.stderr)
     );
     assert!(!data_home
-        .join("bpcontext/models/jina-embeddings-v2-base-code")
+        .join("bpx-rag/models/jina-embeddings-v2-base-code")
         .exists());
 }

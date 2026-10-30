@@ -140,12 +140,12 @@ impl Default for EmbeddingsConfig {
     fn default() -> Self {
         let model_dir = dirs::data_local_dir()
             .map(|d| {
-                d.join("bpcontext")
+                d.join(crate::db::APP_NAME)
                     .join("models")
                     .to_string_lossy()
                     .to_string()
             })
-            .unwrap_or_else(|| "~/.local/share/bpcontext/models".to_string());
+            .unwrap_or_else(|| "~/.local/share/bpx-rag/models".to_string());
 
         Self {
             model: "jina-embeddings-v2-base-code".to_string(),
@@ -277,10 +277,8 @@ impl Default for Config {
 
 impl Config {
     pub fn config_path() -> Result<PathBuf> {
-        let config_dir = dirs::config_dir()
-            .context("Could not find config directory")?
-            .join("bpcontext");
-        Ok(config_dir.join("config.toml"))
+        let base = dirs::config_dir().context("Could not find config directory")?;
+        Ok(crate::db::app_dir_under(&base)?.join("config.toml"))
     }
 
     pub fn load() -> Result<Self> {
