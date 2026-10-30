@@ -11,7 +11,7 @@ use std::time::{Duration, Instant};
 use crate::config::Config;
 use crate::embedder::{self, Embed, Embedder};
 use crate::knowledge;
-use crate::store::search::SearchWeights;
+use crate::knowledge::search::SearchWeights;
 
 const TOP_K: usize = 10;
 
@@ -389,7 +389,7 @@ pub fn run_embedding_benchmark(
     for (_, path) in &files {
         let content = fs::read_to_string(&path)
             .with_context(|| format!("failed to read benchmark file {}", path.display()))?;
-        let result = crate::store::chunker::chunk_content_for_path(path, &content);
+        let result = crate::chunk::chunk_content_for_path(path, &content);
         let chunk_count = result.chunks.len();
         available_chunks += chunk_count;
         if result.used_tree_sitter {
@@ -427,7 +427,7 @@ pub fn run_embedding_benchmark(
                 path.display()
             );
         }
-        for chunk in crate::store::chunker::chunk_content_for_path(path, &content).chunks {
+        for chunk in crate::chunk::chunk_content_for_path(path, &content).chunks {
             if sample_indices.get(next_sample) == Some(&chunk_index) {
                 texts.push(format!("{} {}", chunk.title, chunk.content));
                 next_sample += 1;

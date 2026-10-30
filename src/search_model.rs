@@ -183,9 +183,6 @@ pub struct SearchWhy {
     pub layers: LayerScores,
     pub metadata_match: bool,
     pub graph_neighbor: bool,
-    pub memory_query_hint: bool,
-    pub memory_source_hint: bool,
-    pub memory_filter_hint: bool,
 }
 
 impl SearchWhy {
@@ -202,15 +199,6 @@ impl SearchWhy {
         }
         if self.graph_neighbor {
             parts.push("graph-neighbor".to_string());
-        }
-        if self.memory_query_hint {
-            parts.push("memory-query".to_string());
-        }
-        if self.memory_source_hint {
-            parts.push("memory-source".to_string());
-        }
-        if self.memory_filter_hint {
-            parts.push("memory-filter".to_string());
         }
 
         if parts.is_empty() {
@@ -249,24 +237,7 @@ impl SearchWhy {
         if self.graph_neighbor {
             parts.push("graph-neighbor=true".to_string());
         }
-        if self.memory_query_hint {
-            parts.push("memory-query=true".to_string());
-        }
-        if self.memory_source_hint {
-            parts.push("memory-source=true".to_string());
-        }
-        if self.memory_filter_hint {
-            parts.push("memory-filter=true".to_string());
-        }
         parts.push(format!("final={final_score:.4}"));
         format!("why: {}", parts.join(", "))
     }
-}
-
-pub fn normalize_query(query: &str) -> String {
-    query
-        .split_whitespace()
-        .map(|t| t.to_lowercase())
-        .collect::<Vec<_>>()
-        .join(" ")
 }

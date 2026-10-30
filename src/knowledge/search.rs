@@ -11,11 +11,24 @@ use std::collections::HashMap;
 
 use crate::embedder;
 use crate::search_model::SearchWhy;
-use crate::store::search::{SearchResult, SearchWeights};
-use crate::store::ContentStore;
 
 use super::filter::{parse_filter, predicates_to_sql};
 use super::KnowledgeStore;
+
+/// Weight configuration for RRF layer blending
+pub struct SearchWeights {
+    pub keyword_weight: f64,
+    pub vector_weight: f64,
+}
+
+impl Default for SearchWeights {
+    fn default() -> Self {
+        Self {
+            keyword_weight: 1.0,
+            vector_weight: 1.0,
+        }
+    }
+}
 
 /// A search result from the knowledge store (or combined search).
 #[derive(Debug, serde::Serialize)]
@@ -182,83 +195,6 @@ fn diversify_by_file(
 }
 
 /// Search both session and knowledge DBs, merging results via RRF.
-pub fn combined_search(
-    session_store: &ContentStore,
-    knowledge_store: &KnowledgeStore,
-    query: &str,
-    filter: Option<&str>,
-    limit: u32,
-    weights: &SearchWeights,
-    snippet_bytes: usize,
-) -> Result<Vec<KnowledgeSearchResult>> {
-    // 1. Session search
-    let session_results = session_store.search_with_weights(query, limit, None, None, weights)?;
-
-    // 2. Knowledge search
-    let knowledge_results = knowledge_search(
-        knowledge_store,
-        query,
-        filter,
-        None,
-        limit,
-        weights,
-        snippet_bytes,
-    )?;
-
-    // 3. Convert session results to KnowledgeSearchResult
-    let session_converted: Vec<KnowledgeSearchResult> = session_results
-        .into_iter()
-        .map(|sr| session_to_knowledge_result(sr, snippet_bytes))
-        .collect();
-
-    // 4. Merge via RRF
-    const K: f64 = 60.0;
-    let mut merged: HashMap<String, MergedResult> = HashMap::new();
-
-    for (rank, result) in session_converted.iter().enumerate() {
-        let rrf = 1.0 / (K + rank as f64 + 1.0);
-        let key = format!("session:{}:{}", result.source_label, result.title);
-        merged
-            .entry(key)
-            .and_modify(|m| m.rrf_score += rrf)
-            .or_insert(MergedResult {
-                result: result.clone(),
-                rrf_score: rrf,
-            });
-    }
-
-    for (rank, result) in knowledge_results.iter().enumerate() {
-        let rrf = 1.0 / (K + rank as f64 + 1.0);
-        let key = format!("knowledge:{}:{}", result.source_label, result.title);
-        merged
-            .entry(key)
-            .and_modify(|m| m.rrf_score += rrf)
-            .or_insert(MergedResult {
-                result: result.clone(),
-                rrf_score: rrf,
-            });
-    }
-
-    let mut final_results: Vec<KnowledgeSearchResult> = merged
-        .into_values()
-        .map(|m| {
-            let mut r = m.result;
-            r.score = m.rrf_score;
-            r
-        })
-        .collect();
-
-    final_results.sort_by(|a, b| {
-        b.score
-            .partial_cmp(&a.score)
-            .unwrap_or(std::cmp::Ordering::Equal)
-    });
-    final_results.truncate(limit as usize);
-    Ok(final_results)
-}
-
-// ── Internal types ───────────────────────────────────────────────────────────
-
 #[derive(Debug)]
 struct RankedResult {
     rowid: i64,
@@ -306,12 +242,6 @@ impl ScoredResult {
             why: self.why,
         }
     }
-}
-
-#[derive(Clone)]
-struct MergedResult {
-    result: KnowledgeSearchResult,
-    rrf_score: f64,
 }
 
 impl Clone for KnowledgeSearchResult {
@@ -749,23 +679,6 @@ fn truncate_snippet(content: &str, max_bytes: usize) -> String {
 }
 
 /// Convert a session SearchResult to a KnowledgeSearchResult.
-fn session_to_knowledge_result(sr: SearchResult, snippet_bytes: usize) -> KnowledgeSearchResult {
-    KnowledgeSearchResult {
-        title: sr.title,
-        snippet: truncate_snippet(&sr.content, snippet_bytes),
-        score: sr.score,
-        source_label: sr.source.clone(),
-        file_path: sr.source,
-        file_id: 0,
-        source_id: sr.source_id,
-        lines: format!("{}-{}", sr.line_start, sr.line_end),
-        metadata: serde_json::Value::Object(Default::default()),
-        source_type: "session".to_string(),
-        why: sr.why,
-    }
-}
-
-/// Sanitize a query for FTS5 MATCH syntax.
 fn sanitize_fts_query(query: &str) -> String {
     let cleaned = sanitize_fts_terms(query);
     let phrase = format!("\"{cleaned}\"");
@@ -1543,18 +1456,6 @@ mod tests {
     }
 
     // ── combined_search ──────────────────────────────────────────────────────
-
-    #[test]
-    fn combined_search_no_knowledge_returns_only_session() {
-        // With no knowledge sources, combined_search should still work
-        // (knowledge portion returns empty)
-        let store = make_store();
-        let weights = SearchWeights::default();
-        let results = knowledge_search(&store, "anything", None, None, 10, &weights, 2000).unwrap();
-        assert!(results.is_empty());
-    }
-
-    // ── snippet truncation ───────────────────────────────────────────────────
 
     #[test]
     fn search_snippet_truncated() {

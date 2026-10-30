@@ -60,21 +60,21 @@ fn dispatch_tool(
     let args = &request["params"]["arguments"];
     let result = match name {
         "bpx_file_relationships" => handle_file_relationships(args, project_dir),
-        "bpx_search" => with_app(app_slot, project_dir, |app| handle_search(args, app)),
+        "bpx_search" => with_app(app_slot, |app| handle_search(args, app)),
         "bpx_knowledge_add" => {
-            with_app(app_slot, project_dir, |app| handle_knowledge_add(args, app))
+            with_app(app_slot, |app| handle_knowledge_add(args, app))
         }
-        "bpx_knowledge_sync" => with_app(app_slot, project_dir, |app| {
+        "bpx_knowledge_sync" => with_app(app_slot, |app| {
             handle_knowledge_sync(args, app)
         }),
-        "bpx_knowledge_status" => with_app(app_slot, project_dir, |app| app.source_status()),
-        "bpx_knowledge_remove" => with_app(app_slot, project_dir, |app| {
+        "bpx_knowledge_status" => with_app(app_slot, |app| app.source_status()),
+        "bpx_knowledge_remove" => with_app(app_slot, |app| {
             handle_knowledge_remove(args, app)
         }),
-        "bpx_knowledge_read" => with_app(app_slot, project_dir, |app| {
+        "bpx_knowledge_read" => with_app(app_slot, |app| {
             handle_knowledge_read(args, app)
         }),
-        "bpx_embeddings" => with_app(app_slot, project_dir, |app| handle_embeddings(args, app)),
+        "bpx_embeddings" => with_app(app_slot, |app| handle_embeddings(args, app)),
         _ => Err(anyhow!("unknown tool: {name}")),
     };
 
@@ -97,11 +97,10 @@ fn dispatch_tool(
 
 fn with_app(
     slot: &mut Option<RagApp>,
-    project_dir: &Path,
     operation: impl FnOnce(&mut RagApp) -> Result<String>,
 ) -> Result<String> {
     if slot.is_none() {
-        *slot = Some(RagApp::open(project_dir)?);
+        *slot = Some(RagApp::open()?);
     }
     operation(slot.as_mut().expect("RAG app was just initialized"))
 }
@@ -126,12 +125,10 @@ fn handle_search(args: &Value, app: &mut RagApp) -> Result<String> {
     let options = SearchOptions {
         source: args["source"].as_str(),
         filter: args["filter"].as_str(),
-        content_type: args["content_type"].as_str(),
         limit: bounded_u32(args, "limit", 10, 1, 50)?,
         profile: args["profile"].as_str(),
         explain: args["explain"].as_bool().unwrap_or(false),
         count_only: args["count_only"].as_bool().unwrap_or(false),
-        use_memory: args["use_memory"].as_bool().unwrap_or(false),
     };
     let mut output = String::new();
     let mut count_results = Vec::new();

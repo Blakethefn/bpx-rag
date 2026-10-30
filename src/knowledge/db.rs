@@ -10,8 +10,7 @@ use sha2::{Digest, Sha256};
 use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use crate::db::{data_dir, open_db};
-use crate::search_memory;
+use crate::db::data_dir;
 
 /// Returns the path to the knowledge database.
 /// `~/.local/share/bpcontext/knowledge.db`
@@ -19,15 +18,6 @@ pub fn knowledge_db_path() -> Result<PathBuf> {
     let dir = data_dir()?;
     std::fs::create_dir_all(&dir)?;
     Ok(dir.join("knowledge.db"))
-}
-
-/// Opens the knowledge database, creating it and running schema DDL if needed.
-/// Uses the same connection settings as `db::open_db` (WAL, FK, busy timeout).
-pub fn open_knowledge_db() -> Result<Connection> {
-    let path = knowledge_db_path()?;
-    let conn = open_db(&path)?;
-    ensure_schema(&conn)?;
-    Ok(conn)
 }
 
 /// Runs schema DDL. Called by `open_knowledge_db` on every open.
@@ -147,7 +137,6 @@ fn ensure_schema(conn: &Connection) -> Result<()> {
             UPDATE knowledge_embedding_state SET generation = last_insert_rowid() WHERE state_id = 1;
          END;",
     )?;
-    search_memory::init_knowledge_schema(conn)?;
     Ok(())
 }
 

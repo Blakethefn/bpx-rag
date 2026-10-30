@@ -10,13 +10,9 @@ use crate::embedder::{self, Embed, Embedder};
 use crate::knowledge::{self, KnowledgeSourceInfo, KnowledgeStore};
 use crate::retrieval::{self, QueryRequest};
 use crate::search_model::SearchProfile;
-use crate::session::SessionStore;
-use crate::store::ContentStore;
 
 pub struct RagApp {
     config: Config,
-    content: ContentStore,
-    session: SessionStore,
     knowledge: KnowledgeStore,
     embedding_notice: Option<String>,
     embedder_loaded: bool,
@@ -26,12 +22,10 @@ pub struct RagApp {
 pub struct SearchOptions<'a> {
     pub source: Option<&'a str>,
     pub filter: Option<&'a str>,
-    pub content_type: Option<&'a str>,
     pub limit: u32,
     pub profile: Option<&'a str>,
     pub explain: bool,
     pub count_only: bool,
-    pub use_memory: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -61,27 +55,21 @@ impl Default for SearchOptions<'_> {
         Self {
             source: None,
             filter: None,
-            content_type: None,
             limit: 10,
             profile: None,
             explain: false,
             count_only: false,
-            use_memory: false,
         }
     }
 }
 
 impl RagApp {
-    pub fn open(project_dir: &Path) -> Result<Self> {
+    pub fn open() -> Result<Self> {
         let config = Config::load()?;
-        let content = ContentStore::open(project_dir)?;
-        let session = SessionStore::open(project_dir)?;
         let knowledge = KnowledgeStore::open()?;
         let embedding_notice = embedding_notice(&config);
         Ok(Self {
             config,
-            content,
-            session,
             knowledge,
             embedding_notice,
             embedder_loaded: false,
@@ -112,23 +100,18 @@ impl RagApp {
             QueryRequest {
                 query,
                 source: options.source,
-                content_type: options.content_type,
                 knowledge_filter: options.filter,
                 limit: options.limit.clamp(1, 50),
                 snippet_bytes: self.config.search.snippet_bytes,
                 profile,
                 explain: options.explain,
-                use_memory: options.use_memory,
-                include_knowledge: true,
             },
             &self.config,
-            &self.content,
-            self.session.conn(),
-            Some(&self.knowledge),
+            &self.knowledge,
             options.count_only,
         )?;
         Ok(add_embedding_notice(
-            outcome.text,
+            outcome,
             self.embedding_notice.as_deref(),
             options.count_only,
         ))
@@ -286,12 +269,13 @@ impl RagApp {
                 |row| Ok((row.get(0)?, row.get(1)?)),
             )?;
             output.push_str(&format!(
-                "- **{}** — {} files, {} chunks, {}/{} embedded; last sync: {}\n  Path: `{}`\n",
+                "- **{}** — {} files, {} chunks, {}/{} embedded; added {}; last sync: {}\n  Path: `{}`\n",
                 source.label,
                 source.file_count,
                 source.chunk_count,
                 embedded,
                 total,
+                source.created_at,
                 source.last_sync.as_deref().unwrap_or("never"),
                 source.path
             ));
@@ -560,7 +544,6 @@ impl RagApp {
 
     fn install_embedder(&mut self, embedder: Embedder) {
         let shared: Arc<dyn Embed> = Arc::new(embedder);
-        self.content.set_embedder(Arc::clone(&shared));
         self.knowledge.set_embedder(shared);
         self.embedding_notice = None;
         self.embedder_loaded = true;

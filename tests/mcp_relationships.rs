@@ -167,16 +167,3 @@ fn cli_exposes_rag_commands_alongside_file_analysis_and_mcp_server() {
     assert!(help.contains("analyze-file"));
     assert!(help.contains("serve"));
 }
-
-#[test]
-fn bpcontext_compatibility_launcher_forwards_to_bpx_rag() {
-    let executable = std::env::var("CARGO_BIN_EXE_bpcontext").unwrap();
-    let output = Command::new(executable).arg("--help").output().unwrap();
-
-    assert!(output.status.success());
-    let help = String::from_utf8(output.stdout).unwrap();
-    assert!(help.contains("Local-first hybrid retrieval for code and project knowledge"));
-    assert!(help.contains("analyze-file"));
-    assert!(help.contains("knowledge"));
-    assert!(help.contains("search"));
-}

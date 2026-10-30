@@ -14,7 +14,6 @@ pub mod vector_index;
 
 use anyhow::{anyhow, Result};
 use rusqlite::{Connection, OptionalExtension};
-use std::path::Path;
 use std::sync::Arc;
 
 use crate::embedder::Embed;
@@ -58,42 +57,15 @@ pub struct RemoveResult {
     pub chunks_removed: i64,
 }
 
-/// Direction for graph link traversal.
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub enum LinkDirection {
-    /// Follow outgoing links (this file links to target files).
-    Forward,
-    /// Follow incoming links (other files link to this file).
-    Backward,
-    /// Follow both directions.
-    Both,
-}
-
 /// A chunk discovered through graph traversal.
 #[derive(Debug, Clone)]
 pub struct RelatedChunk {
-    pub chunk_rowid: i64,
     pub file_id: i64,
     pub rel_path: String,
     pub title: String,
     pub content: String,
     pub line_start: u32,
     pub line_end: u32,
-    pub link_type: String,
-    pub direction: &'static str,
-    /// Traversal depth: 1 = direct link, 2 = link-of-link, etc.
-    pub hop: u32,
-}
-
-/// Aggregated link count per file (count-only mode).
-#[derive(Debug, Clone)]
-pub struct LinkCount {
-    pub rel_path: String,
-    pub link_type: String,
-    pub direction: &'static str,
-    pub chunk_count: i64,
-    /// Traversal depth: 1 = direct link, 2 = link-of-link, etc.
-    pub hop: u32,
 }
 
 /// Parse a JSON-encoded enrichments array. Returns an empty vec on failure.
@@ -137,21 +109,9 @@ impl KnowledgeStore {
         })
     }
 
-    /// Open with a shared embedder instance (reuses the session embedder).
-    pub fn open_with_embedder(embedder: Arc<dyn Embed>) -> Result<Self> {
-        let mut store = Self::open()?;
-        store.set_embedder(embedder);
-        Ok(store)
-    }
-
     /// Set the embedder after construction.
     pub fn set_embedder(&mut self, embedder: Arc<dyn Embed>) {
         self.embedder = Some(embedder);
-    }
-
-    /// Check if an embedder is available.
-    pub fn has_embedder(&self) -> bool {
-        self.embedder.is_some()
     }
 
     /// Register a new knowledge source. Returns the source ID.
@@ -254,30 +214,6 @@ impl KnowledgeStore {
             .query_row(rusqlite::params![label], row_to_source)
             .optional()?;
         Ok(result)
-    }
-
-    /// Check if a file path falls inside any registered knowledge source.
-    /// Returns the first matching source (sources are typically non-overlapping).
-    pub fn source_for_path(&self, file_path: &Path) -> Result<Option<KnowledgeSourceInfo>> {
-        let sources = self.list_sources()?;
-        for source in sources {
-            let source_path = Path::new(&source.path);
-            if !file_path.starts_with(source_path) {
-                continue;
-            }
-            // If the source has a glob filter, check it against the relative path.
-            if let Some(ref glob_pattern) = source.glob {
-                if let Ok(pattern) = glob::Pattern::new(glob_pattern) {
-                    if let Ok(rel) = file_path.strip_prefix(source_path) {
-                        if !pattern.matches_path(rel) {
-                            continue;
-                        }
-                    }
-                }
-            }
-            return Ok(Some(source));
-        }
-        Ok(None)
     }
 
     /// Get a reference to the underlying SQLite connection.
@@ -404,49 +340,17 @@ impl KnowledgeStore {
     ///
     /// Finds the file for `chunk_rowid`, traverses graph edges in the given
     /// direction, and returns chunks from linked files.
-    pub fn get_related_chunks(
-        &self,
-        chunk_rowid: i64,
-        direction: LinkDirection,
-        max_results: usize,
-    ) -> Result<Vec<RelatedChunk>> {
-        let file_id: i64 = self
-            .conn
-            .query_row(
-                "SELECT file_id FROM knowledge_chunk_meta WHERE chunk_rowid = ?1",
-                rusqlite::params![chunk_rowid],
-                |row| row.get(0),
-            )
-            .map_err(|_| anyhow!("chunk rowid {} not found", chunk_rowid))?;
-
-        self.get_related_chunks_for_file(file_id, direction, max_results)
-    }
-
-    /// Get chunks from files linked to the given file.
-    pub fn get_related_chunks_for_file(
-        &self,
-        file_id: i64,
-        direction: LinkDirection,
-        max_results: usize,
-    ) -> Result<Vec<RelatedChunk>> {
-        self.get_related_chunks_filtered(file_id, direction, max_results, None)
-    }
-
-    /// Get chunks from files linked to the given file, with optional metadata filtering.
+     /// Chunks from files that link to, or are linked from, `file_id`.
     ///
     /// When `filter_predicates` is provided, only chunks whose metadata matches
     /// all predicates are returned. Predicates are ANDed.
-    pub fn get_related_chunks_filtered(
+    pub fn get_related_chunks(
         &self,
         file_id: i64,
-        direction: LinkDirection,
         max_results: usize,
         filter_predicates: Option<&[filter::FilterPredicate]>,
     ) -> Result<Vec<RelatedChunk>> {
-        let mut results = Vec::new();
-
-        // Build optional filter clause. ?1 is file_id, so filter params start
-        // at offset 1 (generating ?2, ?3, ...). LIMIT goes after all filter params.
+        // ?1 is file_id, so filter params start at ?2; LIMIT follows them.
         let (filter_sql, filter_params) = match filter_predicates {
             Some(preds) if !preds.is_empty() => {
                 let (clause, params) = filter::predicates_to_sql(preds, 1);
@@ -455,344 +359,61 @@ impl KnowledgeStore {
             _ => (String::new(), vec![]),
         };
         let limit_idx = 2 + filter_params.len();
+        let outgoing = format!(
+            "SELECT kcm.file_id, kf.rel_path, kc.title, kc.content,
+                    COALESCE(kcm.line_start, 0), COALESCE(kcm.line_end, 0)
+             FROM knowledge_links kl
+             JOIN knowledge_chunk_meta kcm ON kcm.file_id = kl.target_file_id
+             JOIN knowledge_chunks kc ON kc.rowid = kcm.chunk_rowid
+             JOIN knowledge_files kf ON kf.id = kl.target_file_id
+             WHERE kl.source_file_id = ?1{filter_sql}
+             LIMIT ?{limit_idx}"
+        );
+        let mut results = self.query_related(&outgoing, file_id, &filter_params, max_results)?;
 
-        if matches!(direction, LinkDirection::Forward | LinkDirection::Both) {
-            let sql = format!(
-                "SELECT kc.rowid, kcm.file_id, kf.rel_path, kc.title, kc.content, kl.link_type,
+        let remaining = max_results.saturating_sub(results.len());
+        if remaining > 0 {
+            let incoming = format!(
+                "SELECT kcm.file_id, kf.rel_path, kc.title, kc.content,
                         COALESCE(kcm.line_start, 0), COALESCE(kcm.line_end, 0)
-                 FROM knowledge_links kl
-                 JOIN knowledge_chunk_meta kcm ON kcm.file_id = kl.target_file_id
-                 JOIN knowledge_chunks kc ON kc.rowid = kcm.chunk_rowid
-                 JOIN knowledge_files kf ON kf.id = kl.target_file_id
-                 WHERE kl.source_file_id = ?1{filter_sql}
-                 LIMIT ?{limit_idx}"
-            );
-            let mut stmt = self.conn.prepare(&sql)?;
-            let mut param_values: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
-            param_values.push(Box::new(file_id));
-            for p in &filter_params {
-                param_values.push(Box::new(p.clone()));
-            }
-            param_values.push(Box::new(max_results as i64));
-            let param_refs: Vec<&dyn rusqlite::types::ToSql> =
-                param_values.iter().map(|p| p.as_ref()).collect();
-
-            let rows = stmt.query_map(param_refs.as_slice(), |row| {
-                Ok(RelatedChunk {
-                    chunk_rowid: row.get(0)?,
-                    file_id: row.get(1)?,
-                    rel_path: row.get(2)?,
-                    title: row.get(3)?,
-                    content: row.get(4)?,
-                    link_type: row.get(5)?,
-                    line_start: row.get(6)?,
-                    line_end: row.get(7)?,
-                    direction: "forward",
-                    hop: 1,
-                })
-            })?;
-            for row in rows {
-                results.push(row?);
-            }
-        }
-
-        if matches!(direction, LinkDirection::Backward | LinkDirection::Both) {
-            let remaining = max_results.saturating_sub(results.len());
-            if remaining > 0 {
-                let sql = format!(
-                    "SELECT kc.rowid, kcm.file_id, kf.rel_path, kc.title, kc.content, kl.link_type,
-                            COALESCE(kcm.line_start, 0), COALESCE(kcm.line_end, 0)
-                     FROM knowledge_links kl
-                     JOIN knowledge_chunk_meta kcm ON kcm.file_id = kl.source_file_id
-                     JOIN knowledge_chunks kc ON kc.rowid = kcm.chunk_rowid
-                     JOIN knowledge_files kf ON kf.id = kl.source_file_id
-                     WHERE kl.target_file_id = ?1{filter_sql}
-                     LIMIT ?{limit_idx}"
-                );
-                let mut stmt = self.conn.prepare(&sql)?;
-                let mut param_values: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
-                param_values.push(Box::new(file_id));
-                for p in &filter_params {
-                    param_values.push(Box::new(p.clone()));
-                }
-                param_values.push(Box::new(remaining as i64));
-                let param_refs: Vec<&dyn rusqlite::types::ToSql> =
-                    param_values.iter().map(|p| p.as_ref()).collect();
-
-                let rows = stmt.query_map(param_refs.as_slice(), |row| {
-                    Ok(RelatedChunk {
-                        chunk_rowid: row.get(0)?,
-                        file_id: row.get(1)?,
-                        rel_path: row.get(2)?,
-                        title: row.get(3)?,
-                        content: row.get(4)?,
-                        link_type: row.get(5)?,
-                        line_start: row.get(6)?,
-                        line_end: row.get(7)?,
-                        direction: "backward",
-                        hop: 1,
-                    })
-                })?;
-                for row in rows {
-                    results.push(row?);
-                }
-            }
-        }
-
-        Ok(results)
-    }
-
-    /// Get linked file_ids for BFS frontier expansion (no content fetched).
-    fn get_linked_file_ids(&self, file_id: i64, direction: LinkDirection) -> Result<Vec<i64>> {
-        let mut ids = Vec::new();
-
-        if matches!(direction, LinkDirection::Forward | LinkDirection::Both) {
-            let mut stmt = self.conn.prepare(
-                "SELECT DISTINCT kl.target_file_id FROM knowledge_links kl
-                 WHERE kl.source_file_id = ?1",
-            )?;
-            let rows = stmt.query_map(rusqlite::params![file_id], |row| row.get(0))?;
-            for row in rows {
-                ids.push(row?);
-            }
-        }
-
-        if matches!(direction, LinkDirection::Backward | LinkDirection::Both) {
-            let mut stmt = self.conn.prepare(
-                "SELECT DISTINCT kl.source_file_id FROM knowledge_links kl
-                 WHERE kl.target_file_id = ?1",
-            )?;
-            let rows = stmt.query_map(rusqlite::params![file_id], |row| row.get(0))?;
-            for row in rows {
-                ids.push(row?);
-            }
-        }
-
-        Ok(ids)
-    }
-
-    /// Multi-hop BFS traversal returning chunks with hop annotations.
-    ///
-    /// Iteratively expands the frontier up to `depth` hops. Uses a visited set
-    /// to prevent cycles and an emitted set to deduplicate chunks across frontier
-    /// nodes. Caps the frontier at 50 file_ids per hop to prevent graph explosion.
-    /// Global `max_results` caps total chunks across all hops.
-    pub fn get_related_chunks_multi_hop(
-        &self,
-        origin_file_id: i64,
-        direction: LinkDirection,
-        max_results: usize,
-        depth: u32,
-        filter_predicates: Option<&[filter::FilterPredicate]>,
-    ) -> Result<Vec<RelatedChunk>> {
-        use std::collections::HashSet;
-
-        const MAX_FRONTIER: usize = 50;
-        let mut results = Vec::new();
-        // visited: prevents re-traversing a file_id as a frontier node
-        let mut visited: HashSet<i64> = HashSet::new();
-        visited.insert(origin_file_id);
-        // emitted: prevents emitting chunks from the same file twice
-        // (when multiple frontier nodes link to the same target)
-        let mut emitted: HashSet<i64> = HashSet::new();
-        emitted.insert(origin_file_id);
-
-        let mut frontier = vec![origin_file_id];
-
-        for hop in 1..=depth {
-            let mut next_frontier = Vec::new();
-
-            for &fid in &frontier {
-                let remaining = max_results.saturating_sub(results.len());
-                if remaining == 0 {
-                    break;
-                }
-
-                let mut chunks =
-                    self.get_related_chunks_filtered(fid, direction, remaining, filter_predicates)?;
-
-                // Collect new file_ids for next hop's frontier
-                let linked_ids = self.get_linked_file_ids(fid, direction)?;
-                for id in linked_ids {
-                    if visited.insert(id) {
-                        next_frontier.push(id);
-                    }
-                }
-
-                // Only keep chunks from files we haven't emitted yet
-                chunks.retain(|c| emitted.insert(c.file_id));
-                for chunk in &mut chunks {
-                    chunk.hop = hop;
-                }
-                results.extend(chunks);
-            }
-
-            if results.len() >= max_results || next_frontier.is_empty() {
-                break;
-            }
-
-            // Cap frontier to prevent explosion
-            next_frontier.truncate(MAX_FRONTIER);
-            frontier = next_frontier;
-        }
-
-        results.truncate(max_results);
-        Ok(results)
-    }
-
-    /// Multi-hop BFS count-only mode — returns deduplicated link counts with hop
-    /// annotations. Each file appears at most once, at the earliest hop where it
-    /// was discovered.
-    pub fn get_link_counts_multi_hop(
-        &self,
-        origin_file_id: i64,
-        direction: LinkDirection,
-        depth: u32,
-        filter_predicates: Option<&[filter::FilterPredicate]>,
-    ) -> Result<Vec<LinkCount>> {
-        use std::collections::HashSet;
-
-        const MAX_FRONTIER: usize = 50;
-        let mut results = Vec::new();
-        let mut visited: HashSet<i64> = HashSet::new();
-        visited.insert(origin_file_id);
-        let mut emitted: HashSet<String> = HashSet::new();
-
-        let mut frontier = vec![origin_file_id];
-
-        for hop in 1..=depth {
-            let mut next_frontier = Vec::new();
-
-            for &fid in &frontier {
-                let counts = self.get_link_counts_for_file(fid, direction, filter_predicates)?;
-
-                let linked_ids = self.get_linked_file_ids(fid, direction)?;
-                for id in linked_ids {
-                    if visited.insert(id) {
-                        next_frontier.push(id);
-                    }
-                }
-
-                for mut count in counts {
-                    // Dedup key: (rel_path, direction) — a file appears once at
-                    // its earliest hop regardless of how many frontier nodes
-                    // link to it.
-                    let key = format!("{}:{}", count.rel_path, count.direction);
-                    if emitted.insert(key) {
-                        count.hop = hop;
-                        results.push(count);
-                    }
-                }
-            }
-
-            if next_frontier.is_empty() {
-                break;
-            }
-
-            next_frontier.truncate(MAX_FRONTIER);
-            frontier = next_frontier;
-        }
-
-        Ok(results)
-    }
-
-    /// Count linked files and their chunks without returning content (count-only mode).
-    pub fn get_link_counts_for_file(
-        &self,
-        file_id: i64,
-        direction: LinkDirection,
-        filter_predicates: Option<&[filter::FilterPredicate]>,
-    ) -> Result<Vec<LinkCount>> {
-        let mut results = Vec::new();
-
-        let (filter_sql, filter_params) = match filter_predicates {
-            Some(preds) if !preds.is_empty() => {
-                let (clause, params) = filter::predicates_to_sql(preds, 1);
-                (format!(" AND {clause}"), params)
-            }
-            _ => (String::new(), vec![]),
-        };
-
-        if matches!(direction, LinkDirection::Forward | LinkDirection::Both) {
-            let sql = format!(
-                "SELECT kf.rel_path, kl.link_type, COUNT(*) as chunk_count
-                 FROM knowledge_links kl
-                 JOIN knowledge_chunk_meta kcm ON kcm.file_id = kl.target_file_id
-                 JOIN knowledge_chunks kc ON kc.rowid = kcm.chunk_rowid
-                 JOIN knowledge_files kf ON kf.id = kl.target_file_id
-                 WHERE kl.source_file_id = ?1{filter_sql}
-                 GROUP BY kf.rel_path, kl.link_type
-                 ORDER BY chunk_count DESC"
-            );
-            let mut stmt = self.conn.prepare(&sql)?;
-            let mut param_values: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
-            param_values.push(Box::new(file_id));
-            for p in &filter_params {
-                param_values.push(Box::new(p.clone()));
-            }
-            let param_refs: Vec<&dyn rusqlite::types::ToSql> =
-                param_values.iter().map(|p| p.as_ref()).collect();
-
-            let rows = stmt.query_map(param_refs.as_slice(), |row| {
-                Ok(LinkCount {
-                    rel_path: row.get(0)?,
-                    link_type: row.get(1)?,
-                    direction: "forward",
-                    chunk_count: row.get(2)?,
-                    hop: 1,
-                })
-            })?;
-            for row in rows {
-                results.push(row?);
-            }
-        }
-
-        if matches!(direction, LinkDirection::Backward | LinkDirection::Both) {
-            let sql = format!(
-                "SELECT kf.rel_path, kl.link_type, COUNT(*) as chunk_count
                  FROM knowledge_links kl
                  JOIN knowledge_chunk_meta kcm ON kcm.file_id = kl.source_file_id
                  JOIN knowledge_chunks kc ON kc.rowid = kcm.chunk_rowid
                  JOIN knowledge_files kf ON kf.id = kl.source_file_id
                  WHERE kl.target_file_id = ?1{filter_sql}
-                 GROUP BY kf.rel_path, kl.link_type
-                 ORDER BY chunk_count DESC"
+                 LIMIT ?{limit_idx}"
             );
-            let mut stmt = self.conn.prepare(&sql)?;
-            let mut param_values: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
-            param_values.push(Box::new(file_id));
-            for p in &filter_params {
-                param_values.push(Box::new(p.clone()));
-            }
-            let param_refs: Vec<&dyn rusqlite::types::ToSql> =
-                param_values.iter().map(|p| p.as_ref()).collect();
-
-            let rows = stmt.query_map(param_refs.as_slice(), |row| {
-                Ok(LinkCount {
-                    rel_path: row.get(0)?,
-                    link_type: row.get(1)?,
-                    direction: "backward",
-                    chunk_count: row.get(2)?,
-                    hop: 1,
-                })
-            })?;
-            for row in rows {
-                results.push(row?);
-            }
+            results.extend(self.query_related(&incoming, file_id, &filter_params, remaining)?);
         }
-
         Ok(results)
     }
 
-    /// Count graph edges for a source. Useful for sync result reporting.
-    pub fn link_count_for_source(&self, source_id: i64) -> Result<i64> {
-        let count: i64 = self.conn.query_row(
-            "SELECT COUNT(*) FROM knowledge_links
-             WHERE source_file_id IN (SELECT id FROM knowledge_files WHERE source_id = ?1)",
-            rusqlite::params![source_id],
-            |row| row.get(0),
-        )?;
-        Ok(count)
+    fn query_related(
+        &self,
+        sql: &str,
+        file_id: i64,
+        filter_params: &[String],
+        limit: usize,
+    ) -> Result<Vec<RelatedChunk>> {
+        let mut params: Vec<Box<dyn rusqlite::types::ToSql>> = vec![Box::new(file_id)];
+        for param in filter_params {
+            params.push(Box::new(param.clone()));
+        }
+        params.push(Box::new(limit as i64));
+        let refs: Vec<&dyn rusqlite::types::ToSql> = params.iter().map(|p| p.as_ref()).collect();
+
+        let mut stmt = self.conn.prepare(sql)?;
+        let rows = stmt.query_map(refs.as_slice(), |row| {
+            Ok(RelatedChunk {
+                file_id: row.get(0)?,
+                rel_path: row.get(1)?,
+                title: row.get(2)?,
+                content: row.get(3)?,
+                line_start: row.get(4)?,
+                line_end: row.get(5)?,
+            })
+        })?;
+        Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
     }
 }
 
@@ -815,7 +436,6 @@ pub(crate) fn open_in_memory() -> anyhow::Result<KnowledgeStore> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::path::Path;
 
     fn make_store() -> KnowledgeStore {
         open_in_memory().expect("in-memory knowledge store")
@@ -962,69 +582,17 @@ mod tests {
 
     // ── source_for_path ───────────────────────────────────────────────────────
 
-    #[test]
-    fn source_for_path_matches_registered_source() {
-        let store = make_store();
-        store.add_source("docs", "/tmp/docs", None, &[]).unwrap();
-        let found = store
-            .source_for_path(Path::new("/tmp/docs/foo.md"))
-            .unwrap();
-        assert!(found.is_some());
-        assert_eq!(found.unwrap().label, "docs");
-    }
-
-    #[test]
-    fn source_for_path_no_match_returns_none() {
-        let store = make_store();
-        store.add_source("docs", "/tmp/docs", None, &[]).unwrap();
-        let found = store
-            .source_for_path(Path::new("/other/path/file.md"))
-            .unwrap();
-        assert!(found.is_none());
-    }
-
-    #[test]
-    fn source_for_path_respects_glob_filter() {
-        let store = make_store();
-        store
-            .add_source("md-only", "/tmp/md", Some("**/*.md"), &[])
-            .unwrap();
-        // .md file — should match
-        assert!(store
-            .source_for_path(Path::new("/tmp/md/notes/foo.md"))
-            .unwrap()
-            .is_some());
-        // .rs file — should NOT match
-        assert!(store
-            .source_for_path(Path::new("/tmp/md/src/lib.rs"))
-            .unwrap()
-            .is_none());
-    }
-
     // ── embedder ──────────────────────────────────────────────────────────────
-
-    #[test]
-    fn has_embedder_false_when_not_set() {
-        let store = make_store();
-        assert!(!store.has_embedder());
-    }
 
     // ── get_related_chunks ───────────────────────────────────────────────────
 
     #[test]
-    fn get_related_chunks_not_found_errors() {
+    fn get_related_chunks_unknown_file_is_empty() {
         let store = make_store();
-        let result = store.get_related_chunks(999, LinkDirection::Both, 10);
-        assert!(result.is_err());
+        let result = store.get_related_chunks(999, 10, None).unwrap();
+        assert!(result.is_empty());
     }
 
-    #[test]
-    fn link_count_for_source_empty() {
-        let store = make_store();
-        store.add_source("e", "/tmp/e", None, &[]).unwrap();
-        let src = store.get_source("e").unwrap().unwrap();
-        assert_eq!(store.link_count_for_source(src.id).unwrap(), 0);
-    }
 }
 
 /// Cross-module integration tests exercising the full knowledge store pipeline:
@@ -1035,8 +603,22 @@ mod tests {
 #[cfg(test)]
 mod integration_tests {
     use super::*;
+    use std::path::Path;
+
+    fn link_count(store: &KnowledgeStore, source_id: i64) -> i64 {
+        store
+            .conn()
+            .query_row(
+                "SELECT COUNT(*) FROM knowledge_links
+                 WHERE source_file_id IN (SELECT id FROM knowledge_files WHERE source_id = ?1)",
+                rusqlite::params![source_id],
+                |row| row.get(0),
+            )
+            .unwrap()
+    }
+
     use crate::knowledge::{enrichment, search, sync};
-    use crate::store::search::SearchWeights;
+    use crate::knowledge::search::SearchWeights;
     use rusqlite::params;
     use std::fs;
     use std::sync::Arc;
@@ -1260,7 +842,7 @@ mod integration_tests {
     // "Register source. Sync. Write new file. reindex_file. Search for it."
 
     #[test]
-    fn write_through_reindex_then_search() {
+    fn sync_after_new_file_is_searchable() {
         let store = make_store();
         let dir = tempdir().unwrap();
 
@@ -1287,7 +869,7 @@ mod integration_tests {
 
         // Single-file reindex (what the hook triggers)
         let source = store.get_source("docs").unwrap().unwrap();
-        sync::reindex_file(&store, &source, &new_path, None).unwrap();
+        sync::sync_source(&store, &source, None).unwrap();
 
         // Search should find the new content immediately
         let weights = SearchWeights::default();
@@ -1312,7 +894,7 @@ mod integration_tests {
     // "Edit existing indexed file. Reindex. New content appears, old gone."
 
     #[test]
-    fn write_through_edit_updates_content() {
+    fn sync_after_edit_updates_content() {
         let store = make_store();
         let dir = tempdir().unwrap();
 
@@ -1344,7 +926,7 @@ mod integration_tests {
         .unwrap();
 
         let source = store.get_source("docs").unwrap().unwrap();
-        sync::reindex_file(&store, &source, &file_path, None).unwrap();
+        sync::sync_source(&store, &source, None).unwrap();
 
         // New content is searchable
         let results =
@@ -1939,7 +1521,7 @@ mod integration_tests {
         .unwrap();
 
         let source = store.get_source("vault").unwrap().unwrap();
-        sync::reindex_file(&store, &source, &file_path, enrich_ref).unwrap();
+        sync::sync_source(&store, &source, enrich_ref).unwrap();
 
         // Old filter should no longer match
         let results = search::knowledge_search(
@@ -2122,7 +1704,7 @@ mod integration_tests {
 
         // Should have created links: a→b, a→c, b→a
         assert_eq!(result.links_created, 3, "a→b, a→c, b→a");
-        assert_eq!(store.link_count_for_source(source.id).unwrap(), 3);
+        assert_eq!(link_count(&store, source.id), 3);
 
         // Find file_id for a.md
         let a_file_id: i64 = store
@@ -2134,25 +1716,12 @@ mod integration_tests {
             )
             .unwrap();
 
-        // Forward from a: should get chunks from b.md and c.md
-        let forward = store
-            .get_related_chunks_for_file(a_file_id, LinkDirection::Forward, 50)
-            .unwrap();
-        assert!(forward.len() >= 2, "a links to b and c");
-        assert!(forward.iter().all(|c| c.direction == "forward"));
-
-        // Backward to a: should get chunks from b.md (b links to a)
-        let backward = store
-            .get_related_chunks_for_file(a_file_id, LinkDirection::Backward, 50)
-            .unwrap();
-        assert!(!backward.is_empty(), "b links back to a");
-        assert!(backward.iter().all(|c| c.direction == "backward"));
-
-        // Both directions
-        let both = store
-            .get_related_chunks_for_file(a_file_id, LinkDirection::Both, 50)
-            .unwrap();
-        assert!(both.len() >= forward.len() + backward.len());
+        // Both directions from a: chunks from b.md (a links to b, b links to a)
+        // and c.md (a links to c).
+        let related = store.get_related_chunks(a_file_id, 50, None).unwrap();
+        assert!(related.len() >= 2, "a links to b and c");
+        assert!(related.iter().any(|c| c.rel_path == "c.md"));
+        assert!(related.iter().any(|c| c.rel_path == "b.md"));
     }
 
     #[test]
@@ -2176,7 +1745,7 @@ mod integration_tests {
             .as_ref()
             .map(|f| f.as_ref() as &dyn Fn(&str, &std::path::Path) -> serde_json::Value);
         sync::sync_source(&store, &source, enrich_ref).unwrap();
-        assert!(store.link_count_for_source(source.id).unwrap() > 0);
+        assert!(link_count(&store, source.id) > 0);
 
         store.remove_source("doomed").unwrap();
 

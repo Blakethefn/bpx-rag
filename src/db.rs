@@ -1,6 +1,5 @@
 use anyhow::{Context, Result};
 use rusqlite::Connection;
-use sha2::{Digest, Sha256};
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -10,33 +9,6 @@ pub(crate) fn data_dir() -> Result<PathBuf> {
         .context("Could not find local data directory")?
         .join("bpcontext");
     Ok(dir)
-}
-
-/// Hash a project directory path to a short hex string for DB isolation
-fn project_hash(project_dir: &Path) -> String {
-    let normalized = project_dir
-        .canonicalize()
-        .unwrap_or_else(|_| project_dir.to_path_buf());
-    let mut hasher = Sha256::new();
-    hasher.update(normalized.to_string_lossy().as_bytes());
-    let result = hasher.finalize();
-    hex::encode(&result[..8])
-}
-
-/// Get the path to a per-project content database
-pub fn content_db_path(project_dir: &Path) -> Result<PathBuf> {
-    let dir = data_dir()?.join("content");
-    fs::create_dir_all(&dir)?;
-    let hash = project_hash(project_dir);
-    Ok(dir.join(format!("{hash}.db")))
-}
-
-/// Get the path to a per-project session database
-pub fn session_db_path(project_dir: &Path) -> Result<PathBuf> {
-    let dir = data_dir()?.join("sessions");
-    fs::create_dir_all(&dir)?;
-    let hash = project_hash(project_dir);
-    Ok(dir.join(format!("{hash}.db")))
 }
 
 /// Open a SQLite connection with WAL mode and recommended pragmas
@@ -91,13 +63,4 @@ pub fn cleanup_stale_dbs(stale_days: u64) -> Result<u32> {
 
 /// Hex encoding helper (avoids adding the hex crate)
 mod hex {
-    use std::fmt::Write;
-
-    pub fn encode(bytes: &[u8]) -> String {
-        let mut s = String::with_capacity(bytes.len() * 2);
-        for b in bytes {
-            let _ = write!(s, "{b:02x}");
-        }
-        s
-    }
 }

@@ -9,10 +9,8 @@ mod mcp;
 mod rag_app;
 mod relationships;
 mod retrieval;
-mod search_memory;
 mod search_model;
-mod session;
-mod store;
+mod chunk;
 mod truncate;
 
 use anyhow::{anyhow, Result};
@@ -21,7 +19,7 @@ use std::path::PathBuf;
 
 use cli::{Cli, Commands, EvalAction, KnowledgeAction, ModelsAction};
 use rag_app::{RagApp, SearchOptions};
-use store::search::SearchWeights;
+use knowledge::search::SearchWeights;
 
 fn main() -> Result<()> {
     let cli = Cli::parse();
@@ -48,26 +46,23 @@ fn main() -> Result<()> {
             profile,
             explain,
             count_only,
-            no_memory,
         } => {
-            let mut app = RagApp::open(&project_dir)?;
+            let mut app = RagApp::open()?;
             let output = app.search(
                 &query,
                 SearchOptions {
                     source: source.as_deref(),
                     filter: filter.as_deref(),
-                    content_type: None,
                     limit,
                     profile: profile.as_deref(),
                     explain,
                     count_only,
-                    use_memory: !no_memory,
                 },
             )?;
             println!("{output}");
             Ok(())
         }
-        Commands::Knowledge { action } => run_knowledge(action, &project_dir),
+        Commands::Knowledge { action } => run_knowledge(action),
         Commands::Models { action } => run_models(action),
         Commands::Evaluate { action } => run_evaluation(action),
     }
@@ -163,8 +158,8 @@ fn run_evaluation(action: EvalAction) -> Result<()> {
     Ok(())
 }
 
-fn run_knowledge(action: KnowledgeAction, project_dir: &std::path::Path) -> Result<()> {
-    let mut app = RagApp::open(project_dir)?;
+fn run_knowledge(action: KnowledgeAction) -> Result<()> {
+    let mut app = RagApp::open()?;
     match action {
         KnowledgeAction::Add {
             path,

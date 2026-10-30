@@ -16,7 +16,7 @@ use std::time::Instant;
 use std::{fs, io};
 
 use crate::embedder::{embedding_to_bytes, normalize_embedding};
-use crate::store::chunker::{chunk_content_for_path, chunker_version_for_path};
+use crate::chunk::{chunk_content_for_path, chunker_version_for_path};
 
 use super::{KnowledgeSourceInfo, KnowledgeStore};
 
@@ -74,7 +74,7 @@ struct PreparedFile {
     hash: String,
     file_id: Option<i64>,
     metadata: String,
-    chunks: Vec<crate::store::chunker::Chunk>,
+    chunks: Vec<crate::chunk::Chunk>,
     chunker_version: i64,
     used_tree_sitter: bool,
     vectors: Vec<Vec<f32>>,
@@ -474,196 +474,6 @@ pub fn scrub_sensitive_indexed_files(
     }
 }
 
-/// Sync all registered knowledge sources.
-pub fn sync_all(
-    store: &KnowledgeStore,
-    enrichment_fn: Option<&dyn Fn(&str, &Path) -> serde_json::Value>,
-) -> Result<Vec<SyncResult>> {
-    let sources = store.list_sources()?;
-    let mut results = Vec::with_capacity(sources.len());
-    for source in &sources {
-        results.push(sync_source(store, source, enrichment_fn)?);
-    }
-    Ok(results)
-}
-
-/// Re-index a single file within a knowledge source.
-/// Used by the write-through hook for immediate updates.
-pub fn reindex_file(
-    store: &KnowledgeStore,
-    source: &KnowledgeSourceInfo,
-    abs_path: &Path,
-    enrichment_fn: Option<&dyn Fn(&str, &Path) -> serde_json::Value>,
-) -> Result<()> {
-    let conn = store.conn();
-    let embedder = store.embedder();
-    let base_path = Path::new(&source.path);
-    let canonical_root = base_path
-        .canonicalize()
-        .with_context(|| format!("could not resolve knowledge source {}", base_path.display()))?;
-    if is_sensitive_source_root(&canonical_root) {
-        anyhow::bail!("refusing to reindex a local credential-store directory");
-    }
-    let canonical_path = abs_path
-        .canonicalize()
-        .with_context(|| format!("could not resolve source file {}", abs_path.display()))?;
-    if !canonical_path.starts_with(&canonical_root) {
-        anyhow::bail!("file path resolves outside the knowledge source directory");
-    }
-    let requested_relative_path = abs_path
-        .strip_prefix(&canonical_root)
-        .ok()
-        .map(|path| path.to_string_lossy().to_string());
-    let rel_path = canonical_path
-        .strip_prefix(&canonical_root)
-        .context("file path is not inside the source directory")?
-        .to_string_lossy()
-        .to_string();
-
-    if is_sensitive_path(&canonical_root, &canonical_path) {
-        remove_sensitive_indexed_file(conn, source.id, &rel_path)?;
-        if let Some(requested_path) = requested_relative_path {
-            if requested_path != rel_path {
-                remove_sensitive_indexed_file(conn, source.id, &requested_path)?;
-            }
-        }
-        return Ok(());
-    }
-
-    let bytes = fs::read(&canonical_path)
-        .with_context(|| format!("failed to read {}", canonical_path.display()))?;
-    let content =
-        String::from_utf8(bytes).context("file content is not valid UTF-8 for reindex")?;
-    if contains_google_api_key(&content) {
-        remove_sensitive_indexed_file(conn, source.id, &rel_path)?;
-        if let Some(requested_path) = requested_relative_path {
-            if requested_path != rel_path {
-                remove_sensitive_indexed_file(conn, source.id, &requested_path)?;
-            }
-        }
-        return Ok(());
-    }
-    let hash = sha256_hex(content.as_bytes());
-
-    // Check if file exists and hash matches — skip early if unchanged
-    let chunker_version = chunker_version_for_path(Path::new(&rel_path));
-    let existing: Option<(i64, String, i64)> = conn
-        .query_row(
-            "SELECT id, content_hash, chunker_version FROM knowledge_files
-             WHERE source_id = ?1 AND rel_path = ?2",
-            params![source.id, rel_path],
-            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
-        )
-        .optional()?;
-
-    if let Some((_, ref old_hash, old_chunker_version)) = existing {
-        if *old_hash == hash && old_chunker_version == chunker_version {
-            return Ok(()); // No change
-        }
-    }
-
-    let mut prepared = prepare_file(
-        rel_path.clone(),
-        canonical_path.clone(),
-        content.clone(),
-        hash.clone(),
-        existing.as_ref().map(|(file_id, _, _)| *file_id),
-        enrichment_fn,
-    );
-    if let Some(emb) = embedder {
-        let texts: Vec<String> = prepared
-            .chunks
-            .iter()
-            .map(|chunk| format!("{} {}", chunk.title, chunk.content))
-            .collect();
-        if !texts.is_empty() {
-            let refs: Vec<&str> = texts.iter().map(String::as_str).collect();
-            let vectors = emb.embed_batch(&refs)?;
-            if vectors.len() != texts.len() {
-                anyhow::bail!(
-                    "embedder returned {} vectors for {} chunks",
-                    vectors.len(),
-                    texts.len()
-                );
-            }
-            prepared.vectors = vectors
-                .iter()
-                .map(|vector| normalize_embedding(vector, emb.dim()))
-                .collect::<Result<Vec<_>>>()?;
-        }
-    }
-
-    let current_content = fs::read(&canonical_path)
-        .with_context(|| format!("failed to recheck {}", canonical_path.display()))?;
-    if sha256_hex(&current_content) != hash {
-        anyhow::bail!(
-            "source file changed while embeddings were being prepared: {}; retry reindex",
-            abs_path.display()
-        );
-    }
-
-    conn.execute_batch("BEGIN IMMEDIATE")?;
-
-    let inner = (|| -> Result<()> {
-        let current: Option<(i64, String, i64)> = conn
-            .query_row(
-                "SELECT id, content_hash, chunker_version FROM knowledge_files
-                 WHERE source_id = ?1 AND rel_path = ?2",
-                params![source.id, rel_path],
-                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
-            )
-            .optional()?;
-        if current.as_ref() != existing.as_ref() {
-            anyhow::bail!("file index changed while reindex was preparing; retry reindex");
-        }
-
-        if let Some((file_id, _, _)) = existing {
-            delete_file_chunks(conn, file_id)?;
-            index_prepared_file(
-                conn,
-                source.id,
-                file_id,
-                &prepared,
-                embedder.map(|emb| emb.model_id()),
-            )?;
-        } else {
-            conn.execute(
-                "INSERT INTO knowledge_files (source_id, rel_path, content_hash, size_bytes)
-                 VALUES (?1, ?2, ?3, ?4)",
-                params![source.id, rel_path, hash, content.len() as i64],
-            )?;
-            let file_id = conn.last_insert_rowid();
-            index_prepared_file(
-                conn,
-                source.id,
-                file_id,
-                &prepared,
-                embedder.map(|emb| emb.model_id()),
-            )?;
-        }
-
-        conn.execute(
-            "UPDATE knowledge_sources SET
-                file_count = (SELECT COUNT(*) FROM knowledge_files WHERE source_id = ?1),
-                chunk_count = (SELECT COUNT(*) FROM knowledge_chunk_meta WHERE source_id = ?1)
-             WHERE id = ?1",
-            params![source.id],
-        )?;
-
-        Ok(())
-    })();
-
-    match inner {
-        Ok(()) => conn.execute_batch("COMMIT")?,
-        Err(e) => {
-            let _ = conn.execute_batch("ROLLBACK");
-            return Err(e);
-        }
-    }
-
-    Ok(())
-}
-
 // ── Internal helpers ────────────────────────────────────────────────────────
 
 /// Walk a knowledge source directory, returning files keyed by relative path.
@@ -911,47 +721,6 @@ fn is_sensitive_source_root(path: &Path) -> bool {
         })
 }
 
-fn remove_sensitive_indexed_file(
-    conn: &rusqlite::Connection,
-    source_id: i64,
-    relative_path: &str,
-) -> Result<()> {
-    conn.execute_batch("BEGIN IMMEDIATE")?;
-    let result = (|| -> Result<()> {
-        let file_id = conn
-            .query_row(
-                "SELECT id FROM knowledge_files WHERE source_id = ?1 AND rel_path = ?2",
-                params![source_id, relative_path],
-                |row| row.get::<_, i64>(0),
-            )
-            .optional()?;
-        if let Some(file_id) = file_id {
-            delete_file_chunks(conn, file_id)?;
-            conn.execute(
-                "DELETE FROM knowledge_files WHERE id = ?1 AND source_id = ?2",
-                params![file_id, source_id],
-            )?;
-            conn.execute(
-                "UPDATE knowledge_sources SET
-                    file_count = (SELECT COUNT(*) FROM knowledge_files WHERE source_id = ?1),
-                    chunk_count = (SELECT COUNT(*) FROM knowledge_chunk_meta WHERE source_id = ?1)
-                 WHERE id = ?1",
-                params![source_id],
-            )?;
-        }
-        Ok(())
-    })();
-
-    match result {
-        Ok(()) => conn.execute_batch("COMMIT")?,
-        Err(error) => {
-            let _ = conn.execute_batch("ROLLBACK");
-            return Err(error);
-        }
-    }
-    Ok(())
-}
-
 /// Compute SHA-256 hex digest of bytes.
 fn sha256_hex(bytes: &[u8]) -> String {
     let mut hasher = Sha256::new();
@@ -1036,7 +805,7 @@ fn embed_pending_batch(
         .collect::<Vec<_>>();
     let embeddings = embedder
         .embed_batch(&texts)
-        .context("failed to embed changed corpus chunk batch")?;
+        .context("failed to embed changed corpus chunks")?;
     if embeddings.len() != pending.len() {
         anyhow::bail!(
             "embedder returned {} vectors for {} chunks",
@@ -1536,81 +1305,6 @@ mod tests {
 
     // ── reindex_file ────────────────────────────────────────────────────────
 
-    #[test]
-    fn reindex_file_skips_unchanged() {
-        let store = make_store();
-        let dir = tempdir().unwrap();
-        let file_path = dir.path().join("test.md");
-        fs::write(&file_path, "# Test\nContent here").unwrap();
-
-        let source = register_source(&store, dir.path());
-        sync_source(&store, &source, None).unwrap();
-
-        let before = chunk_count_for_source(&store, source.id);
-        let source = store.get_source("test").unwrap().unwrap();
-        reindex_file(&store, &source, &file_path, None).unwrap();
-        let after = chunk_count_for_source(&store, source.id);
-
-        assert_eq!(before, after, "unchanged file should not alter chunks");
-    }
-
-    #[test]
-    fn reindex_file_updates_changed_content() {
-        let store = make_store();
-        let dir = tempdir().unwrap();
-        let file_path = dir.path().join("test.md");
-        fs::write(&file_path, "# Original\nOld content only").unwrap();
-
-        let source = register_source(&store, dir.path());
-        sync_source(&store, &source, None).unwrap();
-
-        // Modify the file
-        fs::write(
-            &file_path,
-            "# Replacement\nCompletely different text\n\n## Extra\nMore sections",
-        )
-        .unwrap();
-
-        let source = store.get_source("test").unwrap().unwrap();
-        reindex_file(&store, &source, &file_path, None).unwrap();
-
-        // Verify new content is present and old content is gone
-        let chunks: Vec<String> = {
-            let mut stmt = store
-                .conn()
-                .prepare(
-                    "SELECT kc.content FROM knowledge_chunks kc
-                     JOIN knowledge_chunk_meta kcm ON kcm.chunk_rowid = kc.rowid
-                     WHERE kcm.source_id = ?1",
-                )
-                .unwrap();
-            stmt.query_map(params![source.id], |row| row.get(0))
-                .unwrap()
-                .filter_map(|r| r.ok())
-                .collect()
-        };
-        let all = chunks.join("\n");
-        assert!(all.contains("Replacement"), "new content should be present");
-        assert!(
-            !all.contains("Original"),
-            "old content should have been replaced"
-        );
-    }
-
-    #[test]
-    fn reindex_file_adds_new_file() {
-        let store = make_store();
-        let dir = tempdir().unwrap();
-        let source = register_source(&store, dir.path());
-
-        let file_path = dir.path().join("new.md");
-        fs::write(&file_path, "# Brand New\nFresh content").unwrap();
-        reindex_file(&store, &source, &file_path, None).unwrap();
-
-        assert_eq!(file_count_for_source(&store, source.id), 1);
-        assert!(chunk_count_for_source(&store, source.id) > 0);
-    }
-
     // ── Embeddings ──────────────────────────────────────────────────────────
 
     #[test]
@@ -1744,34 +1438,6 @@ mod tests {
     }
 
     #[test]
-    fn reindex_file_does_not_commit_older_content_after_a_concurrent_edit() {
-        let mut store = make_store();
-        let dir = tempdir().unwrap();
-        let file_path = dir.path().join("existing.md");
-        fs::write(&file_path, "# Original\nExisting indexed content").unwrap();
-        let source = register_source(&store, dir.path());
-        sync_source(&store, &source, None).unwrap();
-
-        fs::write(&file_path, "# Prepared\nContent before model inference").unwrap();
-        store.set_embedder(Arc::new(MutatingEmbedder {
-            file_path: file_path.clone(),
-        }));
-
-        let error = reindex_file(&store, &source, &file_path, None).unwrap_err();
-
-        assert!(error
-            .to_string()
-            .contains("changed while embeddings were being prepared"));
-        assert!(store.conn().is_autocommit());
-        let stored_content: String = store
-            .conn()
-            .query_row("SELECT content FROM knowledge_chunks", [], |row| row.get(0))
-            .unwrap();
-        assert!(stored_content.contains("Existing indexed content"));
-        assert!(!stored_content.contains("Prepared"));
-    }
-
-    #[test]
     fn sync_works_without_embedder() {
         let store = make_store(); // no embedder
         let dir = tempdir().unwrap();
@@ -1836,27 +1502,6 @@ mod tests {
     }
 
     // ── sync_all ────────────────────────────────────────────────────────────
-
-    #[test]
-    fn sync_all_handles_multiple_sources() {
-        let store = make_store();
-        let dir1 = tempdir().unwrap();
-        let dir2 = tempdir().unwrap();
-        fs::write(dir1.path().join("a.md"), "# A\nFirst source").unwrap();
-        fs::write(dir2.path().join("b.md"), "# B\nSecond source").unwrap();
-
-        store
-            .add_source("src1", dir1.path().to_str().unwrap(), None, &[])
-            .unwrap();
-        store
-            .add_source("src2", dir2.path().to_str().unwrap(), None, &[])
-            .unwrap();
-
-        let results = sync_all(&store, None).unwrap();
-        assert_eq!(results.len(), 2);
-        assert_eq!(results[0].files_added, 1);
-        assert_eq!(results[1].files_added, 1);
-    }
 
     // ── enrichment_fn ───────────────────────────────────────────────────────
 
@@ -1977,7 +1622,15 @@ mod tests {
     }
 
     fn link_count(store: &KnowledgeStore, source_id: i64) -> i64 {
-        store.link_count_for_source(source_id).unwrap()
+        store
+            .conn()
+            .query_row(
+                "SELECT COUNT(*) FROM knowledge_links
+                 WHERE source_file_id IN (SELECT id FROM knowledge_files WHERE source_id = ?1)",
+                rusqlite::params![source_id],
+                |row| row.get(0),
+            )
+            .unwrap()
     }
 
     #[test]

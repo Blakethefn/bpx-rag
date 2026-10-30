@@ -18,7 +18,6 @@ pub(crate) const TREE_SITTER_CHUNKER_VERSION: i64 = 2;
 pub struct Chunk {
     pub title: String,
     pub content: String,
-    pub is_code: bool,
     /// 1-based line number where this chunk starts (0 if unknown)
     pub line_start: u32,
     /// 1-based line number where this chunk ends, inclusive (0 if unknown)
@@ -270,7 +269,6 @@ fn chunk_syntax_tree(
             chunks.push(Chunk {
                 title: title.clone(),
                 content: section.to_string(),
-                is_code: true,
                 line_start,
                 line_end,
             });
@@ -693,16 +691,6 @@ fn line_for_byte(line_starts: &[usize], byte: usize) -> u32 {
     line_starts.partition_point(|start| *start <= byte).max(1) as u32
 }
 
-/// Check if content appears to be markdown (strict — rejects code files)
-fn looks_like_markdown(content: &str) -> bool {
-    classify_content(content) == ContentType::Markdown
-}
-
-/// Check if content looks like source code
-fn looks_like_code(content: &str) -> bool {
-    classify_content(content) == ContentType::Code
-}
-
 /// Check if a line is a structural boundary in code
 fn is_structural_boundary(line: &str) -> bool {
     let trimmed = line.trim();
@@ -798,7 +786,6 @@ fn chunk_code(content: &str) -> Vec<Chunk> {
         chunks.push(Chunk {
             title: "code".to_string(),
             content: content.to_string(),
-            is_code: true,
             line_start: 1,
             line_end: line_number.max(1),
         });
@@ -881,7 +868,6 @@ fn chunk_markdown(content: &str) -> Vec<Chunk> {
         chunks.push(Chunk {
             title: "(untitled)".to_string(),
             content: content.to_string(),
-            is_code: detect_code(content),
             line_start: 1,
             line_end: line_number.max(1),
         });
@@ -913,11 +899,9 @@ fn chunk_plain_text(content: &str) -> Vec<Chunk> {
             idx += 1;
             let chunk_line_end = cumulative_lines.saturating_sub(1).max(chunk_line_start);
             let taken = std::mem::take(&mut current);
-            let is_code = detect_code(&taken);
             chunks.push(Chunk {
                 title: format!("section-{idx}"),
                 content: taken,
-                is_code,
                 line_start: chunk_line_start,
                 line_end: chunk_line_end,
             });
@@ -945,11 +929,9 @@ fn chunk_plain_text(content: &str) -> Vec<Chunk> {
         } else {
             idx += 1;
             let total_lines = content.lines().count() as u32;
-            let is_code = detect_code(&current);
             chunks.push(Chunk {
                 title: format!("section-{idx}"),
                 content: current,
-                is_code,
                 line_start: chunk_line_start,
                 line_end: total_lines.max(chunk_line_start),
             });
@@ -971,7 +953,6 @@ fn flush_chunk_with_lines(
         chunks.push(Chunk {
             title: title.to_string(),
             content: content.to_string(),
-            is_code: detect_code(content),
             line_start,
             line_end,
         });
@@ -1005,11 +986,9 @@ fn flush_chunk_with_lines(
                     part_line_start,
                 );
             } else {
-                let is_code = detect_code(&taken);
                 chunks.push(Chunk {
                     title: format!("{title} (part {part})"),
                     content: taken,
-                    is_code,
                     line_start: part_line_start,
                     line_end: part_line_end,
                 });
@@ -1035,11 +1014,9 @@ fn flush_chunk_with_lines(
         if current.len() > MAX_CHUNK_BYTES {
             split_at_newlines_with_lines(&part_title, &current, chunks, part_line_start);
         } else {
-            let is_code = detect_code(&current);
             chunks.push(Chunk {
                 title: part_title,
                 content: current,
-                is_code,
                 line_start: part_line_start,
                 line_end,
             });
@@ -1070,11 +1047,9 @@ fn split_at_newlines_with_lines(
                 .saturating_sub(2)
                 .max(part_line_start);
             let taken = std::mem::take(&mut current);
-            let is_code = detect_code(&taken);
             chunks.push(Chunk {
                 title: format!("{title} (part {part})"),
                 content: taken,
-                is_code,
                 line_start: part_line_start,
                 line_end: part_line_end,
             });
@@ -1098,11 +1073,9 @@ fn split_at_newlines_with_lines(
             }
             part += 1;
             let piece: String = current.drain(..split_at).collect();
-            let is_code = detect_code(&piece);
             chunks.push(Chunk {
                 title: format!("{title} (part {part})"),
                 content: piece,
-                is_code,
                 line_start: part_line_start,
                 line_end: base_line_start + line_offset - 1,
             });
@@ -1113,7 +1086,6 @@ fn split_at_newlines_with_lines(
     if !current.is_empty() {
         part += 1;
         let part_line_end = base_line_start + line_offset - 1;
-        let is_code = detect_code(&current);
         chunks.push(Chunk {
             title: if part > 1 {
                 format!("{title} (part {part})")
@@ -1121,51 +1093,10 @@ fn split_at_newlines_with_lines(
                 title.to_string()
             },
             content: current,
-            is_code,
             line_start: part_line_start,
             line_end: part_line_end,
         });
     }
-}
-
-/// Heuristic: does this content look like code?
-fn detect_code(content: &str) -> bool {
-    // Contains code fences
-    if content.contains("```") {
-        return true;
-    }
-
-    let mut total_lines: u32 = 0;
-    let mut code_lines: u32 = 0;
-
-    for line in content.lines() {
-        total_lines += 1;
-        let trimmed = line.trim();
-        if trimmed.starts_with("fn ")
-            || trimmed.starts_with("pub ")
-            || trimmed.starts_with("let ")
-            || trimmed.starts_with("const ")
-            || trimmed.starts_with("import ")
-            || trimmed.starts_with("from ")
-            || trimmed.starts_with("def ")
-            || trimmed.starts_with("class ")
-            || trimmed.starts_with("//")
-            || trimmed.starts_with("/*")
-            || trimmed.starts_with('#')
-            || trimmed.starts_with('{')
-            || trimmed.starts_with('}')
-            || trimmed.ends_with(';')
-            || trimmed.ends_with('{')
-        {
-            code_lines += 1;
-        }
-    }
-
-    if total_lines == 0 {
-        return false;
-    }
-
-    code_lines as f64 / total_lines as f64 > 0.6
 }
 
 #[cfg(test)]
@@ -1189,44 +1120,11 @@ mod tests {
     }
 
     #[test]
-    fn test_detect_code() {
-        assert!(detect_code("fn main() {\n    println!(\"hello\");\n}"));
-        assert!(!detect_code(
-            "This is just a regular sentence about things."
-        ));
-    }
-
-    #[test]
     fn test_code_blocks_stay_intact() {
         let md = "# Example\n```rust\nfn main() {\n    // code\n}\n```\nSome text after.";
         let chunks = chunk_content(md);
         // The code block should be in the same chunk as its heading
         assert!(chunks[0].content.contains("fn main()"));
-    }
-
-    #[test]
-    fn test_markdown_false_positive_rejected_for_css() {
-        let css_content = ".header {\n    color: #FFD700;\n    background: #1a1a1a;\n}\n\n* {\n    margin: 0;\n    padding: 0;\n}\n\n.container {\n    max-width: 1400px;\n}";
-        assert!(!looks_like_markdown(css_content));
-    }
-
-    #[test]
-    fn test_markdown_false_positive_rejected_for_php() {
-        let php = "<?php\nrequire_once 'config.php';\n$db = db();\n$result = $db->query('SELECT * FROM users');\nif (!$result) {\n    die('Error');\n}\n?>";
-        assert!(!looks_like_markdown(php));
-        assert!(looks_like_code(php));
-    }
-
-    #[test]
-    fn test_looks_like_code_detects_php() {
-        let php = "<?php\nfunction getUser($id) {\n    return $db->query('SELECT * FROM users WHERE id = ?', [$id]);\n}\n?>";
-        assert!(looks_like_code(php));
-    }
-
-    #[test]
-    fn test_looks_like_code_detects_html_with_script() {
-        let html = "<html>\n<head>\n<script>\nfunction init() {\n    console.log('hello');\n}\n</script>\n</head>\n</html>";
-        assert!(looks_like_code(html));
     }
 
     #[test]
@@ -1313,12 +1211,6 @@ mod tests {
                 MAX_CHUNK_BYTES
             );
         }
-    }
-
-    #[test]
-    fn test_real_markdown_still_detected() {
-        let md = "# Title\n\nSome paragraph text.\n\n## Section Two\n\nMore text here.\n\n### Subsection\n\n- Item one\n- Item two\n";
-        assert!(looks_like_markdown(md));
     }
 
     #[test]

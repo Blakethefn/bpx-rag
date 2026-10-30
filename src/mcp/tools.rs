@@ -16,8 +16,7 @@ pub fn tool_definitions() -> Value {
                         "limit": { "type": "integer", "description": "Maximum results per query (1–50, default 10)." },
                         "profile": { "type": "string", "enum": ["code_review", "debug", "planning", "vault_navigation"] },
                         "explain": { "type": "boolean", "description": "Include ranking evidence for each result." },
-                        "count_only": { "type": "boolean", "description": "Return result count and token estimate without chunk text." },
-                        "use_memory": { "type": "boolean", "description": "Allow a prior explicit-profile search preference to influence this query." }
+                        "count_only": { "type": "boolean", "description": "Return result count and token estimate without chunk text." }
                     },
                     "required": []
                 }

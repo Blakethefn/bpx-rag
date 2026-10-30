@@ -34,9 +34,6 @@ pub enum Commands {
         /// Return result count and token estimate without snippets.
         #[arg(long)]
         count_only: bool,
-        /// Disable reuse of search memory for explicit retrieval profiles.
-        #[arg(long)]
-        no_memory: bool,
     },
     /// Manage persistent sources in the local knowledge index.
     Knowledge {

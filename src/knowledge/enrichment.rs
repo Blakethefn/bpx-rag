@@ -172,7 +172,6 @@ pub fn extract_folder_tags(file_path: &Path, source_base: &Path) -> Value {
 mod tests {
     use super::*;
     use serde_json::json;
-    use std::path::PathBuf;
 
     // ── extract_frontmatter ──────────────────────────────────────────────────
 
