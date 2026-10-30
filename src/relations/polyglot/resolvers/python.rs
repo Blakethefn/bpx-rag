@@ -1,6 +1,6 @@
 use std::path::Path;
 
-pub(in crate::relationships::polyglot::resolve) fn module_path(
+pub(in crate::relations::polyglot::resolve) fn module_path(
     source: &Path,
     specifier: &str,
 ) -> Option<String> {

@@ -1,10 +1,13 @@
+pub mod profile;
+pub mod truncate;
+
 use anyhow::Result;
 
 use crate::config::Config;
 use crate::knowledge::filter::parse_filter;
-use crate::knowledge::search::{knowledge_search, KnowledgeSearchResult, SearchWeights};
+use crate::knowledge::query::{knowledge_search, KnowledgeSearchResult, SearchWeights};
 use crate::knowledge::KnowledgeStore;
-use crate::search_model::{SearchProfile, SearchWhy};
+use crate::search::profile::{SearchProfile, SearchWhy};
 
 #[derive(Debug, Clone)]
 pub struct QueryRequest<'a> {
@@ -277,7 +280,7 @@ fn format_results(
         } else {
             secondary_snippet_bytes
         };
-        let snippet = crate::truncate::preview(&result.snippet, max_bytes);
+        let snippet = crate::search::truncate::preview(&result.snippet, max_bytes);
         if result.snippet.len() > max_bytes {
             truncated_any = true;
         }

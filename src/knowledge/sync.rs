@@ -15,7 +15,7 @@ use std::path::{Path, PathBuf};
 use std::time::Instant;
 use std::{fs, io};
 
-use crate::embedder::{embedding_to_bytes, normalize_embedding};
+use crate::embed::{embedding_to_bytes, normalize_embedding};
 use crate::chunk::{chunk_content_for_path, chunker_version_for_path};
 
 use super::{KnowledgeSourceInfo, KnowledgeStore};
@@ -795,7 +795,7 @@ fn read_classified_file(abs_path: &Path, expected_hash: &str) -> Result<String> 
 }
 
 fn embed_pending_batch(
-    embedder: &dyn crate::embedder::Embed,
+    embedder: &dyn crate::embed::Embed,
     prepared_files: &mut [PreparedFile],
     pending: &mut Vec<(usize, usize, String)>,
 ) -> Result<()> {

@@ -12,7 +12,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use usearch::{Index, IndexOptions, MetricKind, ScalarKind};
 
-use crate::embedder;
+use crate::embed;
 
 const SIDECAR_VERSION: u32 = 1;
 const ANN_MIN_VECTORS: usize = 4_096;
@@ -209,7 +209,7 @@ fn build_index(
         if rowid <= 0 || stored_dimensions as usize != dimensions || bytes.len() != dimensions * 4 {
             anyhow::bail!("invalid embedding row {rowid} in model {model_id}");
         }
-        let vector = embedder::bytes_to_embedding(&bytes);
+        let vector = embed::bytes_to_embedding(&bytes);
         if vector.len() != dimensions || vector.iter().any(|value| !value.is_finite()) {
             anyhow::bail!("invalid vector contents for embedding row {rowid}");
         }
@@ -282,7 +282,7 @@ fn apply_incremental_changes(
             if stored_dimension as usize != dimensions || bytes.len() != dimensions * 4 {
                 return Ok(None);
             }
-            let vector = embedder::bytes_to_embedding(&bytes);
+            let vector = embed::bytes_to_embedding(&bytes);
             if vector.len() != dimensions || vector.iter().any(|value| !value.is_finite()) {
                 return Ok(None);
             }

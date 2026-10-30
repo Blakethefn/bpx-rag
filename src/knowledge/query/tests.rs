@@ -1,5 +1,5 @@
 use super::*;
-use crate::embedder::Embed;
+use crate::embed::Embed;
 use crate::knowledge;
 use rusqlite::params;
 use std::sync::Arc;
@@ -134,7 +134,7 @@ fn dense_retrieval_can_find_a_chunk_with_no_lexical_hit() {
         let embedding = SemanticTestEmbedder.embed_one(content).unwrap();
         store.conn().execute(
             "INSERT INTO knowledge_embeddings (chunk_rowid, embedding, dim) VALUES (?1, ?2, 2)",
-            params![rowid, embedder::embedding_to_bytes(&embedding)],
+            params![rowid, embed::embedding_to_bytes(&embedding)],
         ).unwrap();
     }
 
@@ -175,7 +175,7 @@ fn dense_retrieval_ignores_vectors_from_a_different_model() {
         .execute(
             "INSERT INTO knowledge_embeddings (chunk_rowid, embedding, dim, model_id)
          VALUES (?1, ?2, 2, 'jinaai/jina-embeddings-v2-base-code')",
-            params![rowid, embedder::embedding_to_bytes(&incompatible)],
+            params![rowid, embed::embedding_to_bytes(&incompatible)],
         )
         .unwrap();
 
@@ -213,7 +213,7 @@ fn explicit_empty_vector_candidates_return_no_results() {
         .execute(
             "INSERT INTO knowledge_embeddings (chunk_rowid, embedding, dim)
              VALUES (?1, ?2, 2)",
-            params![rowid, embedder::embedding_to_bytes(&[1.0, 0.0])],
+            params![rowid, embed::embedding_to_bytes(&[1.0, 0.0])],
         )
         .unwrap();
 
@@ -291,7 +291,7 @@ fn deterministic_retrieval_eval_measures_recall_mrr_and_ndcg() {
         let embedding = EvaluationEmbedder::vector(&format!("{title} {content}"));
         store.conn().execute(
             "INSERT INTO knowledge_embeddings (chunk_rowid, embedding, dim) VALUES (?1, ?2, 4)",
-            params![rowid, embedder::embedding_to_bytes(&embedding)],
+            params![rowid, embed::embedding_to_bytes(&embedding)],
         ).unwrap();
     }
 

@@ -6,10 +6,10 @@ use rusqlite::{params, OptionalExtension};
 use serde_json::json;
 
 use crate::config::Config;
-use crate::embedder::{self, Embed, Embedder};
+use crate::embed::{self, Embed, Embedder};
 use crate::knowledge::{self, KnowledgeSourceInfo, KnowledgeStore};
-use crate::retrieval::{self, QueryRequest};
-use crate::search_model::SearchProfile;
+use crate::search::{self, QueryRequest};
+use crate::search::profile::SearchProfile;
 
 pub struct RagApp {
     config: Config,
@@ -96,7 +96,7 @@ impl RagApp {
         if let Some(notice) = self.embedding_coverage_notice()? {
             self.embedding_notice = Some(notice);
         }
-        let outcome = retrieval::run_query(
+        let outcome = search::run_query(
             QueryRequest {
                 query,
                 source: options.source,
@@ -259,7 +259,7 @@ impl RagApp {
         }
         let mut output = String::from("# Knowledge sources\n\n");
         for source in sources {
-            let model_id = embedder::canonical_model_id(&self.config.embeddings.model)?;
+            let model_id = embed::canonical_model_id(&self.config.embeddings.model)?;
             let (embedded, total): (i64, i64) = self.knowledge.conn().query_row(
                 "SELECT COUNT(CASE WHEN e.model_id = ?1 THEN e.chunk_rowid END), COUNT(m.chunk_rowid)
                  FROM knowledge_chunk_meta m
@@ -409,13 +409,13 @@ impl RagApp {
                         continue;
                     }
 
-                    let vector = embedder::normalize_embedding(vector, embedder.dim())?;
+                    let vector = embed::normalize_embedding(vector, embedder.dim())?;
                     conn.execute(
                         "INSERT OR REPLACE INTO knowledge_embeddings (chunk_rowid, embedding, dim, model_id)
                          VALUES (?1, ?2, ?3, ?4)",
                         params![
                             *rowid,
-                            embedder::embedding_to_bytes(&vector),
+                            embed::embedding_to_bytes(&vector),
                             embedder.dim() as i64,
                             embedder.model_id()
                         ],
@@ -519,7 +519,7 @@ impl RagApp {
             return;
         }
         let model_dir = model_directory(&self.config);
-        if !embedder::model_files_present(&model_dir, &self.config.embeddings.model) {
+        if !embed::model_files_present(&model_dir, &self.config.embeddings.model) {
             self.embedding_notice = Some(format!(
                 "Semantic retrieval is unavailable; install the local model with `bpx-rag models download` ({}).",
                 model_dir.display()
@@ -614,7 +614,7 @@ pub fn embedding_model_status(config: &Config) -> String {
             }
         }
     };
-    if embedder::model_files_present(&path, &config.embeddings.model) {
+    if embed::model_files_present(&path, &config.embeddings.model) {
         format!(
             "{} model files cached at {} (integrity is checked when loaded); device: {device}",
             config.embeddings.model,
@@ -634,7 +634,7 @@ fn embedding_notice(config: &Config) -> Option<String> {
         return Some("Embeddings are disabled in config.".into());
     }
     let model_dir = model_directory(config);
-    if !embedder::model_files_present(&model_dir, &config.embeddings.model) {
+    if !embed::model_files_present(&model_dir, &config.embeddings.model) {
         return Some(format!(
             "Semantic retrieval is unavailable; install the local model with `bpx-rag models download` ({}).",
             model_dir.display()

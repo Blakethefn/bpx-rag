@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 use super::super::super::super::languages::Grammar;
 use super::super::super::super::types::SourceFile;
 
-pub(in crate::relationships::polyglot::resolve) fn jvm_targets(
+pub(in crate::relations::polyglot::resolve) fn jvm_targets(
     grammar: Grammar,
     path: &Path,
     wildcard: bool,
@@ -40,7 +40,7 @@ pub(in crate::relationships::polyglot::resolve) fn jvm_targets(
         .collect()
 }
 
-pub(in crate::relationships::polyglot::resolve) fn namespace_targets(
+pub(in crate::relations::polyglot::resolve) fn namespace_targets(
     path: &Path,
     files: &[SourceFile],
     extensions: &[&str],

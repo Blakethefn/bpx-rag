@@ -4,7 +4,7 @@ use std::io::{self, BufReader};
 use std::path::Path;
 
 use super::{tools, transport};
-use crate::rag_app::{RagApp, SearchOptions};
+use crate::app::{RagApp, SearchOptions};
 
 pub fn run(project_dir: &Path) -> Result<()> {
     let stdin = io::stdin();
@@ -181,7 +181,7 @@ fn handle_knowledge_sync(args: &Value, app: &mut RagApp) -> Result<String> {
     }
     Ok(results
         .iter()
-        .map(crate::rag_app::format_sync_result)
+        .map(crate::app::format_sync_result)
         .collect::<Vec<_>>()
         .join("\n"))
 }
@@ -231,8 +231,8 @@ fn handle_file_relationships(args: &Value, project_dir: &Path) -> Result<String>
     } else {
         project_dir.join(requested)
     };
-    let analysis = crate::relationships::analyze_file(&resolved, root)?;
-    Ok(crate::relationships::format_analysis(&analysis))
+    let analysis = crate::relations::analyze_file(&resolved, root)?;
+    Ok(crate::relations::format_analysis(&analysis))
 }
 
 fn required_string<'a>(args: &'a Value, key: &str) -> Result<&'a str> {

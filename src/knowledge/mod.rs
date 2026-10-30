@@ -5,18 +5,18 @@
 //! ContentStore — shares the same chunker and embedder but uses a separate
 //! global database that survives across sessions.
 
-pub mod db;
+pub mod schema;
 pub mod enrichment;
 pub mod filter;
-pub mod search;
+pub mod query;
 pub mod sync;
-pub mod vector_index;
+pub mod ann;
 
 use anyhow::{anyhow, Result};
 use rusqlite::{Connection, OptionalExtension};
 use std::sync::Arc;
 
-use crate::embedder::Embed;
+use crate::embed::Embed;
 
 /// Persistent knowledge store — indexes directories of files for durable
 /// cross-session search.
@@ -24,7 +24,7 @@ pub struct KnowledgeStore {
     conn: Connection,
     embedder: Option<Arc<dyn Embed>>,
     vector_index_dir: Option<std::path::PathBuf>,
-    vector_index: Option<vector_index::VectorIndex>,
+    vector_index: Option<ann::VectorIndex>,
     vector_index_state: Option<VectorIndexState>,
 }
 
@@ -96,9 +96,9 @@ const SOURCE_COLUMNS: &str =
 impl KnowledgeStore {
     /// Open the knowledge store, creating the DB if needed.
     pub fn open() -> Result<Self> {
-        let db_path = db::knowledge_db_path()?;
+        let db_path = schema::knowledge_db_path()?;
         let conn = crate::db::open_db(&db_path)?;
-        db::apply_schema(&conn)?;
+        schema::apply_schema(&conn)?;
         let vector_index_dir = db_path.parent().map(|parent| parent.join("ann-indexes"));
         Ok(Self {
             conn,
@@ -223,7 +223,7 @@ impl KnowledgeStore {
 
     pub fn ensure_vector_index(&mut self, model_id: &str, dimensions: usize) -> Result<()> {
         self.conn.execute_batch("BEGIN")?;
-        let result = (|| -> Result<(VectorIndexState, Option<vector_index::VectorIndex>)> {
+        let result = (|| -> Result<(VectorIndexState, Option<ann::VectorIndex>)> {
             let state = self.conn.query_row(
                 "SELECT generation, database_id FROM knowledge_embedding_state WHERE state_id = 1",
                 [],
@@ -239,7 +239,7 @@ impl KnowledgeStore {
             if self.vector_index_state.as_ref() == Some(&state) {
                 return Ok((state, None));
             }
-            let index = vector_index::VectorIndex::load_or_build(
+            let index = ann::VectorIndex::load_or_build(
                 &self.conn,
                 self.vector_index_dir.as_deref(),
                 &state.model_id,
@@ -273,7 +273,7 @@ impl KnowledgeStore {
     pub(crate) fn vector_index_memory_usage(&self) -> usize {
         self.vector_index
             .as_ref()
-            .map_or(0, vector_index::VectorIndex::memory_usage_bytes)
+            .map_or(0, ann::VectorIndex::memory_usage_bytes)
     }
 
     pub(crate) fn vector_candidates(
@@ -423,7 +423,7 @@ pub(crate) fn open_in_memory() -> anyhow::Result<KnowledgeStore> {
     use crate::db::open_db;
     use std::path::PathBuf;
     let conn = open_db(&PathBuf::from(":memory:"))?;
-    crate::knowledge::db::apply_schema(&conn)?;
+    crate::knowledge::schema::apply_schema(&conn)?;
     Ok(KnowledgeStore {
         conn,
         embedder: None,

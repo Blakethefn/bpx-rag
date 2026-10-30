@@ -14,7 +14,7 @@ fn link_count(store: &KnowledgeStore, source_id: i64) -> i64 {
 }
 
 use crate::knowledge::{enrichment, search, sync};
-use crate::knowledge::search::SearchWeights;
+use crate::knowledge::query::SearchWeights;
 use rusqlite::params;
 use std::fs;
 use std::sync::Arc;
@@ -26,7 +26,7 @@ fn make_store() -> KnowledgeStore {
 
 fn make_store_with_embedder() -> KnowledgeStore {
     let mut store = make_store();
-    store.set_embedder(Arc::new(crate::embedder::tests::MockEmbedder::new()));
+    store.set_embedder(Arc::new(crate::embed::tests::MockEmbedder::new()));
     store
 }
 

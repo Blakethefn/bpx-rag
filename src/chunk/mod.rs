@@ -156,7 +156,7 @@ pub fn chunk_content(content: &str) -> Vec<Chunk> {
 /// existing content-based chunker as a fallback.
 pub fn chunk_content_for_path(path: &Path, content: &str) -> ChunkingResult {
     if content.len() <= MAX_TREE_SITTER_FILE_BYTES {
-        if let Some((grammar, tree)) = crate::relationships::parse_tree_for_path(path, content) {
+        if let Some((grammar, tree)) = crate::relations::parse_tree_for_path(path, content) {
             let root = tree.root_node();
             if !root.has_error() {
                 if let Some(chunks) = chunk_syntax_tree(content, root, grammar) {
@@ -177,7 +177,7 @@ pub fn chunk_content_for_path(path: &Path, content: &str) -> ChunkingResult {
 
 /// The stored per-file chunking version allows sync to rebuild stale chunks.
 pub(crate) fn chunker_version_for_path(path: &Path) -> i64 {
-    if crate::relationships::supports_tree_sitter_chunking(path) {
+    if crate::relations::supports_tree_sitter_chunking(path) {
         TREE_SITTER_CHUNKER_VERSION
     } else {
         1
@@ -193,7 +193,7 @@ struct SyntaxBoundary {
 fn chunk_syntax_tree(
     content: &str,
     root: Node<'_>,
-    grammar: crate::relationships::Grammar,
+    grammar: crate::relations::Grammar,
 ) -> Option<Vec<Chunk>> {
     let mut pending = vec![root];
     let mut boundaries = Vec::new();
@@ -287,11 +287,11 @@ fn is_declaration_wrapper(kind: &str) -> bool {
 
 fn is_declaration_boundary(
     node: Node<'_>,
-    grammar: crate::relationships::Grammar,
+    grammar: crate::relations::Grammar,
     content: &str,
 ) -> bool {
     let kind = node.kind();
-    use crate::relationships::Grammar;
+    use crate::relations::Grammar;
 
     match grammar {
         Grammar::Rust => matches!(

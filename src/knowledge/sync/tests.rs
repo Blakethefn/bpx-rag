@@ -3,8 +3,8 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use tempfile::tempdir;
 
-use crate::embedder::tests::MockEmbedder;
-use crate::embedder::Embed;
+use crate::embed::tests::MockEmbedder;
+use crate::embed::Embed;
 
 struct CountingEmbedder {
     calls: Arc<AtomicUsize>,

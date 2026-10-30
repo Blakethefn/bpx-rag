@@ -35,7 +35,7 @@ fn sample_database(count: usize) -> Connection {
              VALUES (?1, ?2, ?3, ?4)",
             params![
                 index as i64 + 1,
-                embedder::embedding_to_bytes(&vector_for(index)),
+                embed::embedding_to_bytes(&vector_for(index)),
                 TEST_DIMENSIONS as i64,
                 TEST_MODEL
             ],
@@ -192,7 +192,7 @@ fn saved_sidecar_applies_incremental_embedding_updates_and_deletes() {
     let replacement = vector_for(count + 10);
     conn.execute(
         "UPDATE knowledge_embeddings SET embedding = ?1 WHERE chunk_rowid = 1",
-        params![embedder::embedding_to_bytes(&replacement)],
+        params![embed::embedding_to_bytes(&replacement)],
     )
     .unwrap();
     let generation: i64 = conn

@@ -1,25 +1,23 @@
+mod app;
+mod chunk;
 mod cli;
 mod config;
 mod db;
-mod embedder;
+mod embed;
 mod eval;
 mod knowledge;
 mod language;
 mod mcp;
-mod rag_app;
-mod relationships;
-mod retrieval;
-mod search_model;
-mod chunk;
-mod truncate;
+mod relations;
+mod search;
 
 use anyhow::{anyhow, Result};
 use clap::Parser;
 use std::path::PathBuf;
 
 use cli::{Cli, Commands, EvalAction, KnowledgeAction, ModelsAction};
-use rag_app::{RagApp, SearchOptions};
-use knowledge::search::SearchWeights;
+use app::{RagApp, SearchOptions};
+use knowledge::query::SearchWeights;
 
 fn main() -> Result<()> {
     let cli = Cli::parse();
@@ -34,8 +32,8 @@ fn main() -> Result<()> {
     match command {
         Commands::Serve => mcp::server::run(&project_dir),
         Commands::AnalyzeFile { path, root } => {
-            let analysis = relationships::analyze_file(&path, root.as_deref())?;
-            println!("{}", relationships::format_analysis(&analysis));
+            let analysis = relations::analyze_file(&path, root.as_deref())?;
+            println!("{}", relations::format_analysis(&analysis));
             Ok(())
         }
         Commands::Search {
@@ -176,7 +174,7 @@ fn run_knowledge(action: KnowledgeAction) -> Result<()> {
                 println!("No knowledge sources are registered.");
             } else {
                 for result in &results {
-                    println!("{}", rag_app::format_sync_result(result));
+                    println!("{}", app::format_sync_result(result));
                 }
             }
         }
@@ -215,10 +213,10 @@ fn run_knowledge(action: KnowledgeAction) -> Result<()> {
 fn run_models(action: ModelsAction) -> Result<()> {
     let config = config::Config::load()?;
     match action {
-        ModelsAction::Status => println!("{}", rag_app::embedding_model_status(&config)),
+        ModelsAction::Status => println!("{}", app::embedding_model_status(&config)),
         ModelsAction::Download => {
-            let model_dir = rag_app::model_directory(&config);
-            embedder::Embedder::new_with_device(
+            let model_dir = app::model_directory(&config);
+            embed::Embedder::new_with_device(
                 &model_dir,
                 &config.embeddings.model,
                 config.embeddings.batch_size,

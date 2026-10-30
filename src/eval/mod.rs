@@ -9,9 +9,9 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use crate::config::Config;
-use crate::embedder::{self, Embed, Embedder};
+use crate::embed::{self, Embed, Embedder};
 use crate::knowledge;
-use crate::knowledge::search::SearchWeights;
+use crate::knowledge::query::SearchWeights;
 
 const TOP_K: usize = 10;
 
@@ -367,8 +367,8 @@ pub fn run_embedding_benchmark(
     }
 
     let config = Config::load()?;
-    let model_dir = crate::rag_app::model_directory(&config);
-    if !embedder::model_files_present(&model_dir, &config.embeddings.model) {
+    let model_dir = crate::app::model_directory(&config);
+    if !embed::model_files_present(&model_dir, &config.embeddings.model) {
         anyhow::bail!(
             "embedding benchmark requires the configured model to be cached; run `bpx-rag models download` first ({})",
             model_dir.display()
@@ -439,7 +439,7 @@ pub fn run_embedding_benchmark(
         anyhow::bail!("benchmark corpus changed while chunks were being sampled; retry evaluation");
     }
 
-    let model_id = embedder::canonical_model_id(&config.embeddings.model)?;
+    let model_id = embed::canonical_model_id(&config.embeddings.model)?;
     let warmup_chunks = texts.len().min(8);
     let refs = texts.iter().map(String::as_str).collect::<Vec<_>>();
     let mut runs = Vec::with_capacity(thread_counts.len() * batch_sizes.len());
@@ -537,8 +537,8 @@ pub fn generate_judgment_pool(
     ensure_new_distinct_outputs(pool_output, key_output)?;
 
     let config = Config::load()?;
-    let model_dir = crate::rag_app::model_directory(&config);
-    if !embedder::model_files_present(&model_dir, &config.embeddings.model) {
+    let model_dir = crate::app::model_directory(&config);
+    if !embed::model_files_present(&model_dir, &config.embeddings.model) {
         anyhow::bail!(
             "judgment pooling requires the configured model to be cached; run `bpx-rag models download` first ({})",
             model_dir.display()
@@ -634,7 +634,7 @@ pub fn generate_judgment_pool(
             ),
         ];
         for (channel, weights) in channels {
-            let results = knowledge::search::knowledge_search(
+            let results = knowledge::query::knowledge_search(
                 &store,
                 &query.text,
                 query.filter.as_deref(),
@@ -1178,8 +1178,8 @@ pub fn run_retrieval_evaluation(
         anyhow::bail!("hybrid weights must be finite and in the range (0, 10]");
     }
     let config = Config::load()?;
-    let model_dir = crate::rag_app::model_directory(&config);
-    if !embedder::model_files_present(&model_dir, &config.embeddings.model) {
+    let model_dir = crate::app::model_directory(&config);
+    if !embed::model_files_present(&model_dir, &config.embeddings.model) {
         return Err(anyhow!(
             "evaluation requires the configured model to be cached; run `bpx-rag models download` first ({}).",
             model_dir.display()
@@ -1197,7 +1197,7 @@ pub fn run_retrieval_evaluation(
     let model_load_ms = model_start.elapsed().as_secs_f64() * 1000.0;
     let model_id = embedder.model_id().to_string();
     let embedding_dimension = embedder.dim();
-    let model_artifact_bytes = embedder::model_cache_bytes(&model_dir, &config.embeddings.model)?;
+    let model_artifact_bytes = embed::model_cache_bytes(&model_dir, &config.embeddings.model)?;
 
     let data_dir = dataset.map_or_else(
         || PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("eval/retrieval"),
@@ -1291,7 +1291,7 @@ pub fn run_retrieval_evaluation(
         let judgments = qrels
             .get(&query.query_id)
             .ok_or_else(|| anyhow!("no relevance judgments for query {}", query.query_id))?;
-        let _ = knowledge::search::knowledge_search(
+        let _ = knowledge::query::knowledge_search(
             &store,
             &query.text,
             query.filter.as_deref(),
@@ -1300,7 +1300,7 @@ pub fn run_retrieval_evaluation(
             &hybrid_weights,
             1024,
         )?;
-        let lexical_results = knowledge::search::knowledge_search(
+        let lexical_results = knowledge::query::knowledge_search(
             &store,
             &query.text,
             query.filter.as_deref(),
@@ -1312,7 +1312,7 @@ pub fn run_retrieval_evaluation(
             },
             1024,
         )?;
-        let vector_results = knowledge::search::knowledge_search(
+        let vector_results = knowledge::query::knowledge_search(
             &store,
             &query.text,
             query.filter.as_deref(),
@@ -1328,7 +1328,7 @@ pub fn run_retrieval_evaluation(
         let mut query_times = Vec::with_capacity(repetitions);
         for _ in 0..repetitions {
             let started = Instant::now();
-            results = knowledge::search::knowledge_search(
+            results = knowledge::query::knowledge_search(
                 &store,
                 &query.text,
                 query.filter.as_deref(),
@@ -1493,7 +1493,7 @@ pub fn run_retrieval_evaluation(
         embedding_dimension,
         batch_size: config.embeddings.batch_size,
         intra_threads: config.embeddings.intra_threads,
-        candidate_oversample_factor: knowledge::search::CANDIDATE_OVERSAMPLE_FACTOR,
+        candidate_oversample_factor: knowledge::query::CANDIDATE_OVERSAMPLE_FACTOR,
         hybrid_keyword_weight: hybrid_weights.keyword_weight,
         hybrid_vector_weight: hybrid_weights.vector_weight,
         queries_sha256,
@@ -1622,7 +1622,7 @@ fn run_scaling_point(
                  VALUES (?1, ?2, ?3, ?4)",
                 rusqlite::params![
                     rowid,
-                    embedder::embedding_to_bytes(&vector),
+                    embed::embedding_to_bytes(&vector),
                     ScalingEmbedder::DIMENSION as i64,
                     ScalingEmbedder::MODEL_ID
                 ],
@@ -1650,7 +1650,7 @@ fn run_scaling_point(
         let mut exact_paths = Vec::new();
         for _ in 0..repetitions {
             let started = Instant::now();
-            let exact_results = knowledge::search::knowledge_search(
+            let exact_results = knowledge::query::knowledge_search(
                 &store,
                 &query,
                 None,
@@ -1688,7 +1688,7 @@ fn run_scaling_point(
         let mut ann_paths = Vec::new();
         for _ in 0..repetitions {
             let started = Instant::now();
-            let ann_results = knowledge::search::knowledge_search(
+            let ann_results = knowledge::query::knowledge_search(
                 &store,
                 &query,
                 None,
@@ -1768,7 +1768,7 @@ impl ScalingEmbedder {
     }
 }
 
-impl embedder::Embed for ScalingEmbedder {
+impl embed::Embed for ScalingEmbedder {
     fn embed_one(&self, _text: &str) -> Result<Vec<f32>> {
         let query_index = _text
             .split_whitespace()

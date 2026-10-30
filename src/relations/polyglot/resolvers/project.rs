@@ -3,7 +3,7 @@ use std::path::Path;
 use super::super::super::super::metadata::ProjectMetadata;
 use super::super::super::super::types::SourceFile;
 
-pub(in crate::relationships::polyglot::resolve) fn go_module_path(
+pub(in crate::relations::polyglot::resolve) fn go_module_path(
     metadata: &ProjectMetadata,
     specifier: &str,
 ) -> Option<String> {
@@ -17,7 +17,7 @@ pub(in crate::relationships::polyglot::resolve) fn go_module_path(
         .map(|suffix| suffix.trim_start_matches('/').to_string())
 }
 
-pub(in crate::relationships::polyglot::resolve) fn go_package_files(
+pub(in crate::relations::polyglot::resolve) fn go_package_files(
     root: &Path,
     normalized: &str,
     files: &[SourceFile],
@@ -31,7 +31,7 @@ pub(in crate::relationships::polyglot::resolve) fn go_package_files(
         .collect()
 }
 
-pub(in crate::relationships::polyglot::resolve) fn dart_package_path(
+pub(in crate::relations::polyglot::resolve) fn dart_package_path(
     metadata: &ProjectMetadata,
     specifier: &str,
 ) -> Option<String> {

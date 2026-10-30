@@ -9,8 +9,8 @@ use anyhow::Result;
 use rusqlite::Connection;
 use std::collections::HashMap;
 
-use crate::embedder;
-use crate::search_model::SearchWhy;
+use crate::embed;
+use crate::search::profile::SearchWhy;
 
 use super::filter::{parse_filter, predicates_to_sql};
 use super::KnowledgeStore;
@@ -110,7 +110,7 @@ pub fn knowledge_search(
         if let Some(emb) = store.embedder() {
             match emb
                 .embed_one(query)
-                .and_then(|vector| embedder::normalize_embedding(&vector, emb.dim()))
+                .and_then(|vector| embed::normalize_embedding(&vector, emb.dim()))
             {
                 Ok(query_embedding) => {
                     let candidates = store.vector_candidates(
@@ -564,7 +564,7 @@ fn knowledge_vector_search(
         .filter_map(|r| r.ok())
         .map(
             |(blob, rowid, file_id, source_id, title, content, ls, le, meta, source, path)| {
-                let embedding = embedder::bytes_to_embedding(&blob);
+                let embedding = embed::bytes_to_embedding(&blob);
                 let similarity = dot_product(query_embedding, &embedding);
                 (
                     similarity,
