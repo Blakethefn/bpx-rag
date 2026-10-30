@@ -764,3 +764,58 @@ fn test_dot_product_orthogonal() {
     let b = vec![0.0, 1.0, 0.0];
     assert!(dot_product(&a, &b).abs() < 1e-6);
 }
+
+struct BrokenQueryEmbedder;
+
+impl Embed for BrokenQueryEmbedder {
+    fn embed_one(&self, _text: &str) -> Result<Vec<f32>> {
+        anyhow::bail!("synthetic query embedding failure")
+    }
+
+    fn embed_batch(&self, texts: &[&str]) -> Result<Vec<Vec<f32>>> {
+        texts.iter().map(|text| self.embed_one(text)).collect()
+    }
+
+    fn dim(&self) -> usize {
+        4
+    }
+
+    fn max_batch_size(&self) -> usize {
+        16
+    }
+
+    fn model_id(&self) -> &str {
+        "broken-test-model"
+    }
+}
+
+#[test]
+fn failed_query_embedding_is_reported_and_lexical_results_still_return() {
+    let mut store = make_store();
+    store.set_embedder(Arc::new(BrokenQueryEmbedder));
+    seed_chunk(
+        &store,
+        "repo",
+        "/repo",
+        "src/whale.md",
+        "Whale notes",
+        "whale migration routes across the ocean",
+        "{}",
+    );
+
+    let report = knowledge_search_report(
+        &store,
+        "whale migration",
+        None,
+        None,
+        5,
+        &SearchWeights::default(),
+        1_000,
+    )
+    .unwrap();
+
+    assert!(!report.results.is_empty(), "lexical layers still answer");
+    assert_eq!(report.warnings.len(), 1);
+    assert!(report.warnings[0].contains("vector search was skipped"));
+    assert!(report.warnings[0].contains("synthetic query embedding failure"));
+}

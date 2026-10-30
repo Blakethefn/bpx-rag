@@ -104,7 +104,7 @@ pub(super) fn delete_file_chunks(conn: &rusqlite::Connection, file_id: i64) -> R
         let mut stmt =
             conn.prepare("SELECT chunk_rowid FROM knowledge_chunk_meta WHERE file_id = ?1")?;
         let rows = stmt.query_map(params![file_id], |row| row.get(0))?;
-        rows.filter_map(|r| r.ok()).collect()
+        rows.collect::<rusqlite::Result<Vec<_>>>()?
     };
 
     // FTS5 tables: delete one at a time (safest for all SQLite versions)
@@ -179,7 +179,7 @@ pub(super) fn resolve_wikilinks_for_source(conn: &rusqlite::Connection, source_i
         let rows = stmt.query_map(params![source_id], |row| {
             Ok((row.get::<_, String>(1)?, row.get::<_, i64>(0)?))
         })?;
-        rows.filter_map(|r| r.ok()).collect()
+        rows.collect::<rusqlite::Result<HashMap<_, _>>>()?
     };
 
     if files.is_empty() {
@@ -198,7 +198,8 @@ pub(super) fn resolve_wikilinks_for_source(conn: &rusqlite::Connection, source_i
         let rows = stmt.query_map(params![source_id], |row| {
             Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?))
         })?;
-        rows.filter_map(|r| r.ok())
+        rows.collect::<rusqlite::Result<Vec<_>>>()?
+            .into_iter()
             .filter_map(|(file_id, meta_json)| {
                 let meta: serde_json::Value = serde_json::from_str(&meta_json).ok()?;
                 let links = meta.get("wikilinks")?.as_array()?;

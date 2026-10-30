@@ -16,6 +16,20 @@ use std::path::Path;
 /// Valid enrichment names.
 const KNOWN_ENRICHMENTS: &[&str] = &["frontmatter", "wikilinks", "folder_tags"];
 
+/// Reject enrichment names this build does not know, so a typo fails at `add`.
+pub fn validate_enrichments(names: &[String]) -> anyhow::Result<()> {
+    match names
+        .iter()
+        .find(|name| !KNOWN_ENRICHMENTS.contains(&name.as_str()))
+    {
+        None => Ok(()),
+        Some(name) => Err(anyhow::anyhow!(
+            "unknown enrichment '{name}'; choose from: {}",
+            KNOWN_ENRICHMENTS.join(", ")
+        )),
+    }
+}
+
 /// Build an enrichment function from a list of enabled enrichment names.
 /// Returns `None` if the list is empty.
 ///

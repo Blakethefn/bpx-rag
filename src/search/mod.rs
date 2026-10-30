@@ -5,7 +5,7 @@ use anyhow::Result;
 
 use crate::config::Config;
 use crate::knowledge::filter::parse_filter;
-use crate::knowledge::query::{knowledge_search, KnowledgeSearchResult, SearchWeights};
+use crate::knowledge::query::{knowledge_search_report, KnowledgeSearchResult, SearchWeights};
 use crate::knowledge::KnowledgeStore;
 use crate::search::profile::{SearchProfile, SearchWhy};
 
@@ -50,7 +50,7 @@ pub fn run_query(
     };
 
     let scoped = request.source.is_some() || request.knowledge_filter.is_some();
-    let mut results = knowledge_search(
+    let report = knowledge_search_report(
         knowledge,
         &effective_query,
         request.knowledge_filter,
@@ -59,6 +59,8 @@ pub fn run_query(
         &weights,
         request.snippet_bytes,
     )?;
+    let warnings = report.warnings;
+    let mut results = report.results;
     apply_knowledge_bias(&mut results, request.profile);
     apply_graph_rerank(
         knowledge,
@@ -82,7 +84,7 @@ pub fn run_query(
     results.truncate(request.limit as usize);
 
     if count_only {
-        return count_summary(request.query, request.profile, &results);
+        return count_summary(request.query, request.profile, &results, &warnings);
     }
 
     let top_snippet_bytes = request
@@ -96,6 +98,7 @@ pub fn run_query(
     Ok(format_results(
         request.query,
         request.explain,
+        &warnings,
         &results,
         top_snippet_bytes,
         secondary_snippet_bytes,
@@ -107,6 +110,7 @@ fn count_summary(
     query: &str,
     profile: SearchProfile,
     results: &[KnowledgeSearchResult],
+    warnings: &[String],
 ) -> Result<String> {
     let estimated_bytes: u64 = results.iter().map(|r| r.snippet.len() as u64).sum();
     let estimated_tokens = (estimated_bytes as f64 / 4.0).ceil() as u32;
@@ -123,6 +127,7 @@ fn count_summary(
         "query": query,
         "profile": profile.as_str(),
         "total_chunks": results.len(),
+        "warnings": warnings,
         "estimated_bytes": estimated_bytes,
         "estimated_tokens": estimated_tokens,
         "sources_matched": sources_matched,
@@ -262,12 +267,16 @@ fn knowledge_source_for_file(ks: &KnowledgeStore, file_id: i64) -> Result<(Strin
 fn format_results(
     original_query: &str,
     explain: bool,
+    warnings: &[String],
     results: &[KnowledgeSearchResult],
     top_snippet_bytes: usize,
     secondary_snippet_bytes: usize,
     top_result_count: usize,
 ) -> String {
     let mut output = format!("### \"{original_query}\"\n");
+    for warning in warnings {
+        output.push_str(&format!("Warning: {warning}\n"));
+    }
     if results.is_empty() {
         output.push_str("No results.\n");
         return output;

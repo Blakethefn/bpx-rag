@@ -309,3 +309,17 @@ fn build_omits_empty_enrichment_keys() {
     // Root file → no folder tags → key absent
     assert!(!obj.contains_key("folder_tags"));
 }
+
+#[test]
+fn validate_enrichments_accepts_known_names() {
+    let names = vec!["frontmatter".to_string(), "wikilinks".to_string()];
+    assert!(validate_enrichments(&names).is_ok());
+}
+
+#[test]
+fn validate_enrichments_rejects_unknown_name_with_choices() {
+    let names = vec!["frontmatter".to_string(), "wikilnks".to_string()];
+    let error = validate_enrichments(&names).unwrap_err().to_string();
+    assert!(error.contains("unknown enrichment 'wikilnks'"));
+    assert!(error.contains("frontmatter, wikilinks, folder_tags"));
+}

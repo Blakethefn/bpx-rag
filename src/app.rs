@@ -125,6 +125,7 @@ impl RagApp {
         enrichments: &[String],
     ) -> Result<String> {
         validate_label(label)?;
+        knowledge::enrichment::validate_enrichments(enrichments)?;
         if let Some(pattern) = glob {
             glob::Pattern::new(pattern).context("invalid source glob pattern")?;
         }
@@ -260,13 +261,15 @@ impl RagApp {
         let mut output = String::from("# Knowledge sources\n\n");
         for source in sources {
             let model_id = embed::canonical_model_id(&self.config.embeddings.model)?;
-            let (embedded, total): (i64, i64) = self.knowledge.conn().query_row(
-                "SELECT COUNT(CASE WHEN e.model_id = ?1 THEN e.chunk_rowid END), COUNT(m.chunk_rowid)
+            let (embedded, stale, total): (i64, i64, i64) = self.knowledge.conn().query_row(
+                "SELECT COUNT(DISTINCT CASE WHEN e.model_id = ?1 THEN m.chunk_rowid END),
+                        COUNT(DISTINCT CASE WHEN e.model_id IS NOT NULL AND e.model_id != ?1 THEN m.chunk_rowid END),
+                        COUNT(DISTINCT m.chunk_rowid)
                  FROM knowledge_chunk_meta m
                  LEFT JOIN knowledge_embeddings e ON e.chunk_rowid = m.chunk_rowid
                  WHERE m.source_id = ?2",
                 params![model_id, source.id],
-                |row| Ok((row.get(0)?, row.get(1)?)),
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
             )?;
             output.push_str(&format!(
                 "- **{}** — {} files, {} chunks, {}/{} embedded; added {}; last sync: {}\n  Path: `{}`\n",
@@ -279,6 +282,12 @@ impl RagApp {
                 source.last_sync.as_deref().unwrap_or("never"),
                 source.path
             ));
+            if stale > 0 {
+                output.push_str(&format!(
+                    "  Warning: {stale} chunks have vectors from another model and are not searchable semantically; run `bpx-rag embed --label {}`\n",
+                    source.label
+                ));
+            }
         }
         output.push_str(&format!(
             "\nEmbedding model: `{}` ({})\n",

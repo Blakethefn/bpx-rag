@@ -148,7 +148,7 @@ impl KnowledgeStore {
                 .conn
                 .prepare("SELECT chunk_rowid FROM knowledge_chunk_meta WHERE source_id = ?1")?;
             let rows = stmt.query_map(rusqlite::params![source_id], |row| row.get(0))?;
-            rows.filter_map(|r| r.ok()).collect()
+            rows.collect::<rusqlite::Result<Vec<_>>>()?
         };
 
         let chunks_removed = chunk_rowids.len() as i64;
@@ -200,8 +200,7 @@ impl KnowledgeStore {
         ))?;
         let sources: Vec<KnowledgeSourceInfo> = stmt
             .query_map([], row_to_source)?
-            .filter_map(|r| r.ok())
-            .collect();
+            .collect::<rusqlite::Result<Vec<_>>>()?;
         Ok(sources)
     }
 

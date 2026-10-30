@@ -58,8 +58,37 @@ pub fn knowledge_search(
     weights: &SearchWeights,
     snippet_bytes: usize,
 ) -> Result<Vec<KnowledgeSearchResult>> {
+    Ok(knowledge_search_report(
+        store,
+        query,
+        filter,
+        source_label,
+        limit,
+        weights,
+        snippet_bytes,
+    )?
+    .results)
+}
+
+/// Ranked results plus notices about layers that degraded during the search.
+#[derive(Debug, Default)]
+pub struct SearchReport {
+    pub results: Vec<KnowledgeSearchResult>,
+    pub warnings: Vec<String>,
+}
+
+/// Like [`knowledge_search`], but also reports layers that were skipped.
+pub fn knowledge_search_report(
+    store: &KnowledgeStore,
+    query: &str,
+    filter: Option<&str>,
+    source_label: Option<&str>,
+    limit: u32,
+    weights: &SearchWeights,
+    snippet_bytes: usize,
+) -> Result<SearchReport> {
     if limit == 0 {
-        return Ok(Vec::new());
+        return Ok(SearchReport::default());
     }
     if limit > MAX_CANDIDATE_CHUNKS {
         anyhow::bail!("knowledge search limit cannot exceed {MAX_CANDIDATE_CHUNKS}");
@@ -104,6 +133,8 @@ pub fn knowledge_search(
         }
     }
 
+    let mut warnings = Vec::new();
+
     // Layer 4: Vector similarity
     if weights.vector_weight > 0.0 {
         if let Some(emb) = store.embedder() {
@@ -131,11 +162,9 @@ pub fn knowledge_search(
                     )?;
                     merge_results(&mut all_results, &vector, weights.vector_weight, "vector");
                 }
-                Err(e) => {
-                    eprintln!(
-                        "[bpx-rag] knowledge query embedding failed, skipping vector layer: {e}"
-                    );
-                }
+                Err(error) => warnings.push(format!(
+                    "query embedding failed, so vector search was skipped: {error}"
+                )),
             }
         }
     }
@@ -151,7 +180,10 @@ pub fn knowledge_search(
             .partial_cmp(&a.score)
             .unwrap_or(std::cmp::Ordering::Equal)
     });
-    Ok(diversify_by_file(results, limit as usize))
+    Ok(SearchReport {
+        results: diversify_by_file(results, limit as usize),
+        warnings,
+    })
 }
 
 const MAX_CANDIDATE_CHUNKS: u32 = 1_000;

@@ -86,7 +86,8 @@ pub(super) fn knowledge_vector_search(
                 row.get::<_, String>(10)?,
             ))
         })?
-        .filter_map(|r| r.ok())
+        .collect::<rusqlite::Result<Vec<_>>>()?
+        .into_iter()
         .map(
             |(blob, rowid, file_id, source_id, title, content, ls, le, meta, source, path)| {
                 let embedding = embed::bytes_to_embedding(&blob);
