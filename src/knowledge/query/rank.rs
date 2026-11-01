@@ -106,6 +106,7 @@ pub(super) fn merge_results(
                     "bm25" => sr.why.layers.bm25 += rrf_score,
                     "trigram" => sr.why.layers.trigram += rrf_score,
                     "fuzzy" => sr.why.layers.fuzzy += rrf_score,
+                    "identifier" => sr.why.layers.identifier += rrf_score,
                     "vector" => sr.why.layers.vector += rrf_score,
                     _ => {}
                 }
@@ -127,6 +128,7 @@ pub(super) fn merge_results(
                         "bm25" => why.layers.bm25 = rrf_score,
                         "trigram" => why.layers.trigram = rrf_score,
                         "fuzzy" => why.layers.fuzzy = rrf_score,
+                        "identifier" => why.layers.identifier = rrf_score,
                         "vector" => why.layers.vector = rrf_score,
                         _ => {}
                     }

@@ -160,6 +160,17 @@ pub(crate) fn search_with_pool(
                 knowledge_fuzzy_search(store, query, candidate_limit, &meta_where, &meta_params)?;
             merge_results(&mut all_results, &fuzzy, weights.keyword_weight, "fuzzy");
         }
+
+        // Identifier words. This runs after fuzzy, so the fuzzy gate sees the same
+        // pool it saw before this layer existed.
+        let identifiers =
+            knowledge_identifier_search(conn, query, candidate_limit, &meta_where, &meta_params)?;
+        merge_results(
+            &mut all_results,
+            &identifiers,
+            weights.keyword_weight,
+            "identifier",
+        );
     }
 
     let mut warnings = Vec::new();

@@ -66,6 +66,11 @@ fn ensure_schema(conn: &Connection) -> Result<()> {
             tokenize = 'trigram'
         );
 
+        CREATE VIRTUAL TABLE IF NOT EXISTS knowledge_identifiers USING fts5(
+            words,
+            tokenize = 'porter unicode61'
+        );
+
         CREATE TABLE IF NOT EXISTS knowledge_chunk_meta (
             chunk_rowid INTEGER PRIMARY KEY,
             file_id     INTEGER NOT NULL REFERENCES knowledge_files(id) ON DELETE CASCADE,

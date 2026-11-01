@@ -7,6 +7,7 @@
 pub mod ann;
 pub mod enrichment;
 pub mod filter;
+pub(crate) mod identifiers;
 pub mod links;
 pub mod query;
 pub mod schema;
@@ -174,6 +175,10 @@ impl KnowledgeStore {
             )?;
             self.conn.execute(
                 "DELETE FROM knowledge_chunks_trigram WHERE rowid = ?1",
+                rusqlite::params![rowid],
+            )?;
+            self.conn.execute(
+                "DELETE FROM knowledge_identifiers WHERE rowid = ?1",
                 rusqlite::params![rowid],
             )?;
             self.conn.execute(

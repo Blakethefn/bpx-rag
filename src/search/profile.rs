@@ -144,6 +144,7 @@ pub struct LayerScores {
     pub bm25: f64,
     pub trigram: f64,
     pub fuzzy: f64,
+    pub identifier: f64,
     pub vector: f64,
     pub proximity: f64,
     pub knowledge_bias: f64,
@@ -161,6 +162,9 @@ impl LayerScores {
         }
         if self.fuzzy > 0.0 {
             layers.push("fuzzy");
+        }
+        if self.identifier > 0.0 {
+            layers.push("identifier");
         }
         if self.vector > 0.0 {
             layers.push("vector");
@@ -218,6 +222,9 @@ impl SearchWhy {
         }
         if self.layers.fuzzy > 0.0 {
             parts.push(format!("fuzzy={:.4}", self.layers.fuzzy));
+        }
+        if self.layers.identifier > 0.0 {
+            parts.push(format!("identifier={:.4}", self.layers.identifier));
         }
         if self.layers.vector > 0.0 {
             parts.push(format!("vector={:.4}", self.layers.vector));

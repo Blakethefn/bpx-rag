@@ -1,5 +1,6 @@
 use super::*;
 use crate::embed::{embedding_to_bytes, normalize_embedding};
+use crate::knowledge::identifiers::identifier_words;
 use anyhow::{Context, Result};
 use rusqlite::params;
 use std::collections::HashMap;
@@ -54,6 +55,15 @@ pub(super) fn index_prepared_file(
         conn.execute(
             "INSERT INTO knowledge_chunks_trigram(rowid, title, content) VALUES (?1, ?2, ?3)",
             params![rowid, chunk.title, chunk.content],
+        )?;
+
+        // Identifier words, keyed by the same rowid. The content row above is unchanged.
+        conn.execute(
+            "INSERT INTO knowledge_identifiers(rowid, words) VALUES (?1, ?2)",
+            params![
+                rowid,
+                identifier_words(&format!("{} {}", chunk.title, chunk.content))
+            ],
         )?;
 
         // Chunk metadata
@@ -115,6 +125,10 @@ pub(super) fn delete_file_chunks(conn: &rusqlite::Connection, file_id: i64) -> R
         )?;
         conn.execute(
             "DELETE FROM knowledge_chunks_trigram WHERE rowid = ?1",
+            params![rowid],
+        )?;
+        conn.execute(
+            "DELETE FROM knowledge_identifiers WHERE rowid = ?1",
             params![rowid],
         )?;
     }

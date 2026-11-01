@@ -917,3 +917,71 @@ fn wikilink_resolution_reports_malformed_chunk_metadata() {
         "malformed metadata must not drop wikilinks silently"
     );
 }
+
+// ── identifier index migration ───────────────────────────────────────────
+
+/// Chunker versions written before identifier splitting. Hard-coded so the
+/// test describes an old index, not the current constants.
+const PREVIOUS_TREE_SITTER_CHUNKER_VERSION: i64 = 2;
+const PREVIOUS_PLAIN_CHUNKER_VERSION: i64 = 1;
+
+#[test]
+fn sync_reindexes_files_written_by_the_previous_chunker_version() {
+    let store = make_store();
+    let dir = tempdir().unwrap();
+    fs::write(
+        dir.path().join("users.ts"),
+        "export function getUserById(id) { return id; }\n",
+    )
+    .unwrap();
+    fs::write(
+        dir.path().join("notes.md"),
+        "# Notes\nblue-green-deploy plan\n",
+    )
+    .unwrap();
+    let source = register_source(&store, dir.path());
+    sync_source(&store, &source, None).unwrap();
+
+    // Make the index look like one built before identifier splitting.
+    store
+        .conn()
+        .execute(
+            "UPDATE knowledge_files SET chunker_version = ?1 WHERE rel_path = 'users.ts'",
+            params![PREVIOUS_TREE_SITTER_CHUNKER_VERSION],
+        )
+        .unwrap();
+    store
+        .conn()
+        .execute(
+            "UPDATE knowledge_files SET chunker_version = ?1 WHERE rel_path = 'notes.md'",
+            params![PREVIOUS_PLAIN_CHUNKER_VERSION],
+        )
+        .unwrap();
+    store
+        .conn()
+        .execute("DELETE FROM knowledge_identifiers", [])
+        .unwrap();
+
+    let result = sync_source(&store, &source, None).unwrap();
+
+    assert_eq!(result.files_updated, 2, "old files must be reindexed");
+    let stored_version: i64 = store
+        .conn()
+        .query_row(
+            "SELECT chunker_version FROM knowledge_files WHERE rel_path = 'users.ts'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(
+        stored_version,
+        chunker_version_for_path(&dir.path().join("users.ts"))
+    );
+    let identifier_rows: i64 = store
+        .conn()
+        .query_row("SELECT COUNT(*) FROM knowledge_identifiers", [], |row| {
+            row.get(0)
+        })
+        .unwrap();
+    assert!(identifier_rows > 0, "reindex must write identifier rows");
+}
