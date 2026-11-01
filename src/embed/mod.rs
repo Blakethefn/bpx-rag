@@ -100,7 +100,10 @@ impl Embedder {
             EmbeddingDevice::Cuda => {
                 #[cfg(feature = "gpu-cuda")]
                 {
+                    // Heuristic cuDNN kernel choice reduces run-to-run variation in embeddings; the
+                    // default exhaustive search benchmarks kernels per run and can flip near-ties.
                     options.with_execution_providers(vec![ort::ep::CUDA::default()
+                        .with_conv_algorithm_search(ort::ep::cuda::ConvAlgorithmSearch::Default)
                         .build()
                         .error_on_failure()])
                 }
