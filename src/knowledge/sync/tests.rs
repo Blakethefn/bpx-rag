@@ -1,4 +1,5 @@
 use super::*;
+use std::collections::HashMap;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use tempfile::tempdir;
@@ -130,6 +131,30 @@ fn sync_new_source_indexes_all_files() {
     assert_eq!(result.files_removed, 0);
     assert!(result.chunks_total > 0, "should produce chunks");
     assert_eq!(file_count_for_source(&store, source.id), 5);
+}
+
+#[test]
+fn sync_assigns_file_ids_in_path_order() {
+    // Rowids break ties in search results, so insert order must not depend on
+    // the directory walk or on hash-map iteration.
+    let store = make_store();
+    let dir = tempdir().unwrap();
+    for name in ["zeta.md", "alpha.md", "mid.md", "beta.md"] {
+        fs::write(dir.path().join(name), format!("content of {name}")).unwrap();
+    }
+    let source = register_source(&store, dir.path());
+    sync_source(&store, &source, None).unwrap();
+
+    let mut stmt = store
+        .conn()
+        .prepare("SELECT rel_path FROM knowledge_files WHERE source_id = ?1 ORDER BY id")
+        .unwrap();
+    let ordered: Vec<String> = stmt
+        .query_map(params![source.id], |row| row.get(0))
+        .unwrap()
+        .collect::<rusqlite::Result<_>>()
+        .unwrap();
+    assert_eq!(ordered, ["alpha.md", "beta.md", "mid.md", "zeta.md"]);
 }
 
 #[test]

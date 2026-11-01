@@ -8,7 +8,7 @@ use crate::knowledge::{scope, KnowledgeSourceInfo, KnowledgeStore};
 use anyhow::{Context, Result};
 use ignore::WalkBuilder;
 use rusqlite::params;
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::Instant;
@@ -333,12 +333,14 @@ pub fn sync_source(
 pub(crate) fn walk_source_dir(
     base_path: &Path,
     patterns: &[String],
-) -> Result<HashMap<String, PathBuf>> {
+) -> Result<BTreeMap<String, PathBuf>> {
     Ok(walk_source_dir_with_report(base_path, patterns)?.files)
 }
 
+/// Files keyed by relative path. A `BTreeMap` keeps sync order (and so chunk
+/// and file rowids, which tie-break search results) the same across runs.
 pub(crate) struct SourceWalkReport {
-    pub files: HashMap<String, PathBuf>,
+    pub files: BTreeMap<String, PathBuf>,
     pub sensitive_files_skipped: usize,
 }
 
@@ -370,7 +372,7 @@ pub(crate) fn walk_source_dir_with_report(
         builder.overrides(overrides);
     }
 
-    let mut files = HashMap::new();
+    let mut files = BTreeMap::new();
     let mut sensitive_files_skipped = 0;
 
     for entry in builder.build() {

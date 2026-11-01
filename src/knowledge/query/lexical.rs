@@ -184,7 +184,7 @@ pub(super) fn knowledge_fuzzy_search(
 /// Extract terms from the knowledge FTS5 vocab for fuzzy matching.
 pub(super) fn extract_knowledge_terms(conn: &Connection, limit: usize) -> Result<Vec<String>> {
     let result = conn
-        .prepare("SELECT DISTINCT term FROM knowledge_chunks_vocab WHERE col = 'content' LIMIT ?1");
+        .prepare("SELECT DISTINCT term FROM knowledge_chunks_vocab WHERE col = 'content' ORDER BY term LIMIT ?1");
 
     match result {
         Ok(mut stmt) => {
@@ -203,7 +203,7 @@ pub(super) fn extract_knowledge_terms(conn: &Connection, limit: usize) -> Result
                  USING fts5vocab(knowledge_chunks, instance);",
             );
             let mut stmt = conn.prepare(
-                "SELECT DISTINCT term FROM knowledge_chunks_vocab WHERE col = 'content' LIMIT ?1",
+                "SELECT DISTINCT term FROM knowledge_chunks_vocab WHERE col = 'content' ORDER BY term LIMIT ?1",
             )?;
             let terms = stmt
                 .query_map(rusqlite::params![limit as i64], |row| {
