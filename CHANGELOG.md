@@ -24,6 +24,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Status no longer double counts chunks that have vectors from more than one model.
 - The store directory is created owner-only, and the database file is restricted to its owner on Unix.
 - The CUDA wrapper no longer carries machine-specific paths. Those move to the untracked `scripts/bpx-rag-cuda.env`.
+- Sync inserts files in path order, so chunk and file rowids no longer depend on hash-map order. Rowids break ties in search, so repeated syncs of the same tree now rank the same way.
+- Fuzzy matching reads vocabulary terms in sorted order. Before, the term sample depended on SQLite's scan order, so corrections could change between runs.
 
 ### Removed
 
