@@ -94,8 +94,34 @@ pub fn knowledge_search_report(
         anyhow::bail!("knowledge search limit cannot exceed {MAX_CANDIDATE_CHUNKS}");
     }
 
+    search_with_pool(
+        store,
+        query,
+        filter,
+        source_label,
+        limit,
+        expanded_candidate_limit(limit),
+        weights,
+        snippet_bytes,
+    )
+}
+
+/// Run the layered search with an explicit chunk candidate pool.
+///
+/// The pool size gates the lexical layers, so the requested output `limit`
+/// must not change it. Callers that want a deeper ranking than the default
+/// use the same pool as a shallower search, which keeps the top ranks equal.
+pub(crate) fn search_with_pool(
+    store: &KnowledgeStore,
+    query: &str,
+    filter: Option<&str>,
+    source_label: Option<&str>,
+    limit: u32,
+    candidate_limit: u32,
+    weights: &SearchWeights,
+    snippet_bytes: usize,
+) -> Result<SearchReport> {
     let conn = store.conn();
-    let candidate_limit = expanded_candidate_limit(limit);
 
     // Parse metadata filters
     let mut predicates = parse_filter(filter)?;
@@ -169,17 +195,19 @@ pub fn knowledge_search_report(
         }
     }
 
-    // Collect and sort by RRF score
-    let mut results: Vec<KnowledgeSearchResult> = all_results
-        .into_values()
-        .map(|sr| sr.into_knowledge_result(snippet_bytes))
-        .collect();
-
-    results.sort_by(|a, b| {
-        b.score
-            .partial_cmp(&a.score)
+    // Sort by RRF score, then by chunk rowid, so ties do not depend on hash order.
+    let mut entries: Vec<(i64, ScoredResult)> = all_results.into_iter().collect();
+    entries.sort_by(|(left_id, left), (right_id, right)| {
+        right
+            .rrf_score
+            .partial_cmp(&left.rrf_score)
             .unwrap_or(std::cmp::Ordering::Equal)
+            .then(left_id.cmp(right_id))
     });
+    let results: Vec<KnowledgeSearchResult> = entries
+        .into_iter()
+        .map(|(_, sr)| sr.into_knowledge_result(snippet_bytes))
+        .collect();
     Ok(SearchReport {
         results: diversify_by_file(results, limit as usize),
         warnings,
@@ -190,7 +218,7 @@ const MAX_CANDIDATE_CHUNKS: u32 = 1_000;
 
 pub const CANDIDATE_OVERSAMPLE_FACTOR: u32 = 5;
 
-fn expanded_candidate_limit(limit: u32) -> u32 {
+pub(crate) fn expanded_candidate_limit(limit: u32) -> u32 {
     limit
         .saturating_mul(CANDIDATE_OVERSAMPLE_FACTOR)
         .min(MAX_CANDIDATE_CHUNKS)

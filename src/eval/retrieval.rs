@@ -267,6 +267,25 @@ pub fn run_retrieval_evaluation(
                 .push(&metrics);
             None
         };
+        // Same candidate pool as the TOP_K search, so the top ranks match it.
+        let deep_results = knowledge::query::search_with_pool(
+            &store,
+            &query.text,
+            query.filter.as_deref(),
+            Some("retrieval-eval"),
+            DIAGNOSTIC_DEPTH as u32,
+            knowledge::query::expanded_candidate_limit(TOP_K as u32),
+            &hybrid_weights,
+            1024,
+        )?
+        .results;
+        let deep_paths = unique_paths(
+            &deep_results
+                .iter()
+                .map(|result| result.file_path.clone())
+                .collect::<Vec<_>>(),
+            DIAGNOSTIC_DEPTH,
+        );
         let is_answerable = query.answerability == QueryAnswerability::Answerable;
         cases.push(EvalCaseReport {
             query_id: query.query_id.clone(),
@@ -294,6 +313,7 @@ pub fn run_retrieval_evaluation(
                     .collect::<Vec<_>>(),
                 TOP_K,
             ),
+            deep_paths,
         });
 
         if let Some(expected_language) = &query.expected_language {

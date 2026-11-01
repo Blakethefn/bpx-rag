@@ -104,6 +104,8 @@ pub struct EvalCaseReport {
     pub top_paths: Vec<String>,
     pub lexical_top_paths: Vec<String>,
     pub vector_top_paths: Vec<String>,
+    /// Hybrid ranking to a deeper cutoff, for diagnosing relation-neighbor selection.
+    pub deep_paths: Vec<String>,
 }
 
 #[derive(Debug, Default, Clone, Serialize)]
