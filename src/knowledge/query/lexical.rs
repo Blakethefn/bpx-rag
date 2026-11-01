@@ -134,61 +134,6 @@ pub(super) fn knowledge_trigram_search(
     Ok(results)
 }
 
-/// Levenshtein fuzzy search: correct query terms against knowledge index vocab.
-pub(super) fn knowledge_fuzzy_search(
-    conn: &Connection,
-    query: &str,
-    limit: u32,
-    meta_where: &str,
-    meta_params: &[String],
-) -> Result<Vec<RankedResult>> {
-    let terms = extract_knowledge_terms(conn, 500)?;
-    let query_words: Vec<&str> = query.split_whitespace().collect();
-
-    let mut corrected_words = Vec::new();
-    for word in &query_words {
-        let word_lower = word.to_lowercase();
-        let mut best_match = word.to_string();
-        let mut best_distance = 3usize;
-
-        for term in &terms {
-            let dist = strsim::levenshtein(&word_lower, term);
-            if dist < best_distance && dist <= 2 {
-                best_distance = dist;
-                best_match = term.clone();
-            }
-        }
-        corrected_words.push(best_match);
-    }
-
-    let corrected_query = corrected_words.join(" ");
-    if corrected_query == query {
-        return Ok(Vec::new());
-    }
-
-    knowledge_bm25_search(conn, &corrected_query, limit, meta_where, meta_params)
-}
-
-/// Extract terms from the knowledge FTS5 vocab for fuzzy matching.
-///
-/// The vocab table is created on first use for databases that predate it.
-/// Creation and query errors are returned, not treated as a missing table.
-pub(super) fn extract_knowledge_terms(conn: &Connection, limit: usize) -> Result<Vec<String>> {
-    conn.execute_batch(
-        "CREATE VIRTUAL TABLE IF NOT EXISTS knowledge_chunks_vocab \
-         USING fts5vocab(knowledge_chunks, instance);",
-    )?;
-    let mut stmt = conn.prepare(
-        "SELECT DISTINCT term FROM knowledge_chunks_vocab WHERE col = 'content' ORDER BY term LIMIT ?1",
-    )?;
-    let terms = stmt
-        .query_map(rusqlite::params![limit as i64], |row| {
-            row.get::<_, String>(0)
-        })?
-        .collect::<rusqlite::Result<Vec<_>>>()?;
-    Ok(terms)
-}
-
 /// Build an FTS5 MATCH expression: the whole query as a phrase, OR'd with each term.
 pub(super) fn sanitize_fts_query(query: &str) -> String {
     let cleaned = sanitize_fts_terms(query);

@@ -1029,7 +1029,357 @@ fn fuzzy_term_extraction_recreates_missing_vocab_table() {
         .execute_batch("DROP TABLE IF EXISTS knowledge_chunks_vocab")
         .unwrap();
 
-    let terms = extract_knowledge_terms(store.conn(), 500).expect("vocab table is recreated");
+    let terms = extract_knowledge_terms(store.conn()).expect("vocab table is recreated");
 
     assert!(terms.iter().any(|term| term == "whale"));
+}
+
+// ── fuzzy correction ─────────────────────────────────────────────────────
+
+/// Filler word `index`: six consonants chosen from eight. Consonant-only words
+/// have no Porter suffix or vowel to strip, so each one stays distinct after
+/// stemming and the vocabulary count is exact. Every filler sorts after
+/// "aardvark" and before "zookeep". The test misspellings share too few letters
+/// with a filler to fall within the edit distance.
+fn filler_word(index: usize) -> String {
+    const FILLER_LETTERS: &[u8; 8] = b"bcdfghjk";
+    (0..6)
+        .rev()
+        .map(|place| char::from(FILLER_LETTERS[(index >> (3 * place)) & 7]))
+        .collect()
+}
+
+/// Insert filler vocabulary. The FTS rows have no chunk metadata, so they
+/// add terms without adding search results.
+fn seed_filler_vocabulary(store: &KnowledgeStore, filler_count: usize) {
+    let fillers: Vec<String> = (0..filler_count).map(filler_word).collect();
+    for batch in fillers.chunks(500) {
+        store
+            .conn()
+            .execute(
+                "INSERT INTO knowledge_chunks (title, content) VALUES ('', ?1)",
+                params![batch.join(" ")],
+            )
+            .unwrap();
+    }
+}
+
+/// Number of distinct terms in the content vocabulary that fuzzy matching reads.
+fn content_vocab_size(store: &KnowledgeStore) -> i64 {
+    let conn = store.conn();
+    conn.execute_batch(
+        "CREATE VIRTUAL TABLE IF NOT EXISTS knowledge_chunks_vocab \
+         USING fts5vocab(knowledge_chunks, instance);",
+    )
+    .unwrap();
+    conn.query_row(
+        "SELECT COUNT(DISTINCT term) FROM knowledge_chunks_vocab WHERE col = 'content'",
+        [],
+        |row| row.get(0),
+    )
+    .unwrap()
+}
+
+/// Rowid and path of each result from the fuzzy layer alone, in result order.
+fn fuzzy_hits(store: &KnowledgeStore, query: &str) -> Vec<(i64, String)> {
+    knowledge_fuzzy_search(store, query, 10, "", &[])
+        .unwrap()
+        .into_iter()
+        .map(|result| (result.rowid, result.file_path))
+        .collect()
+}
+
+/// Rowid and path of each result from BM25 on `query` as written.
+fn bm25_hits(store: &KnowledgeStore, query: &str) -> Vec<(i64, String)> {
+    knowledge_bm25_search(store.conn(), query, 10, "", &[])
+        .unwrap()
+        .into_iter()
+        .map(|result| (result.rowid, result.file_path))
+        .collect()
+}
+
+#[test]
+fn fuzzy_corrects_misspelling_when_vocabulary_has_fewer_than_500_terms() {
+    let store = make_store();
+    let apple = seed_chunk(
+        &store,
+        "repo",
+        "/repo",
+        "fruit.md",
+        "Fruit",
+        "ripe apple",
+        "{}",
+    );
+
+    assert_eq!(
+        fuzzy_hits(&store, "aple"),
+        vec![(apple, "fruit.md".to_string())]
+    );
+}
+
+#[test]
+fn fuzzy_corrects_misspelling_of_term_that_sorts_first_in_vocabulary_above_500_terms() {
+    let store = make_store();
+    seed_filler_vocabulary(&store, 600);
+    let aardvark = seed_chunk(
+        &store,
+        "repo",
+        "/repo",
+        "animals.md",
+        "Animals",
+        "aardvark",
+        "{}",
+    );
+
+    assert_eq!(
+        fuzzy_hits(&store, "aardvrk"),
+        vec![(aardvark, "animals.md".to_string())]
+    );
+}
+
+#[test]
+fn fuzzy_corrects_misspelling_of_late_alphabet_term_in_vocabulary_above_500_terms() {
+    let store = make_store();
+    seed_filler_vocabulary(&store, 600);
+    let zoo = seed_chunk(&store, "repo", "/repo", "zoo.md", "Zoo", "zookeeper", "{}");
+
+    assert_eq!(
+        fuzzy_hits(&store, "zookeepr"),
+        vec![(zoo, "zoo.md".to_string())]
+    );
+}
+
+#[test]
+fn fuzzy_correction_is_the_same_at_499_500_501_and_5000_terms() {
+    for vocab_size in [499, 500, 501, 5000] {
+        let store = make_store();
+        seed_filler_vocabulary(&store, vocab_size - 1);
+        let zoo = seed_chunk(&store, "repo", "/repo", "zoo.md", "Zoo", "zookeeper", "{}");
+
+        assert_eq!(
+            content_vocab_size(&store),
+            vocab_size as i64,
+            "vocabulary size for case {vocab_size}"
+        );
+        assert_eq!(
+            fuzzy_hits(&store, "zookeepr"),
+            vec![(zoo, "zoo.md".to_string())],
+            "misspelling must be corrected at vocabulary size {vocab_size}"
+        );
+    }
+}
+
+#[test]
+fn fuzzy_leaves_exact_match_words_unchanged() {
+    let store = make_store();
+    seed_chunk(&store, "repo", "/repo", "cat.md", "Cat", "cat", "{}");
+    seed_chunk(&store, "repo", "/repo", "cot.md", "Cot", "cot", "{}");
+
+    assert!(
+        fuzzy_hits(&store, "cat").is_empty(),
+        "an exact match must not be rewritten to a neighbour"
+    );
+    assert!(
+        fuzzy_hits(&store, "Cat").is_empty(),
+        "a case-only difference from an indexed term is an exact match"
+    );
+}
+
+#[test]
+fn fuzzy_leaves_words_without_a_candidate_within_distance_two_unchanged() {
+    let store = make_store();
+    seed_chunk(&store, "repo", "/repo", "zoo.md", "Zoo", "zookeeper", "{}");
+
+    assert!(fuzzy_hits(&store, "qwzxv").is_empty());
+    // "zkeepr" is distance 3 from "zookeep", so it is not corrected.
+    assert!(fuzzy_hits(&store, "zkeepr").is_empty());
+    // Only the typo is corrected. The unknown word stays as written.
+    assert_eq!(
+        fuzzy_hits(&store, "zookeepr qwzxv"),
+        bm25_hits(&store, "zookeep qwzxv")
+    );
+}
+
+#[test]
+fn fuzzy_corrects_within_distance_two() {
+    let store = make_store();
+    let zoo = seed_chunk(&store, "repo", "/repo", "zoo.md", "Zoo", "zookeeper", "{}");
+
+    // "zokeepr" needs one insertion and one deletion to reach "zookeep".
+    assert_eq!(
+        fuzzy_hits(&store, "zokeepr"),
+        vec![(zoo, "zoo.md".to_string())]
+    );
+}
+
+/// Wrap a connection the way `open_in_memory` does, for tests that need two
+/// connections to one file.
+fn store_over(conn: rusqlite::Connection) -> KnowledgeStore {
+    KnowledgeStore {
+        conn,
+        embedder: None,
+        vector_index_dir: None,
+        vector_index: None,
+        vector_index_state: None,
+        fuzzy_cache: Default::default(),
+    }
+}
+
+#[test]
+fn fuzzy_correction_sees_terms_added_after_an_earlier_search() {
+    let store = make_store();
+    seed_chunk(&store, "repo", "/repo", "zoo.md", "Zoo", "zookeeper", "{}");
+    assert!(fuzzy_hits(&store, "quokkaa").is_empty());
+
+    let quokka = seed_chunk(
+        &store,
+        "repo",
+        "/repo",
+        "animals.md",
+        "Animals",
+        "quokka",
+        "{}",
+    );
+
+    assert_eq!(
+        fuzzy_hits(&store, "quokkaa"),
+        vec![(quokka, "animals.md".to_string())]
+    );
+}
+
+#[test]
+fn fuzzy_correction_forgets_terms_removed_after_an_earlier_search() {
+    let store = make_store();
+    let quokka = seed_chunk(
+        &store,
+        "repo",
+        "/repo",
+        "animals.md",
+        "Animals",
+        "quokka",
+        "{}",
+    );
+    assert_eq!(
+        fuzzy_hits(&store, "quokkaa"),
+        vec![(quokka, "animals.md".to_string())]
+    );
+
+    store
+        .conn()
+        .execute(
+            "DELETE FROM knowledge_chunks WHERE rowid = ?1",
+            params![quokka],
+        )
+        .unwrap();
+
+    assert!(fuzzy_hits(&store, "quokkaa").is_empty());
+}
+
+#[test]
+fn fuzzy_correction_sees_terms_written_by_another_connection() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("knowledge.db");
+    let reader = store_over(crate::db::open_db(&path).unwrap());
+    crate::knowledge::schema::apply_schema(reader.conn()).unwrap();
+    seed_chunk(&reader, "repo", "/repo", "zoo.md", "Zoo", "zookeeper", "{}");
+    assert!(fuzzy_hits(&reader, "quokkaa").is_empty());
+
+    let writer = store_over(crate::db::open_db(&path).unwrap());
+    let quokka = seed_chunk(
+        &writer,
+        "repo",
+        "/repo",
+        "animals.md",
+        "Animals",
+        "quokka",
+        "{}",
+    );
+
+    assert_eq!(
+        fuzzy_hits(&reader, "quokkaa"),
+        vec![(quokka, "animals.md".to_string())]
+    );
+}
+
+#[test]
+fn fuzzy_repeated_runs_return_identical_corrections_for_tied_candidates() {
+    let store = make_store();
+    let bag = seed_chunk(&store, "repo", "/repo", "bag.md", "Bag", "bag", "{}");
+    seed_chunk(&store, "repo", "/repo", "bar.md", "Bar", "bar", "{}");
+
+    // "bag" and "bar" are both distance 1 from "bat". The smaller term wins.
+    let first = fuzzy_hits(&store, "bat");
+    assert_eq!(first, vec![(bag, "bag.md".to_string())]);
+    for _ in 0..20 {
+        assert_eq!(fuzzy_hits(&store, "bat"), first);
+    }
+}
+
+#[test]
+fn fuzzy_results_respect_source_and_metadata_filters() {
+    let store = make_store();
+    seed_chunk(
+        &store,
+        "repo",
+        "/repo",
+        "a.md",
+        "A",
+        "zookeeper notes",
+        r#"{"frontmatter":{"type":"task"}}"#,
+    );
+    seed_chunk(
+        &store,
+        "other",
+        "/other",
+        "b.md",
+        "B",
+        "zookeeper notes",
+        r#"{"frontmatter":{"type":"task"}}"#,
+    );
+    seed_chunk(
+        &store,
+        "repo",
+        "/repo",
+        "c.md",
+        "C",
+        "zookeeper notes",
+        r#"{"frontmatter":{"type":"note"}}"#,
+    );
+    let weights = SearchWeights {
+        keyword_weight: 1.0,
+        vector_weight: 0.0,
+    };
+    let paths = |results: Vec<KnowledgeSearchResult>| -> Vec<String> {
+        let mut paths: Vec<String> = results.into_iter().map(|r| r.file_path).collect();
+        paths.sort();
+        paths
+    };
+
+    let by_source =
+        knowledge_search(&store, "zookeepr", None, Some("repo"), 10, &weights, 2000).unwrap();
+    assert_eq!(paths(by_source), vec!["a.md", "c.md"]);
+
+    let by_metadata = knowledge_search(
+        &store,
+        "zookeepr",
+        Some("type:task"),
+        None,
+        10,
+        &weights,
+        2000,
+    )
+    .unwrap();
+    assert_eq!(paths(by_metadata), vec!["a.md", "b.md"]);
+
+    let both = knowledge_search(
+        &store,
+        "zookeepr",
+        Some("type:task"),
+        Some("repo"),
+        10,
+        &weights,
+        2000,
+    )
+    .unwrap();
+    assert_eq!(paths(both), vec!["a.md"]);
 }

@@ -7,9 +7,12 @@ use crate::search::profile::SearchWhy;
 use anyhow::Result;
 use std::collections::HashMap;
 
+mod fuzzy;
 mod lexical;
 mod rank;
 mod vector;
+pub(crate) use fuzzy::VocabularyCache;
+use fuzzy::*;
 use lexical::*;
 use rank::*;
 use vector::*;
@@ -154,7 +157,7 @@ pub(crate) fn search_with_pool(
         // Layer 3: Fuzzy (if lexical layers still leave candidate room)
         if all_results.len() < candidate_limit as usize {
             let fuzzy =
-                knowledge_fuzzy_search(conn, query, candidate_limit, &meta_where, &meta_params)?;
+                knowledge_fuzzy_search(store, query, candidate_limit, &meta_where, &meta_params)?;
             merge_results(&mut all_results, &fuzzy, weights.keyword_weight, "fuzzy");
         }
     }
@@ -245,5 +248,7 @@ impl Clone for KnowledgeSearchResult {
 
 // ── Search layers ────────────────────────────────────────────────────────────
 
+#[cfg(test)]
+mod fuzzy_bench;
 #[cfg(test)]
 mod tests;

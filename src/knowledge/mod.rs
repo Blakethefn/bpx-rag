@@ -27,6 +27,7 @@ pub struct KnowledgeStore {
     vector_index_dir: Option<std::path::PathBuf>,
     vector_index: Option<ann::VectorIndex>,
     vector_index_state: Option<VectorIndexState>,
+    fuzzy_cache: query::VocabularyCache,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -110,6 +111,7 @@ impl KnowledgeStore {
             vector_index_dir,
             vector_index: None,
             vector_index_state: None,
+            fuzzy_cache: Default::default(),
         })
     }
 
@@ -354,6 +356,7 @@ pub(crate) fn open_in_memory() -> anyhow::Result<KnowledgeStore> {
         vector_index_dir: None,
         vector_index: None,
         vector_index_state: None,
+        fuzzy_cache: Default::default(),
     })
 }
 

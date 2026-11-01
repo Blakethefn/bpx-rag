@@ -15,6 +15,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Source scope: `add` takes repeatable `--include` and `--exclude` globs. The MCP `bpx_add` tool accepts `include` and `exclude` arrays. The old single `glob` still works as one include.
 - Top search results list the files they link to or are linked from.
 - Source status shows how many chunks still have vectors from another model, and names the `embed` command to fix it.
+- Fuzzy matching keeps the content vocabulary in memory and reloads it after the database changes. The first fuzzy query in each process pays for the load: about 30 ms with 100k indexed terms and about 200 ms with 500k. The loaded vocabulary uses about 100 bytes per term. Each misspelled word is compared with about 200 terms at 100k, instead of 500 terms from a fixed sample.
 
 ### Fixed
 
@@ -27,6 +28,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - The CUDA wrapper no longer carries machine-specific paths. Those move to the untracked `scripts/bpx-rag-cuda.env`.
 - Sync inserts files in path order, so chunk and file rowids no longer depend on hash-map order. Rowids break ties in search, so repeated syncs of the same tree now rank the same way.
 - Fuzzy matching reads vocabulary terms in sorted order. Before, the term sample depended on SQLite's scan order, so corrections could change between runs.
+- Fuzzy matching searches the whole vocabulary. Before, only the first 500 terms in sorted order were candidates, so a misspelled word whose correct term sorted late (for example `zookeepr`) was not corrected once the index held more than 500 terms.
+- Fuzzy matching leaves a query word unchanged when it already matches an indexed term, including when the only difference is case. Before, `Cat` was rewritten to `cat`, which added duplicate fuzzy hits.
 
 ### Removed
 
