@@ -79,8 +79,8 @@ pub(super) fn knowledge_vector_search(
                 row.get::<_, i64>(3)?,
                 row.get::<_, String>(4)?,
                 row.get::<_, String>(5)?,
-                row.get::<_, i64>(6).unwrap_or(0) as u32,
-                row.get::<_, i64>(7).unwrap_or(0) as u32,
+                row.get::<_, i64>(6)? as u32,
+                row.get::<_, i64>(7)? as u32,
                 row.get::<_, String>(8)?,
                 row.get::<_, String>(9)?,
                 row.get::<_, String>(10)?,
@@ -90,9 +90,9 @@ pub(super) fn knowledge_vector_search(
         .into_iter()
         .map(
             |(blob, rowid, file_id, source_id, title, content, ls, le, meta, source, path)| {
-                let embedding = embed::bytes_to_embedding(&blob);
+                let embedding = decode_stored_embedding(rowid, &blob, query_embedding.len())?;
                 let similarity = dot_product(query_embedding, &embedding);
-                (
+                Ok((
                     similarity,
                     RankedResult {
                         rowid,
@@ -107,10 +107,10 @@ pub(super) fn knowledge_vector_search(
                         line_end: le,
                         metadata: meta,
                     },
-                )
+                ))
             },
         )
-        .collect();
+        .collect::<Result<Vec<_>>>()?;
 
     scored.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
     scored.truncate(limit as usize);
@@ -126,6 +126,19 @@ pub(super) fn knowledge_vector_search(
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
+
+/// Decode a stored embedding, rejecting a blob that is not `dimensions` f32 values.
+/// A short blob would otherwise be truncated and scored against a partial vector.
+fn decode_stored_embedding(chunk_rowid: i64, blob: &[u8], dimensions: usize) -> Result<Vec<f32>> {
+    if blob.len() != dimensions * 4 {
+        anyhow::bail!(
+            "embedding for chunk {chunk_rowid} is {} bytes; expected {} for {dimensions} dimensions",
+            blob.len(),
+            dimensions * 4
+        );
+    }
+    Ok(embed::bytes_to_embedding(blob))
+}
 
 /// Dot product for cosine similarity (vectors are L2-normalized at index time).
 pub(super) fn dot_product(a: &[f32], b: &[f32]) -> f32 {

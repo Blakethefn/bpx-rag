@@ -825,3 +825,211 @@ fn failed_query_embedding_is_reported_and_lexical_results_still_return() {
     assert!(report.warnings[0].contains("vector search was skipped"));
     assert!(report.warnings[0].contains("synthetic query embedding failure"));
 }
+
+// ── Malformed database rows ──────────────────────────────────────────────
+//
+// A row that cannot be decoded is database corruption. Each retrieval layer
+// must return an error for it, not drop the row or substitute a default.
+
+/// Overwrite a chunk's metadata with bytes that cannot decode as TEXT.
+fn corrupt_metadata_as_blob(store: &KnowledgeStore, chunk_rowid: i64) {
+    store
+        .conn()
+        .execute(
+            "UPDATE knowledge_chunk_meta SET metadata = X'FFFE' WHERE chunk_rowid = ?1",
+            params![chunk_rowid],
+        )
+        .unwrap();
+}
+
+#[test]
+fn bm25_search_errors_on_undecodable_row_instead_of_dropping_it() {
+    let store = make_store();
+    seed_chunk(
+        &store,
+        "repo",
+        "/repo",
+        "src/healthy.md",
+        "Whale A",
+        "whale migration notes",
+        "{}",
+    );
+    let corrupt = seed_chunk(
+        &store,
+        "repo",
+        "/repo",
+        "src/corrupt.md",
+        "Whale B",
+        "whale migration notes",
+        "{}",
+    );
+    corrupt_metadata_as_blob(&store, corrupt);
+
+    let result = knowledge_bm25_search(store.conn(), "whale", 10, "", &[]);
+
+    assert!(result.is_err(), "corrupt row must not be silently dropped");
+}
+
+#[test]
+fn trigram_search_errors_on_undecodable_row_instead_of_dropping_it() {
+    let store = make_store();
+    seed_chunk(
+        &store,
+        "repo",
+        "/repo",
+        "src/healthy.md",
+        "Whale A",
+        "whale migration notes",
+        "{}",
+    );
+    let corrupt = seed_chunk(
+        &store,
+        "repo",
+        "/repo",
+        "src/corrupt.md",
+        "Whale B",
+        "whale migration notes",
+        "{}",
+    );
+    corrupt_metadata_as_blob(&store, corrupt);
+
+    let result = knowledge_trigram_search(store.conn(), "whale", 10, "", &[]);
+
+    assert!(result.is_err(), "corrupt row must not be silently dropped");
+}
+
+#[test]
+fn bm25_search_errors_on_non_integer_line_number_instead_of_zero() {
+    let store = make_store();
+    let rowid = seed_chunk(
+        &store,
+        "repo",
+        "/repo",
+        "src/lines.md",
+        "Whale notes",
+        "whale migration notes",
+        "{}",
+    );
+    store
+        .conn()
+        .execute(
+            "UPDATE knowledge_chunk_meta SET line_start = 'bad' WHERE chunk_rowid = ?1",
+            params![rowid],
+        )
+        .unwrap();
+
+    let result = knowledge_bm25_search(store.conn(), "whale", 10, "", &[]);
+
+    assert!(result.is_err(), "line numbers must not default to 0");
+}
+
+#[test]
+fn vector_search_errors_on_non_integer_line_number_instead_of_zero() {
+    let store = make_store();
+    let rowid = seed_chunk(
+        &store,
+        "repo",
+        "/repo",
+        "src/lines.md",
+        "Whale notes",
+        "whale migration notes",
+        "{}",
+    );
+    store
+        .conn()
+        .execute(
+            "INSERT INTO knowledge_embeddings (chunk_rowid, embedding, dim, model_id)
+             VALUES (?1, ?2, 2, 'test-model')",
+            params![rowid, crate::embed::embedding_to_bytes(&[1.0, 0.0])],
+        )
+        .unwrap();
+    store
+        .conn()
+        .execute(
+            "UPDATE knowledge_chunk_meta SET line_end = 'bad' WHERE chunk_rowid = ?1",
+            params![rowid],
+        )
+        .unwrap();
+
+    let result = knowledge_vector_search(store.conn(), &[1.0, 0.0], 5, "", &[], "test-model", None);
+
+    assert!(result.is_err(), "line numbers must not default to 0");
+}
+
+#[test]
+fn vector_search_rejects_embedding_with_wrong_byte_length() {
+    let store = make_store();
+    let rowid = seed_chunk(
+        &store,
+        "repo",
+        "/repo",
+        "src/short.md",
+        "Whale notes",
+        "whale migration notes",
+        "{}",
+    );
+    // Three bytes is not a whole f32 and does not match the two-dimension query.
+    store
+        .conn()
+        .execute(
+            "INSERT INTO knowledge_embeddings (chunk_rowid, embedding, dim, model_id)
+             VALUES (?1, ?2, 2, 'test-model')",
+            params![rowid, vec![0u8, 0u8, 128u8]],
+        )
+        .unwrap();
+
+    let result = knowledge_vector_search(store.conn(), &[1.0, 0.0], 5, "", &[], "test-model", None);
+
+    assert!(
+        result.is_err(),
+        "a truncated embedding must not score silently"
+    );
+}
+
+#[test]
+fn search_errors_on_invalid_chunk_metadata_instead_of_defaulting_it() {
+    let store = make_store();
+    seed_chunk(
+        &store,
+        "repo",
+        "/repo",
+        "src/bad_meta.md",
+        "Whale notes",
+        "whale migration notes",
+        "{not json",
+    );
+
+    let result = knowledge_search_report(
+        &store,
+        "whale migration",
+        None,
+        None,
+        5,
+        &SearchWeights::default(),
+        1_000,
+    );
+
+    assert!(result.is_err(), "invalid metadata JSON must be reported");
+}
+
+#[test]
+fn fuzzy_term_extraction_recreates_missing_vocab_table() {
+    let store = make_store();
+    seed_chunk(
+        &store,
+        "repo",
+        "/repo",
+        "src/vocab.md",
+        "Whale notes",
+        "whale migration routes",
+        "{}",
+    );
+    store
+        .conn()
+        .execute_batch("DROP TABLE IF EXISTS knowledge_chunks_vocab")
+        .unwrap();
+
+    let terms = extract_knowledge_terms(store.conn(), 500).expect("vocab table is recreated");
+
+    assert!(terms.iter().any(|term| term == "whale"));
+}

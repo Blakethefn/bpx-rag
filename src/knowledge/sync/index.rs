@@ -160,6 +160,19 @@ pub(super) fn resolve_wikilink(target: &str, files: &HashMap<String, i64>) -> Op
     None
 }
 
+/// Wikilink targets stored in a chunk's metadata. A missing key means no links.
+fn wikilink_targets(meta: &serde_json::Value) -> Vec<String> {
+    meta.get("wikilinks")
+        .and_then(serde_json::Value::as_array)
+        .map(|links| {
+            links
+                .iter()
+                .filter_map(|v| v.as_str().map(String::from))
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
 /// Delete all wikilink graph edges for a source, then re-resolve from stored
 /// metadata. Runs inside the sync transaction after all files are indexed.
 ///
@@ -202,22 +215,16 @@ pub(super) fn resolve_wikilinks_for_source(
         let rows = stmt.query_map(params![source_id], |row| {
             Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?))
         })?;
-        rows.collect::<rusqlite::Result<Vec<_>>>()?
-            .into_iter()
-            .filter_map(|(file_id, meta_json)| {
-                let meta: serde_json::Value = serde_json::from_str(&meta_json).ok()?;
-                let links = meta.get("wikilinks")?.as_array()?;
-                let targets: Vec<String> = links
-                    .iter()
-                    .filter_map(|v| v.as_str().map(String::from))
-                    .collect();
-                if targets.is_empty() {
-                    None
-                } else {
-                    Some((file_id, targets))
-                }
-            })
-            .collect()
+        let mut file_wikilinks = Vec::new();
+        for (file_id, meta_json) in rows.collect::<rusqlite::Result<Vec<_>>>()? {
+            let meta: serde_json::Value = serde_json::from_str(&meta_json)
+                .with_context(|| format!("invalid chunk metadata for file {file_id}"))?;
+            let targets = wikilink_targets(&meta);
+            if !targets.is_empty() {
+                file_wikilinks.push((file_id, targets));
+            }
+        }
+        file_wikilinks
     };
 
     // Resolve and insert links

@@ -52,25 +52,28 @@ pub(super) fn knowledge_bm25_search(
     let param_refs: Vec<&dyn rusqlite::types::ToSql> = params.iter().map(|p| p.as_ref()).collect();
     let mut stmt = conn.prepare(&sql)?;
     let results = stmt
-        .query_map(param_refs.as_slice(), |row| {
-            Ok(RankedResult {
-                rowid: row.get(0)?,
-                file_id: row.get(1)?,
-                source_id: row.get(2)?,
-                title: row.get(3)?,
-                content: row.get(4)?,
-                line_start: row.get::<_, i64>(5).unwrap_or(0) as u32,
-                line_end: row.get::<_, i64>(6).unwrap_or(0) as u32,
-                metadata: row.get(7)?,
-                source_label: row.get(8)?,
-                file_path: row.get(9)?,
-                rank: row.get::<_, f64>(10)?.abs(),
-            })
-        })?
-        .filter_map(|r| r.ok())
-        .collect();
+        .query_map(param_refs.as_slice(), ranked_result_from_row)?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
 
     Ok(results)
+}
+
+/// Decode one lexical result row. Any column that fails to decode fails the
+/// whole query, so a corrupt row is reported instead of disappearing.
+fn ranked_result_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<RankedResult> {
+    Ok(RankedResult {
+        rowid: row.get(0)?,
+        file_id: row.get(1)?,
+        source_id: row.get(2)?,
+        title: row.get(3)?,
+        content: row.get(4)?,
+        line_start: row.get::<_, i64>(5)? as u32,
+        line_end: row.get::<_, i64>(6)? as u32,
+        metadata: row.get(7)?,
+        source_label: row.get(8)?,
+        file_path: row.get(9)?,
+        rank: row.get::<_, f64>(10)?.abs(),
+    })
 }
 
 /// Trigram search on knowledge_chunks_trigram FTS5 table.
@@ -125,23 +128,8 @@ pub(super) fn knowledge_trigram_search(
     let param_refs: Vec<&dyn rusqlite::types::ToSql> = params.iter().map(|p| p.as_ref()).collect();
     let mut stmt = conn.prepare(&sql)?;
     let results = stmt
-        .query_map(param_refs.as_slice(), |row| {
-            Ok(RankedResult {
-                rowid: row.get(0)?,
-                file_id: row.get(1)?,
-                source_id: row.get(2)?,
-                title: row.get(3)?,
-                content: row.get(4)?,
-                line_start: row.get::<_, i64>(5).unwrap_or(0) as u32,
-                line_end: row.get::<_, i64>(6).unwrap_or(0) as u32,
-                metadata: row.get(7)?,
-                source_label: row.get(8)?,
-                file_path: row.get(9)?,
-                rank: row.get::<_, f64>(10)?.abs(),
-            })
-        })?
-        .filter_map(|r| r.ok())
-        .collect();
+        .query_map(param_refs.as_slice(), ranked_result_from_row)?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
 
     Ok(results)
 }
@@ -182,41 +170,26 @@ pub(super) fn knowledge_fuzzy_search(
 }
 
 /// Extract terms from the knowledge FTS5 vocab for fuzzy matching.
+///
+/// The vocab table is created on first use for databases that predate it.
+/// Creation and query errors are returned, not treated as a missing table.
 pub(super) fn extract_knowledge_terms(conn: &Connection, limit: usize) -> Result<Vec<String>> {
-    let result = conn
-        .prepare("SELECT DISTINCT term FROM knowledge_chunks_vocab WHERE col = 'content' ORDER BY term LIMIT ?1");
-
-    match result {
-        Ok(mut stmt) => {
-            let terms = stmt
-                .query_map(rusqlite::params![limit as i64], |row| {
-                    row.get::<_, String>(0)
-                })?
-                .filter_map(|r| r.ok())
-                .collect();
-            Ok(terms)
-        }
-        Err(_) => {
-            // Vocab table may not exist; create it and retry
-            let _ = conn.execute_batch(
-                "CREATE VIRTUAL TABLE IF NOT EXISTS knowledge_chunks_vocab \
-                 USING fts5vocab(knowledge_chunks, instance);",
-            );
-            let mut stmt = conn.prepare(
-                "SELECT DISTINCT term FROM knowledge_chunks_vocab WHERE col = 'content' ORDER BY term LIMIT ?1",
-            )?;
-            let terms = stmt
-                .query_map(rusqlite::params![limit as i64], |row| {
-                    row.get::<_, String>(0)
-                })?
-                .filter_map(|r| r.ok())
-                .collect();
-            Ok(terms)
-        }
-    }
+    conn.execute_batch(
+        "CREATE VIRTUAL TABLE IF NOT EXISTS knowledge_chunks_vocab \
+         USING fts5vocab(knowledge_chunks, instance);",
+    )?;
+    let mut stmt = conn.prepare(
+        "SELECT DISTINCT term FROM knowledge_chunks_vocab WHERE col = 'content' ORDER BY term LIMIT ?1",
+    )?;
+    let terms = stmt
+        .query_map(rusqlite::params![limit as i64], |row| {
+            row.get::<_, String>(0)
+        })?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    Ok(terms)
 }
 
-/// Convert a session SearchResult to a KnowledgeSearchResult.
+/// Build an FTS5 MATCH expression: the whole query as a phrase, OR'd with each term.
 pub(super) fn sanitize_fts_query(query: &str) -> String {
     let cleaned = sanitize_fts_terms(query);
     let phrase = format!("\"{cleaned}\"");

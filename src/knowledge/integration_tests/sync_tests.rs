@@ -83,8 +83,8 @@ pub(super) fn full_sync_crud_cycle() {
             .unwrap();
         stmt.query_map(params![source.id], |row| row.get(0))
             .unwrap()
-            .filter_map(|r| r.ok())
-            .collect()
+            .collect::<rusqlite::Result<Vec<String>>>()
+            .expect("every indexed chunk decodes")
     };
     let all_content = chunks.join("\n");
     assert!(

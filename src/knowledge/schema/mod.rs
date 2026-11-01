@@ -1,8 +1,7 @@
 //! Knowledge database schema and connection management.
 //!
 //! The knowledge database is a single, global SQLite file at
-//! `~/.local/share/bpx-rag/knowledge.db`. It is separate from the per-project
-//! session and content databases.
+//! `~/.local/share/bpx-rag/knowledge.db`.
 
 use anyhow::Result;
 use rusqlite::Connection;

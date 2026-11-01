@@ -118,6 +118,22 @@ fn get_source_nonexistent_returns_none() {
     assert!(store.get_source("nonexistent").unwrap().is_none());
 }
 
+#[test]
+fn malformed_enrichments_are_reported_instead_of_read_as_none() {
+    let store = make_store();
+    store.add_source("vault", "/tmp/vault", &[], &[]).unwrap();
+    store
+        .conn()
+        .execute(
+            "UPDATE knowledge_sources SET enrichments = 'not json' WHERE label = 'vault'",
+            [],
+        )
+        .unwrap();
+
+    assert!(store.get_source("vault").is_err());
+    assert!(store.list_sources().is_err());
+}
+
 // ── remove_source ─────────────────────────────────────────────────────────
 
 #[test]

@@ -887,3 +887,33 @@ fn scrub_removes_rows_that_match_the_policy_after_they_were_indexed() {
         "scrub removes the chunks as well as the file row"
     );
 }
+
+#[test]
+fn wikilink_resolution_reports_malformed_chunk_metadata() {
+    let store = crate::knowledge::open_in_memory().unwrap();
+    let source_id = store.add_source("vault", "/vault", &[], &[]).unwrap();
+    store
+        .conn()
+        .execute(
+            "INSERT INTO knowledge_files (source_id, rel_path, content_hash, size_bytes)
+             VALUES (?1, 'note.md', 'hash', 1)",
+            params![source_id],
+        )
+        .unwrap();
+    let file_id = store.conn().last_insert_rowid();
+    store
+        .conn()
+        .execute(
+            "INSERT INTO knowledge_chunk_meta (chunk_rowid, file_id, source_id, line_start, line_end, metadata)
+             VALUES (1, ?1, ?2, 1, 1, '{not json')",
+            params![file_id, source_id],
+        )
+        .unwrap();
+
+    let result = super::index::resolve_wikilinks_for_source(store.conn(), source_id);
+
+    assert!(
+        result.is_err(),
+        "malformed metadata must not drop wikilinks silently"
+    );
+}

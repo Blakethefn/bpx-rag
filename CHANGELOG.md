@@ -19,7 +19,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Fixed
 
 - A failed query embedding is reported in the search output as a warning. Lexical results still return.
-- Database row decode errors propagate instead of being dropped.
+- Corrupt knowledge rows fail the query instead of being skipped or defaulted. BM25 and trigram search used to drop any row that failed to decode, and malformed line numbers became `0`. Vector search now rejects an embedding whose length does not match the query dimension, instead of scoring a truncated vector. Malformed chunk metadata, source enrichments, and wikilink metadata during sync are reported as errors.
+- Creating the vocabulary table for fuzzy matching no longer ignores its own errors.
 - Unknown enrichment names are rejected when a source is added.
 - Status no longer double counts chunks that have vectors from more than one model.
 - The store directory is created owner-only, and the database file is restricted to its owner on Unix.

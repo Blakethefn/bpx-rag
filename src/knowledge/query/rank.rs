@@ -1,5 +1,6 @@
 use super::*;
 use crate::search::profile::SearchWhy;
+use anyhow::Context;
 use std::collections::HashMap;
 
 /// Keep the highest-scoring passage from each file before returning repeated
@@ -31,7 +32,7 @@ pub(super) fn diversify_by_file(
     unique_files
 }
 
-/// Search both session and knowledge DBs, merging results via RRF.
+/// A chunk row returned by one retrieval layer, before RRF fusion.
 #[derive(Debug)]
 pub(super) struct RankedResult {
     pub(super) rowid: i64,
@@ -62,10 +63,15 @@ pub(super) struct ScoredResult {
 }
 
 impl ScoredResult {
-    pub(super) fn into_knowledge_result(self, snippet_bytes: usize) -> KnowledgeSearchResult {
+    /// Build the output row. Chunk metadata is written by sync as JSON, so
+    /// unparseable metadata is reported rather than shown as empty metadata.
+    pub(super) fn into_knowledge_result(
+        self,
+        snippet_bytes: usize,
+    ) -> anyhow::Result<KnowledgeSearchResult> {
         let metadata: serde_json::Value = serde_json::from_str(&self.metadata)
-            .unwrap_or(serde_json::Value::Object(Default::default()));
-        KnowledgeSearchResult {
+            .with_context(|| format!("invalid chunk metadata for {}", self.file_path))?;
+        Ok(KnowledgeSearchResult {
             title: self.title,
             snippet: truncate_snippet(&self.content, snippet_bytes),
             score: self.rrf_score,
@@ -77,11 +83,11 @@ impl ScoredResult {
             metadata,
             source_type: "knowledge".to_string(),
             why: self.why,
-        }
+        })
     }
 }
 
-/// RRF merge with K=60, matching session search behavior.
+/// RRF merge with K=60.
 pub(super) fn merge_results(
     acc: &mut HashMap<i64, ScoredResult>,
     results: &[RankedResult],

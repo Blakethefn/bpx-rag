@@ -207,7 +207,7 @@ pub(crate) fn search_with_pool(
     let results: Vec<KnowledgeSearchResult> = entries
         .into_iter()
         .map(|(_, sr)| sr.into_knowledge_result(snippet_bytes))
-        .collect();
+        .collect::<Result<Vec<_>>>()?;
     Ok(SearchReport {
         results: diversify_by_file(results, limit as usize),
         warnings,

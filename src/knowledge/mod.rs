@@ -1,9 +1,8 @@
 //! Persistent knowledge store for cross-session semantic search.
 //!
 //! Indexes directories of files (markdown, code, documentation) into a durable
-//! SQLite database with FTS5 + vector search. Parallel to the session-scoped
-//! ContentStore — shares the same chunker and embedder but uses a separate
-//! global database that survives across sessions.
+//! SQLite database with FTS5 + vector search. Chunking and embedding are shared
+//! with the rest of the crate; the store lives in one global database.
 
 pub mod ann;
 pub mod enrichment;
@@ -70,9 +69,12 @@ pub struct RelatedChunk {
     pub line_end: u32,
 }
 
-/// Parse a JSON-encoded enrichments array. Returns an empty vec on failure.
-fn parse_enrichments(json: &str) -> Vec<String> {
-    serde_json::from_str(json).unwrap_or_default()
+/// Parse a JSON-encoded enrichments array. Sources write this column as JSON,
+/// so a malformed value is a corrupt row and is returned as a decode error.
+fn parse_enrichments(json: &str) -> rusqlite::Result<Vec<String>> {
+    serde_json::from_str(json).map_err(|error| {
+        rusqlite::Error::FromSqlConversionFailure(4, rusqlite::types::Type::Text, Box::new(error))
+    })
 }
 
 /// Map a SQLite row to KnowledgeSourceInfo. Columns must be in the order:
@@ -84,7 +86,7 @@ fn row_to_source(row: &rusqlite::Row<'_>) -> rusqlite::Result<KnowledgeSourceInf
         label: row.get(1)?,
         path: row.get(2)?,
         patterns: scope::decode(row.get::<_, Option<String>>(3)?.as_deref()),
-        enrichments: parse_enrichments(&enrichments_json),
+        enrichments: parse_enrichments(&enrichments_json)?,
         created_at: row.get(5)?,
         last_sync: row.get(6)?,
         file_count: row.get(7)?,
