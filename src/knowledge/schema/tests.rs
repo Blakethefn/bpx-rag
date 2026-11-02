@@ -59,3 +59,121 @@ fn embedding_insert_update_and_delete_advance_ann_generation() {
         .unwrap();
     assert_eq!(generation(), 3);
 }
+
+// ── identifier index backfill ────────────────────────────────────────────
+
+/// Chunks as an index from before the identifier index holds them: content rows with no
+/// identifier rows and no index metadata.
+fn simulate_pre_identifier_index(conn: &Connection) {
+    conn.execute_batch("DELETE FROM knowledge_identifiers; DROP TABLE knowledge_index_meta;")
+        .unwrap();
+}
+
+#[test]
+fn applying_schema_backfills_identifier_words_for_chunks_that_predate_the_index() {
+    let conn = Connection::open_in_memory().unwrap();
+    apply_schema(&conn).unwrap();
+    conn.execute(
+        "INSERT INTO knowledge_chunks (title, content) VALUES ('users.ts', 'export function getUserById(id) {}')",
+        [],
+    )
+    .unwrap();
+    let rowid = conn.last_insert_rowid();
+    simulate_pre_identifier_index(&conn);
+
+    apply_schema(&conn).unwrap();
+
+    let words: String = conn
+        .query_row(
+            "SELECT words FROM knowledge_identifiers WHERE rowid = ?1",
+            [rowid],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(words, "get user by id");
+}
+
+#[test]
+fn identifier_backfill_is_idempotent() {
+    let conn = Connection::open_in_memory().unwrap();
+    apply_schema(&conn).unwrap();
+    conn.execute(
+        "INSERT INTO knowledge_chunks (title, content) VALUES ('a.ts', 'function getUserById() {}')",
+        [],
+    )
+    .unwrap();
+    simulate_pre_identifier_index(&conn);
+
+    apply_schema(&conn).unwrap();
+    apply_schema(&conn).unwrap();
+
+    let rows: i64 = conn
+        .query_row("SELECT COUNT(*) FROM knowledge_identifiers", [], |row| {
+            row.get(0)
+        })
+        .unwrap();
+    assert_eq!(rows, 1);
+}
+
+#[test]
+fn upgrading_a_database_file_keeps_every_embedding_row_and_generation() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("knowledge.db");
+    {
+        let conn = Connection::open(&path).unwrap();
+        apply_schema(&conn).unwrap();
+        conn.execute(
+            "INSERT INTO knowledge_chunks (title, content) VALUES ('a.ts', 'function getUserById() {}')",
+            [],
+        )
+        .unwrap();
+        let rowid = conn.last_insert_rowid();
+        conn.execute(
+            "INSERT INTO knowledge_embeddings (chunk_rowid, embedding, dim, model_id)
+             VALUES (?1, X'0000803F00000040', 2, 'model-x')",
+            [rowid],
+        )
+        .unwrap();
+        simulate_pre_identifier_index(&conn);
+    }
+    let snapshot = |conn: &Connection| {
+        let embeddings: Vec<(i64, Vec<u8>, i64, String)> = conn
+            .prepare("SELECT chunk_rowid, embedding, dim, model_id FROM knowledge_embeddings ORDER BY chunk_rowid")
+            .unwrap()
+            .query_map([], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)))
+            .unwrap()
+            .collect::<rusqlite::Result<_>>()
+            .unwrap();
+        let generation: i64 = conn
+            .query_row(
+                "SELECT generation FROM knowledge_embedding_state",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        let changes: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM knowledge_embedding_changes",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        (embeddings, generation, changes)
+    };
+    let before = snapshot(&Connection::open(&path).unwrap());
+
+    let conn = Connection::open(&path).unwrap();
+    apply_schema(&conn).unwrap();
+
+    assert_eq!(
+        snapshot(&conn),
+        before,
+        "embedding rows or generation changed during upgrade"
+    );
+    let rows: i64 = conn
+        .query_row("SELECT COUNT(*) FROM knowledge_identifiers", [], |row| {
+            row.get(0)
+        })
+        .unwrap();
+    assert_eq!(rows, 1, "identifier rows must be backfilled");
+}

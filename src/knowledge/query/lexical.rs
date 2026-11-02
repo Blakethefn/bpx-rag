@@ -146,7 +146,7 @@ pub(super) fn knowledge_identifier_search(
     meta_where: &str,
     meta_params: &[String],
 ) -> Result<Vec<RankedResult>> {
-    let fts_query = sanitize_fts_query(&split_query_identifiers(query));
+    let fts_query = identifier_match_expression(query);
     if fts_query.is_empty() {
         return Ok(Vec::new());
     }
@@ -193,17 +193,36 @@ pub(super) fn knowledge_identifier_search(
     Ok(results)
 }
 
-/// The query with every token split the way indexed identifiers are, so
-/// `getUserById` becomes "get user by id". Ordinary words are unchanged apart from
-/// case, which the tokenizer ignores anyway.
-fn split_query_identifiers(query: &str) -> String {
-    query
+/// Words that never count toward an identifier match. Fixed in the Stage 3 protocol.
+const IDENTIFIER_STOPWORDS: &[&str] = &[
+    "a", "an", "and", "are", "as", "at", "be", "by", "for", "from", "how", "if", "in", "into",
+    "is", "it", "of", "on", "or", "that", "the", "this", "to", "was", "what", "when", "where",
+    "which", "with",
+];
+/// Only this many query words take part in identifier matching. Later words are ignored.
+const IDENTIFIER_MAX_QUERY_WORDS: usize = 12;
+/// A query needs at least this many content words before the identifier layer runs.
+const IDENTIFIER_MIN_CONTENT_WORDS: usize = 2;
+
+/// The identifier layer's FTS expression. Every content word of the query must appear in
+/// the identifier words of one chunk. Words are split the way indexed identifiers are, so
+/// `getUserById` in a query becomes "get user by id". A single content word matches nothing,
+/// because one common word is too weak to identify a chunk.
+pub(super) fn identifier_match_expression(query: &str) -> String {
+    let words: Vec<String> = query
         .split(|c: char| !(c.is_alphanumeric() || c == '_' || c == '-'))
-        .map(split_identifier)
-        .filter(|words| !words.is_empty())
-        .map(|words| words.join(" "))
+        .flat_map(split_identifier)
+        .take(IDENTIFIER_MAX_QUERY_WORDS)
+        .filter(|word| !IDENTIFIER_STOPWORDS.contains(&word.as_str()))
+        .collect();
+    if words.len() < IDENTIFIER_MIN_CONTENT_WORDS {
+        return String::new();
+    }
+    words
+        .iter()
+        .map(|word| format!("\"{word}\""))
         .collect::<Vec<_>>()
-        .join(" ")
+        .join(" AND ")
 }
 
 /// Build an FTS5 MATCH expression: the whole query as a phrase, OR'd with each term.

@@ -18,16 +18,8 @@ const MIN_CHUNK_BYTES: usize = 256;
 /// Avoid building syntax trees for generated or unusually large source files.
 const MAX_TREE_SITTER_FILE_BYTES: usize = 2 * 1024 * 1024;
 
-/// Bump when the stored representation of a chunk changes, including its
-/// structural boundaries and the identifier words indexed for it. A stored
-/// version that differs from this value makes sync reindex the file.
-///
-/// Version 3 added the identifier words (`knowledge_identifiers`).
-pub(crate) const TREE_SITTER_CHUNKER_VERSION: i64 = 3;
-
-/// Stored version for files without tree-sitter chunking. Version 2 added the
-/// identifier words (`knowledge_identifiers`), so older files are reindexed.
-pub(crate) const PLAIN_TEXT_CHUNKER_VERSION: i64 = 2;
+/// Bump when the structural chunking policy changes for supported source files.
+pub(crate) const TREE_SITTER_CHUNKER_VERSION: i64 = 2;
 
 /// A chunk of content ready for indexing
 #[derive(Debug)]
@@ -196,7 +188,7 @@ pub(crate) fn chunker_version_for_path(path: &Path) -> i64 {
     if crate::relations::supports_tree_sitter_chunking(path) {
         TREE_SITTER_CHUNKER_VERSION
     } else {
-        PLAIN_TEXT_CHUNKER_VERSION
+        1
     }
 }
 

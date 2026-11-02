@@ -17,6 +17,10 @@ use lexical::*;
 use rank::*;
 use vector::*;
 
+/// Identifier layer weight, relative to the keyword weight. Chosen by the Stage 3 Revision 2
+/// selection rule. It makes a precise identifier hit outrank a single lexical and vector pair.
+const IDENTIFIER_LAYER_WEIGHT: f64 = 2.0;
+
 /// Weight configuration for RRF layer blending
 pub struct SearchWeights {
     pub keyword_weight: f64,
@@ -168,7 +172,7 @@ pub(crate) fn search_with_pool(
         merge_results(
             &mut all_results,
             &identifiers,
-            weights.keyword_weight,
+            weights.keyword_weight * IDENTIFIER_LAYER_WEIGHT,
             "identifier",
         );
     }

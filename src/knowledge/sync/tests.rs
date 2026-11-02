@@ -918,16 +918,17 @@ fn wikilink_resolution_reports_malformed_chunk_metadata() {
     );
 }
 
-// ── identifier index migration ───────────────────────────────────────────
-
-/// Chunker versions written before identifier splitting. Hard-coded so the
-/// test describes an old index, not the current constants.
-const PREVIOUS_TREE_SITTER_CHUNKER_VERSION: i64 = 2;
-const PREVIOUS_PLAIN_CHUNKER_VERSION: i64 = 1;
+// ── identifier index upgrade ─────────────────────────────────────────────
 
 #[test]
-fn sync_reindexes_files_written_by_the_previous_chunker_version() {
-    let store = make_store();
+fn upgrading_the_identifier_index_does_not_reembed_unchanged_files() {
+    let mut store = make_store();
+    let calls = Arc::new(AtomicUsize::new(0));
+    let embedded_texts = Arc::new(AtomicUsize::new(0));
+    store.set_embedder(Arc::new(CountingEmbedder {
+        calls: Arc::clone(&calls),
+        embedded_texts: Arc::clone(&embedded_texts),
+    }));
     let dir = tempdir().unwrap();
     fs::write(
         dir.path().join("users.ts"),
@@ -940,42 +941,28 @@ fn sync_reindexes_files_written_by_the_previous_chunker_version() {
     )
     .unwrap();
     let source = register_source(&store, dir.path());
-    sync_source(&store, &source, None).unwrap();
+    let first = sync_source(&store, &source, None).unwrap();
+    assert_eq!(first.files_added, 2);
+    let embed_calls_after_index = calls.load(Ordering::SeqCst);
 
-    // Make the index look like one built before identifier splitting.
+    // Simulate a database from before the identifier index existed.
     store
         .conn()
-        .execute(
-            "UPDATE knowledge_files SET chunker_version = ?1 WHERE rel_path = 'users.ts'",
-            params![PREVIOUS_TREE_SITTER_CHUNKER_VERSION],
-        )
+        .execute_batch("DELETE FROM knowledge_identifiers; DROP TABLE knowledge_index_meta;")
         .unwrap();
-    store
-        .conn()
-        .execute(
-            "UPDATE knowledge_files SET chunker_version = ?1 WHERE rel_path = 'notes.md'",
-            params![PREVIOUS_PLAIN_CHUNKER_VERSION],
-        )
-        .unwrap();
-    store
-        .conn()
-        .execute("DELETE FROM knowledge_identifiers", [])
-        .unwrap();
+    crate::knowledge::schema::apply_schema(store.conn()).unwrap();
 
-    let result = sync_source(&store, &source, None).unwrap();
+    let second = sync_source(&store, &source, None).unwrap();
 
-    assert_eq!(result.files_updated, 2, "old files must be reindexed");
-    let stored_version: i64 = store
-        .conn()
-        .query_row(
-            "SELECT chunker_version FROM knowledge_files WHERE rel_path = 'users.ts'",
-            [],
-            |row| row.get(0),
-        )
-        .unwrap();
     assert_eq!(
-        stored_version,
-        chunker_version_for_path(&dir.path().join("users.ts"))
+        second.files_updated, 0,
+        "unchanged files must not be reindexed"
+    );
+    assert_eq!(second.files_unchanged, 2);
+    assert_eq!(
+        calls.load(Ordering::SeqCst),
+        embed_calls_after_index,
+        "no embedding call may be made for an identifier-index upgrade"
     );
     let identifier_rows: i64 = store
         .conn()
@@ -983,5 +970,8 @@ fn sync_reindexes_files_written_by_the_previous_chunker_version() {
             row.get(0)
         })
         .unwrap();
-    assert!(identifier_rows > 0, "reindex must write identifier rows");
+    assert_eq!(
+        identifier_rows, 2,
+        "backfill must restore one row per chunk"
+    );
 }

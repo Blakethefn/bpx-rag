@@ -71,6 +71,11 @@ fn ensure_schema(conn: &Connection) -> Result<()> {
             tokenize = 'porter unicode61'
         );
 
+        CREATE TABLE IF NOT EXISTS knowledge_index_meta (
+            key   TEXT PRIMARY KEY,
+            value TEXT NOT NULL
+        );
+
         CREATE TABLE IF NOT EXISTS knowledge_chunk_meta (
             chunk_rowid INTEGER PRIMARY KEY,
             file_id     INTEGER NOT NULL REFERENCES knowledge_files(id) ON DELETE CASCADE,
@@ -120,6 +125,7 @@ fn ensure_schema(conn: &Connection) -> Result<()> {
     ensure_chunker_version(conn)?;
     ensure_embedding_model_id(conn)?;
     ensure_database_instance_id(conn)?;
+    crate::knowledge::identifiers::ensure_identifier_index(conn)?;
     conn.execute_batch(
         "CREATE INDEX IF NOT EXISTS idx_embeddings_model ON knowledge_embeddings(model_id);
          CREATE TRIGGER IF NOT EXISTS knowledge_embeddings_generation_insert
