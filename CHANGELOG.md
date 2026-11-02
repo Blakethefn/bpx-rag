@@ -6,6 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- Search diagnostics. Each search reports what every layer did: `ran` with its candidate count, `skipped` with a reason (for example, the candidate pool was full or the query was under three bytes), or `failed` with an error. `--explain` prints these as a `layers:` line. Intentional skips are never warnings. Ranking is unchanged.
+- `eval retrieval` records the layer diagnostics for each query in its case report.
+
 ### Changed
 
 - **Breaking:** commands are flat verbs. `knowledge add|sync|status|remove|read` became `add|sync|status|remove|read`. `knowledge embed-backfill` is now `embed`, `knowledge scrub-sensitive` is now `scrub`, `analyze-file` is now `relate`, and `evaluate` is now `eval`.

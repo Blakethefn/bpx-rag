@@ -8,11 +8,14 @@ use anyhow::Result;
 use std::collections::HashMap;
 
 mod fuzzy;
+mod layers;
 mod lexical;
 mod rank;
 mod vector;
 pub(crate) use fuzzy::VocabularyCache;
 use fuzzy::*;
+use layers::{fuzzy_skip, trigram_skip};
+pub use layers::{LayerOutcome, LayerReport, SkipReason};
 use lexical::*;
 use rank::*;
 use vector::*;
@@ -82,6 +85,8 @@ pub fn knowledge_search(
 pub struct SearchReport {
     pub results: Vec<KnowledgeSearchResult>,
     pub warnings: Vec<String>,
+    /// Per-layer diagnostics, in pipeline order.
+    pub layers: Vec<LayerReport>,
 }
 
 /// Like [`knowledge_search`], but also reports layers that were skipped.
@@ -139,78 +144,125 @@ pub(crate) fn search_with_pool(
     let (meta_where, meta_params) = predicates_to_sql(&predicates, 0);
 
     let mut all_results: HashMap<i64, ScoredResult> = HashMap::new();
+    let mut layers = Vec::with_capacity(5);
+    let pool_limit = candidate_limit as usize;
 
     if weights.keyword_weight > 0.0 {
-        // Layer 1: FTS5 BM25
+        // Layer 1: FTS5 BM25. Always runs.
         let bm25 = knowledge_bm25_search(conn, query, candidate_limit, &meta_where, &meta_params)?;
         merge_results(&mut all_results, &bm25, weights.keyword_weight, "bm25");
+        layers.push(LayerReport::ran("bm25", bm25.len()));
 
-        // Search a wider chunk candidate pool before choosing the final
-        // result limit. File diversity is applied after chunk-level RRF.
-        if bm25.len() < candidate_limit as usize {
-            let trigram =
-                knowledge_trigram_search(conn, query, candidate_limit, &meta_where, &meta_params)?;
+        // Layer 2: trigram. It searches a wider chunk candidate pool before the final
+        // result limit is chosen. File diversity is applied after chunk-level RRF.
+        match trigram_skip(query, bm25.len(), pool_limit) {
+            Some(reason) => layers.push(LayerReport::skipped("trigram", reason)),
+            None => {
+                let trigram = knowledge_trigram_search(
+                    conn,
+                    query,
+                    candidate_limit,
+                    &meta_where,
+                    &meta_params,
+                )?;
+                merge_results(
+                    &mut all_results,
+                    &trigram,
+                    weights.keyword_weight,
+                    "trigram",
+                );
+                layers.push(LayerReport::ran("trigram", trigram.len()));
+            }
+        }
+
+        // Layer 3: fuzzy. The gate reads the BM25 and trigram pool.
+        match fuzzy_skip(all_results.len(), pool_limit) {
+            Some(reason) => layers.push(LayerReport::skipped("fuzzy", reason)),
+            None => {
+                match knowledge_fuzzy_search(
+                    store,
+                    query,
+                    candidate_limit,
+                    &meta_where,
+                    &meta_params,
+                )? {
+                    Some(fuzzy) => {
+                        merge_results(&mut all_results, &fuzzy, weights.keyword_weight, "fuzzy");
+                        layers.push(LayerReport::ran("fuzzy", fuzzy.len()));
+                    }
+                    None => layers.push(LayerReport::skipped("fuzzy", SkipReason::NoCorrectedWord)),
+                }
+            }
+        }
+
+        // Identifier words. This runs after the gates, and no gate counts its results.
+        if identifier_match_expression(query).is_empty() {
+            layers.push(LayerReport::skipped(
+                "identifier",
+                SkipReason::TooFewContentWords,
+            ));
+        } else {
+            let identifiers = knowledge_identifier_search(
+                conn,
+                query,
+                candidate_limit,
+                &meta_where,
+                &meta_params,
+            )?;
             merge_results(
                 &mut all_results,
-                &trigram,
-                weights.keyword_weight,
-                "trigram",
+                &identifiers,
+                weights.keyword_weight * IDENTIFIER_LAYER_WEIGHT,
+                "identifier",
             );
+            layers.push(LayerReport::ran("identifier", identifiers.len()));
         }
-
-        // Layer 3: Fuzzy (if lexical layers still leave candidate room)
-        if all_results.len() < candidate_limit as usize {
-            let fuzzy =
-                knowledge_fuzzy_search(store, query, candidate_limit, &meta_where, &meta_params)?;
-            merge_results(&mut all_results, &fuzzy, weights.keyword_weight, "fuzzy");
+    } else {
+        for layer in ["bm25", "trigram", "fuzzy", "identifier"] {
+            layers.push(LayerReport::skipped(layer, SkipReason::Disabled));
         }
-
-        // Identifier words. This runs after fuzzy, so the fuzzy gate sees the same
-        // pool it saw before this layer existed.
-        let identifiers =
-            knowledge_identifier_search(conn, query, candidate_limit, &meta_where, &meta_params)?;
-        merge_results(
-            &mut all_results,
-            &identifiers,
-            weights.keyword_weight * IDENTIFIER_LAYER_WEIGHT,
-            "identifier",
-        );
     }
 
     let mut warnings = Vec::new();
 
-    // Layer 4: Vector similarity
-    if weights.vector_weight > 0.0 {
-        if let Some(emb) = store.embedder() {
-            match emb
-                .embed_one(query)
-                .and_then(|vector| embed::normalize_embedding(&vector, emb.dim()))
-            {
-                Ok(query_embedding) => {
-                    let candidates = store.vector_candidates(
-                        emb.model_id(),
-                        &query_embedding,
-                        candidate_limit,
-                        &predicates,
-                    )?;
-                    let vector = knowledge_vector_search(
-                        conn,
-                        &query_embedding,
-                        candidate_limit,
-                        &meta_where,
-                        &meta_params,
-                        emb.model_id(),
-                        // ANN IDs come from the active model's full vector space, not
-                        // lexical hits. SQL rechecks model, metadata, and exact scores.
-                        candidates.as_deref(),
-                    )?;
-                    merge_results(&mut all_results, &vector, weights.vector_weight, "vector");
-                }
-                Err(error) => warnings.push(format!(
+    // Layer 4: vector similarity. Runs whenever an embedder is attached.
+    if weights.vector_weight <= 0.0 {
+        layers.push(LayerReport::skipped("vector", SkipReason::Disabled));
+    } else if let Some(emb) = store.embedder() {
+        match emb
+            .embed_one(query)
+            .and_then(|vector| embed::normalize_embedding(&vector, emb.dim()))
+        {
+            Ok(query_embedding) => {
+                let candidates = store.vector_candidates(
+                    emb.model_id(),
+                    &query_embedding,
+                    candidate_limit,
+                    &predicates,
+                )?;
+                let vector = knowledge_vector_search(
+                    conn,
+                    &query_embedding,
+                    candidate_limit,
+                    &meta_where,
+                    &meta_params,
+                    emb.model_id(),
+                    // ANN IDs come from the active model's full vector space, not
+                    // lexical hits. SQL rechecks model, metadata, and exact scores.
+                    candidates.as_deref(),
+                )?;
+                merge_results(&mut all_results, &vector, weights.vector_weight, "vector");
+                layers.push(LayerReport::ran("vector", vector.len()));
+            }
+            Err(error) => {
+                warnings.push(format!(
                     "query embedding failed, so vector search was skipped: {error}"
-                )),
+                ));
+                layers.push(LayerReport::failed("vector", error.to_string()));
             }
         }
+    } else {
+        layers.push(LayerReport::skipped("vector", SkipReason::NoEmbedder));
     }
 
     // Sort by RRF score, then by chunk rowid, so ties do not depend on hash order.
@@ -229,6 +281,7 @@ pub(crate) fn search_with_pool(
     Ok(SearchReport {
         results: diversify_by_file(results, limit as usize),
         warnings,
+        layers,
     })
 }
 
@@ -265,5 +318,7 @@ impl Clone for KnowledgeSearchResult {
 
 #[cfg(test)]
 mod fuzzy_bench;
+#[cfg(test)]
+mod layer_tests;
 #[cfg(test)]
 mod tests;

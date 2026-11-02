@@ -1,3 +1,4 @@
+use crate::knowledge::query::LayerReport;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
@@ -106,6 +107,8 @@ pub struct EvalCaseReport {
     pub vector_top_paths: Vec<String>,
     /// Hybrid ranking to a deeper cutoff, for diagnosing relation-neighbor selection.
     pub deep_paths: Vec<String>,
+    /// Layer diagnostics for the hybrid search, in pipeline order.
+    pub layers: Vec<LayerReport>,
 }
 
 #[derive(Debug, Default, Clone, Serialize)]

@@ -51,19 +51,20 @@ struct CachedVocabulary {
 }
 
 /// Fuzzy layer: correct the query, then search the corrected query with BM25.
-/// Returns nothing when no word was corrected, so the layer adds no results.
+/// Returns `None` when no word was corrected, so the layer did not run.
 pub(super) fn knowledge_fuzzy_search(
     store: &KnowledgeStore,
     query: &str,
     limit: u32,
     meta_where: &str,
     meta_params: &[String],
-) -> Result<Vec<RankedResult>> {
+) -> Result<Option<Vec<RankedResult>>> {
     match fuzzy_correct(store, query)?.query {
         Some(corrected) => {
             knowledge_bm25_search(store.conn(), &corrected, limit, meta_where, meta_params)
+                .map(Some)
         }
-        None => Ok(Vec::new()),
+        None => Ok(None),
     }
 }
 

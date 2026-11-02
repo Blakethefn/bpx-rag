@@ -67,7 +67,7 @@ impl Embed for EvaluationEmbedder {
     }
 }
 
-fn make_store() -> KnowledgeStore {
+pub(super) fn make_store() -> KnowledgeStore {
     knowledge::open_in_memory().expect("in-memory knowledge store")
 }
 
@@ -357,7 +357,7 @@ fn deterministic_retrieval_eval_measures_recall_mrr_and_ndcg() {
 }
 
 /// Insert a source + file + chunk with metadata for testing search.
-fn seed_chunk(
+pub(super) fn seed_chunk(
     store: &KnowledgeStore,
     source_label: &str,
     source_path: &str,
@@ -1090,10 +1090,12 @@ fn content_vocab_size(store: &KnowledgeStore) -> i64 {
     .unwrap()
 }
 
-/// Rowid and path of each result from the fuzzy layer alone, in result order.
+/// Rowid and path of each result from the fuzzy layer alone, in result order. Empty when
+/// the layer did not run.
 fn fuzzy_hits(store: &KnowledgeStore, query: &str) -> Vec<(i64, String)> {
     knowledge_fuzzy_search(store, query, 10, "", &[])
         .unwrap()
+        .unwrap_or_default()
         .into_iter()
         .map(|result| (result.rowid, result.file_path))
         .collect()

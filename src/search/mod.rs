@@ -8,7 +8,9 @@ use anyhow::Result;
 
 use crate::config::Config;
 use crate::knowledge::filter::parse_filter;
-use crate::knowledge::query::{knowledge_search_report, KnowledgeSearchResult, SearchWeights};
+use crate::knowledge::query::{
+    knowledge_search_report, KnowledgeSearchResult, LayerOutcome, LayerReport, SearchWeights,
+};
 use crate::knowledge::KnowledgeStore;
 use crate::search::profile::{SearchProfile, SearchWhy};
 
@@ -63,6 +65,7 @@ pub fn run_query(
         request.snippet_bytes,
     )?;
     let warnings = report.warnings;
+    let layers = report.layers;
     let mut results = report.results;
     apply_knowledge_bias(&mut results, request.profile);
     apply_graph_rerank(
@@ -111,6 +114,7 @@ pub fn run_query(
         request.query,
         request.explain,
         &warnings,
+        &layers,
         &results,
         &related,
         top_snippet_bytes,
@@ -338,10 +342,26 @@ fn knowledge_source_for_file(ks: &KnowledgeStore, file_id: i64) -> Result<(Strin
     )?)
 }
 
+/// One line that says what each layer did. Intentional skips appear here and nowhere else.
+fn layer_summary(layers: &[LayerReport]) -> String {
+    let parts: Vec<String> = layers
+        .iter()
+        .map(|layer| match &layer.outcome {
+            LayerOutcome::Ran => format!("{} ran ({} candidates)", layer.layer, layer.candidates),
+            LayerOutcome::Skipped { reason } => {
+                format!("{} skipped ({})", layer.layer, reason.as_str())
+            }
+            LayerOutcome::Failed { error } => format!("{} failed ({error})", layer.layer),
+        })
+        .collect();
+    format!("layers: {}\n", parts.join("; "))
+}
+
 fn format_results(
     original_query: &str,
     explain: bool,
     warnings: &[String],
+    layers: &[LayerReport],
     results: &[KnowledgeSearchResult],
     related: &[Vec<String>],
     top_snippet_bytes: usize,
@@ -351,6 +371,9 @@ fn format_results(
     let mut output = format!("### \"{original_query}\"\n");
     for warning in warnings {
         output.push_str(&format!("Warning: {warning}\n"));
+    }
+    if explain {
+        output.push_str(&layer_summary(layers));
     }
     if results.is_empty() {
         output.push_str("No results.\n");
@@ -393,6 +416,42 @@ fn format_results(
         output.push_str("Some results were truncated. Use bpx_read with the source label, cited relative path, and line range to read the matching full chunk.\n");
     }
     output
+}
+
+#[cfg(test)]
+mod layer_summary_tests {
+    use super::*;
+    use crate::knowledge::query::SkipReason;
+
+    #[test]
+    fn layer_summary_names_each_state_and_skip_reason() {
+        let layers = vec![
+            LayerReport {
+                layer: "bm25",
+                outcome: LayerOutcome::Ran,
+                candidates: 12,
+            },
+            LayerReport {
+                layer: "trigram",
+                outcome: LayerOutcome::Skipped {
+                    reason: SkipReason::PoolFull,
+                },
+                candidates: 0,
+            },
+            LayerReport {
+                layer: "vector",
+                outcome: LayerOutcome::Failed {
+                    error: "model unavailable".to_string(),
+                },
+                candidates: 0,
+            },
+        ];
+
+        assert_eq!(
+            layer_summary(&layers),
+            "layers: bm25 ran (12 candidates); trigram skipped (candidate pool full); vector failed (model unavailable)\n"
+        );
+    }
 }
 
 #[cfg(test)]

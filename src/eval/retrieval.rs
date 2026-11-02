@@ -2,7 +2,7 @@ use super::*;
 use crate::config::Config;
 use crate::embed::{self, Embed, Embedder};
 use crate::knowledge;
-use crate::knowledge::query::SearchWeights;
+use crate::knowledge::query::{LayerReport, SearchReport, SearchWeights};
 use anyhow::{anyhow, Result};
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -150,7 +150,7 @@ pub fn run_retrieval_evaluation(
         let judgments = qrels
             .get(&query.query_id)
             .ok_or_else(|| anyhow!("no relevance judgments for query {}", query.query_id))?;
-        let _ = knowledge::query::knowledge_search(
+        let _ = knowledge::query::knowledge_search_report(
             &store,
             &query.text,
             query.filter.as_deref(),
@@ -159,7 +159,7 @@ pub fn run_retrieval_evaluation(
             &hybrid_weights,
             1024,
         )?;
-        let lexical_results = knowledge::query::knowledge_search(
+        let lexical_results = knowledge::query::knowledge_search_report(
             &store,
             &query.text,
             query.filter.as_deref(),
@@ -170,8 +170,9 @@ pub fn run_retrieval_evaluation(
                 vector_weight: 0.0,
             },
             1024,
-        )?;
-        let vector_results = knowledge::query::knowledge_search(
+        )?
+        .results;
+        let vector_results = knowledge::query::knowledge_search_report(
             &store,
             &query.text,
             query.filter.as_deref(),
@@ -182,12 +183,13 @@ pub fn run_retrieval_evaluation(
                 vector_weight: 1.0,
             },
             1024,
-        )?;
-        let mut results = Vec::new();
+        )?
+        .results;
+        let mut hybrid = SearchReport::default();
         let mut query_times = Vec::with_capacity(repetitions);
         for _ in 0..repetitions {
             let started = Instant::now();
-            results = knowledge::query::knowledge_search(
+            hybrid = knowledge::query::knowledge_search_report(
                 &store,
                 &query.text,
                 query.filter.as_deref(),
@@ -198,6 +200,8 @@ pub fn run_retrieval_evaluation(
             )?;
             query_times.push(started.elapsed());
         }
+        let layers: Vec<LayerReport> = hybrid.layers;
+        let results = hybrid.results;
         latencies.extend(query_times.iter().copied());
 
         let ranked_paths = results
@@ -314,6 +318,7 @@ pub fn run_retrieval_evaluation(
                 TOP_K,
             ),
             deep_paths,
+            layers,
         });
 
         if let Some(expected_language) = &query.expected_language {
