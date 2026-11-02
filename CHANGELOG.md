@@ -10,6 +10,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - Search diagnostics. Each search reports what every layer did: `ran` with its candidate count, `skipped` with a reason (for example, the candidate pool was full or the query was under three bytes), or `failed` with an error. `--explain` prints these as a `layers:` line. Intentional skips are never warnings. Ranking is unchanged.
 - `eval retrieval` records the layer diagnostics for each query in its case report.
+- `eval retrieval --layer-policy` selects the trigram and fuzzy gating policy for evaluation: `current-gating` (the default, and the shipped behavior), `own-pool-gating`, or `unconditional`. Search itself always uses `current-gating`. The alternatives are measured in the local roadmap and are not adopted.
 
 ### Changed
 

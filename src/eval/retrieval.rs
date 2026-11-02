@@ -2,7 +2,7 @@ use super::*;
 use crate::config::Config;
 use crate::embed::{self, Embed, Embedder};
 use crate::knowledge;
-use crate::knowledge::query::{LayerReport, SearchReport, SearchWeights};
+use crate::knowledge::query::{LayerPolicy, LayerReport, SearchReport, SearchWeights};
 use anyhow::{anyhow, Result};
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -21,6 +21,7 @@ pub fn run_retrieval_evaluation(
     dataset: Option<&Path>,
     corpus_root: Option<&Path>,
     hybrid_weights: SearchWeights,
+    layer_policy: LayerPolicy,
 ) -> Result<RetrievalEvalReport> {
     if !(1..=100).contains(&repetitions) {
         return Err(anyhow!("repetitions must be between 1 and 100"));
@@ -150,7 +151,7 @@ pub fn run_retrieval_evaluation(
         let judgments = qrels
             .get(&query.query_id)
             .ok_or_else(|| anyhow!("no relevance judgments for query {}", query.query_id))?;
-        let _ = knowledge::query::knowledge_search_report(
+        let _ = knowledge::query::knowledge_search_report_with_policy(
             &store,
             &query.text,
             query.filter.as_deref(),
@@ -158,8 +159,9 @@ pub fn run_retrieval_evaluation(
             TOP_K as u32,
             &hybrid_weights,
             1024,
+            layer_policy,
         )?;
-        let lexical_results = knowledge::query::knowledge_search_report(
+        let lexical_results = knowledge::query::knowledge_search_report_with_policy(
             &store,
             &query.text,
             query.filter.as_deref(),
@@ -170,9 +172,10 @@ pub fn run_retrieval_evaluation(
                 vector_weight: 0.0,
             },
             1024,
+            layer_policy,
         )?
         .results;
-        let vector_results = knowledge::query::knowledge_search_report(
+        let vector_results = knowledge::query::knowledge_search_report_with_policy(
             &store,
             &query.text,
             query.filter.as_deref(),
@@ -183,13 +186,14 @@ pub fn run_retrieval_evaluation(
                 vector_weight: 1.0,
             },
             1024,
+            layer_policy,
         )?
         .results;
         let mut hybrid = SearchReport::default();
         let mut query_times = Vec::with_capacity(repetitions);
         for _ in 0..repetitions {
             let started = Instant::now();
-            hybrid = knowledge::query::knowledge_search_report(
+            hybrid = knowledge::query::knowledge_search_report_with_policy(
                 &store,
                 &query.text,
                 query.filter.as_deref(),
@@ -197,6 +201,7 @@ pub fn run_retrieval_evaluation(
                 TOP_K as u32,
                 &hybrid_weights,
                 1024,
+                layer_policy,
             )?;
             query_times.push(started.elapsed());
         }
@@ -281,6 +286,7 @@ pub fn run_retrieval_evaluation(
             knowledge::query::expanded_candidate_limit(TOP_K as u32),
             &hybrid_weights,
             1024,
+            layer_policy,
         )?
         .results;
         let deep_paths = unique_paths(
@@ -381,6 +387,7 @@ pub fn run_retrieval_evaluation(
         model_name: config.embeddings.model,
         model_id,
         embedding_device: config.embeddings.device.as_str().to_string(),
+        layer_policy,
         dataset_name: data_dir
             .file_name()
             .and_then(|name| name.to_str())

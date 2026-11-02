@@ -15,7 +15,7 @@ mod vector;
 pub(crate) use fuzzy::VocabularyCache;
 use fuzzy::*;
 use layers::{fuzzy_skip, trigram_skip};
-pub use layers::{LayerOutcome, LayerReport, SkipReason};
+pub use layers::{LayerOutcome, LayerPolicy, LayerReport, SkipReason};
 use lexical::*;
 use rank::*;
 use vector::*;
@@ -99,6 +99,30 @@ pub fn knowledge_search_report(
     weights: &SearchWeights,
     snippet_bytes: usize,
 ) -> Result<SearchReport> {
+    knowledge_search_report_with_policy(
+        store,
+        query,
+        filter,
+        source_label,
+        limit,
+        weights,
+        snippet_bytes,
+        LayerPolicy::default(),
+    )
+}
+
+/// Like [`knowledge_search_report`], with an explicit gating policy. The retrieval
+/// evaluation uses this to compare policies on the same index.
+pub fn knowledge_search_report_with_policy(
+    store: &KnowledgeStore,
+    query: &str,
+    filter: Option<&str>,
+    source_label: Option<&str>,
+    limit: u32,
+    weights: &SearchWeights,
+    snippet_bytes: usize,
+    policy: LayerPolicy,
+) -> Result<SearchReport> {
     if limit == 0 {
         return Ok(SearchReport::default());
     }
@@ -115,6 +139,7 @@ pub fn knowledge_search_report(
         expanded_candidate_limit(limit),
         weights,
         snippet_bytes,
+        policy,
     )
 }
 
@@ -132,6 +157,7 @@ pub(crate) fn search_with_pool(
     candidate_limit: u32,
     weights: &SearchWeights,
     snippet_bytes: usize,
+    policy: LayerPolicy,
 ) -> Result<SearchReport> {
     let conn = store.conn();
 
@@ -155,7 +181,7 @@ pub(crate) fn search_with_pool(
 
         // Layer 2: trigram. It searches a wider chunk candidate pool before the final
         // result limit is chosen. File diversity is applied after chunk-level RRF.
-        match trigram_skip(query, bm25.len(), pool_limit) {
+        match trigram_skip(policy, query, bm25.len(), pool_limit) {
             Some(reason) => layers.push(LayerReport::skipped("trigram", reason)),
             None => {
                 let trigram = knowledge_trigram_search(
@@ -175,8 +201,8 @@ pub(crate) fn search_with_pool(
             }
         }
 
-        // Layer 3: fuzzy. The gate reads the BM25 and trigram pool.
-        match fuzzy_skip(all_results.len(), pool_limit) {
+        // Layer 3: fuzzy. The gate reads the pool the policy names.
+        match fuzzy_skip(policy, bm25.len(), all_results.len(), pool_limit) {
             Some(reason) => layers.push(LayerReport::skipped("fuzzy", reason)),
             None => {
                 match knowledge_fuzzy_search(

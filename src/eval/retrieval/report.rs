@@ -1,4 +1,4 @@
-use crate::knowledge::query::LayerReport;
+use crate::knowledge::query::{LayerPolicy, LayerReport};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
@@ -28,6 +28,7 @@ pub struct RetrievalEvalReport {
     pub model_name: String,
     pub model_id: String,
     pub embedding_device: String,
+    pub layer_policy: LayerPolicy,
     pub dataset_name: String,
     pub corpus_root_name: String,
     pub embedding_dimension: usize,

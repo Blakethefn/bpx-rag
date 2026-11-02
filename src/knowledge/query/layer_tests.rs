@@ -1,6 +1,6 @@
 //! Which layers run for each query shape, and what the diagnostics report.
 
-use super::layers::{LayerOutcome, LayerReport, SkipReason};
+use super::layers::{LayerOutcome, LayerPolicy, LayerReport, SkipReason};
 use super::tests::{make_store, seed_chunk};
 use super::*;
 use crate::embed::Embed;
@@ -21,6 +21,12 @@ impl Embed for BrokenQueryEmbedder {
         4
     }
 }
+
+const ALL_POLICIES: [LayerPolicy; 3] = [
+    LayerPolicy::CurrentGating,
+    LayerPolicy::OwnPoolGating,
+    LayerPolicy::Unconditional,
+];
 
 fn lexical_only() -> SearchWeights {
     SearchWeights {
@@ -70,6 +76,7 @@ fn every_layer_is_reported_in_pipeline_order() {
         50,
         &lexical_only(),
         1_000,
+        LayerPolicy::CurrentGating,
     )
     .unwrap();
 
@@ -155,8 +162,18 @@ fn full_pool_skips_trigram_under_current_gating_with_pool_reason() {
     let store = make_store();
     seed_repeated_word(&store, 5, "alpha");
 
-    let report =
-        search_with_pool(&store, "alpha", None, None, 2, 3, &lexical_only(), 1_000).unwrap();
+    let report = search_with_pool(
+        &store,
+        "alpha",
+        None,
+        None,
+        2,
+        3,
+        &lexical_only(),
+        1_000,
+        LayerPolicy::CurrentGating,
+    )
+    .unwrap();
 
     assert_eq!(layer(&report, "bm25").candidates, 3);
     assert_eq!(
@@ -166,6 +183,86 @@ fn full_pool_skips_trigram_under_current_gating_with_pool_reason() {
     assert_eq!(
         layer(&report, "fuzzy").outcome,
         skipped(SkipReason::PoolFull)
+    );
+}
+
+#[test]
+fn full_pool_still_runs_trigram_under_unconditional_policy() {
+    let store = make_store();
+    seed_repeated_word(&store, 5, "alpha");
+
+    let report = search_with_pool(
+        &store,
+        "alpha",
+        None,
+        None,
+        2,
+        3,
+        &lexical_only(),
+        1_000,
+        LayerPolicy::Unconditional,
+    )
+    .unwrap();
+
+    assert_eq!(layer(&report, "trigram").outcome, LayerOutcome::Ran);
+    assert!(layer(&report, "trigram").candidates > 0);
+    // "alpha" is already an indexed word, so there is nothing to correct.
+    assert_eq!(
+        layer(&report, "fuzzy").outcome,
+        skipped(SkipReason::NoCorrectedWord)
+    );
+}
+
+#[test]
+fn own_pool_policy_runs_fuzzy_when_only_trigram_filled_the_pool() {
+    let store = make_store();
+    // "alp" is not an indexed word, so BM25 finds nothing. Trigram finds three chunks,
+    // which fill the combined pool of three.
+    for index in 0..3 {
+        seed_chunk(
+            &store,
+            "repo",
+            "/repo",
+            &format!("words/{index}.md"),
+            &format!("Word {index}"),
+            &format!("alphabet entry {index}"),
+            "{}",
+        );
+    }
+
+    let current = search_with_pool(
+        &store,
+        "alp",
+        None,
+        None,
+        2,
+        3,
+        &lexical_only(),
+        1_000,
+        LayerPolicy::CurrentGating,
+    )
+    .unwrap();
+    let own_pool = search_with_pool(
+        &store,
+        "alp",
+        None,
+        None,
+        2,
+        3,
+        &lexical_only(),
+        1_000,
+        LayerPolicy::OwnPoolGating,
+    )
+    .unwrap();
+
+    assert_eq!(layer(&current, "trigram").candidates, 3);
+    assert_eq!(
+        layer(&current, "fuzzy").outcome,
+        skipped(SkipReason::PoolFull)
+    );
+    assert_eq!(
+        layer(&own_pool, "fuzzy").outcome,
+        skipped(SkipReason::NoCorrectedWord)
     );
 }
 
@@ -184,6 +281,7 @@ fn metadata_filter_applies_to_every_layer_that_runs() {
         50,
         &lexical_only(),
         1_000,
+        LayerPolicy::Unconditional,
     )
     .unwrap();
 
@@ -193,6 +291,55 @@ fn metadata_filter_applies_to_every_layer_that_runs() {
         .results
         .iter()
         .all(|result| result.source_label == "keep"));
+}
+
+#[test]
+fn policies_return_identical_results_when_no_gate_fires() {
+    let store = make_store();
+    seed_chunk(
+        &store,
+        "repo",
+        "/repo",
+        "a.md",
+        "A",
+        "alpha beta gamma",
+        "{}",
+    );
+    seed_chunk(&store, "repo", "/repo", "b.md", "B", "beta delta", "{}");
+    seed_chunk(&store, "repo", "/repo", "c.md", "C", "gamma epsilon", "{}");
+
+    for query in ["alpha beta", "gamma", "beta delta epsilon"] {
+        let runs: Vec<SearchReport> = ALL_POLICIES
+            .iter()
+            .map(|policy| {
+                search_with_pool(
+                    &store,
+                    query,
+                    None,
+                    None,
+                    5,
+                    50,
+                    &lexical_only(),
+                    1_000,
+                    *policy,
+                )
+                .unwrap()
+            })
+            .collect();
+        for run in &runs[1..] {
+            let left: Vec<(&str, f64)> = runs[0]
+                .results
+                .iter()
+                .map(|r| (r.file_path.as_str(), r.score))
+                .collect();
+            let right: Vec<(&str, f64)> = run
+                .results
+                .iter()
+                .map(|r| (r.file_path.as_str(), r.score))
+                .collect();
+            assert_eq!(left, right, "query {query:?}");
+        }
+    }
 }
 
 #[test]

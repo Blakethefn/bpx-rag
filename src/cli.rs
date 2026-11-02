@@ -133,6 +133,9 @@ pub enum EvalAction {
         /// Source tree to index. Defaults to <dataset>/corpus.
         #[arg(long, value_hint = ValueHint::DirPath)]
         corpus_root: Option<PathBuf>,
+        /// Gating policy for the trigram and fuzzy layers. Used to compare policies.
+        #[arg(long, value_enum, default_value_t = crate::knowledge::query::LayerPolicy::default())]
+        layer_policy: crate::knowledge::query::LayerPolicy,
     },
     /// Measure SQLite vector-search scaling with deterministic synthetic vectors.
     Scaling {

@@ -80,6 +80,7 @@ fn run_evaluation(action: EvalAction) -> Result<()> {
             vector_weight,
             dataset,
             corpus_root,
+            layer_policy,
         } => {
             let report = eval::run_retrieval_evaluation(
                 repetitions,
@@ -89,6 +90,7 @@ fn run_evaluation(action: EvalAction) -> Result<()> {
                     keyword_weight,
                     vector_weight,
                 },
+                layer_policy,
             )?;
             println!("{}", serde_json::to_string_pretty(&report)?);
             if report.filter_leaks > 0

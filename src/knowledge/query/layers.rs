@@ -1,10 +1,27 @@
 //! Which lexical layers run for a query, and why.
 //!
-//! The trigram and fuzzy layers are gated on candidate-pool size. Every layer reports what it
-//! did, so intentional skips can be told apart from failures.
+//! The trigram and fuzzy layers are gated on candidate-pool size. A policy decides which pool
+//! each gate reads. Every layer reports what it did, so intentional skips can be told apart
+//! from failures.
 
 use super::lexical::sanitize_trigram_query;
 use serde::Serialize;
+
+/// How the trigram and fuzzy layers are gated. The identifier and vector layers are not
+/// gated by any policy.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, clap::ValueEnum)]
+#[serde(rename_all = "snake_case")]
+pub enum LayerPolicy {
+    /// Trigram runs while BM25 is below the pool limit. Fuzzy runs while the BM25 and trigram
+    /// pool is below the limit.
+    #[default]
+    CurrentGating,
+    /// Trigram and fuzzy each run while BM25 is below the pool limit. Fuzzy ignores trigram's
+    /// additions.
+    OwnPoolGating,
+    /// Trigram and fuzzy always run, subject only to their own input checks.
+    Unconditional,
+}
 
 /// Why a layer did not run. Each reason is intentional, so none of them is a warning.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -91,9 +108,10 @@ impl LayerReport {
 /// The trigram layer needs at least this many bytes in the query.
 const TRIGRAM_MIN_BYTES: usize = 3;
 
-/// Whether trigram should be skipped. `None` means it runs. Trigram runs while BM25 has not
-/// filled the candidate pool.
+/// Whether trigram should be skipped. `None` means it runs. The query checks apply under
+/// every policy. The pool check depends on the policy.
 pub(super) fn trigram_skip(
+    policy: LayerPolicy,
     query: &str,
     bm25_len: usize,
     candidate_limit: usize,
@@ -104,13 +122,29 @@ pub(super) fn trigram_skip(
     if sanitize_trigram_query(query).is_empty() {
         return Some(SkipReason::NoQueryTerms);
     }
-    (bm25_len >= candidate_limit).then_some(SkipReason::PoolFull)
+    match policy {
+        LayerPolicy::CurrentGating | LayerPolicy::OwnPoolGating => {
+            (bm25_len >= candidate_limit).then_some(SkipReason::PoolFull)
+        }
+        LayerPolicy::Unconditional => None,
+    }
 }
 
-/// Whether fuzzy should be skipped. `None` means it runs. Fuzzy runs while the BM25 and trigram
-/// pool has not filled the candidate limit. Identifier results are never counted.
-pub(super) fn fuzzy_skip(lexical_pool_len: usize, candidate_limit: usize) -> Option<SkipReason> {
-    (lexical_pool_len >= candidate_limit).then_some(SkipReason::PoolFull)
+/// Whether fuzzy should be skipped. `None` means it runs. The current policy counts the
+/// BM25 and trigram pool. The own-pool policy counts only the BM25 pool. Identifier results
+/// are never counted.
+pub(super) fn fuzzy_skip(
+    policy: LayerPolicy,
+    bm25_len: usize,
+    lexical_pool_len: usize,
+    candidate_limit: usize,
+) -> Option<SkipReason> {
+    let pool_len = match policy {
+        LayerPolicy::CurrentGating => lexical_pool_len,
+        LayerPolicy::OwnPoolGating => bm25_len,
+        LayerPolicy::Unconditional => return None,
+    };
+    (pool_len >= candidate_limit).then_some(SkipReason::PoolFull)
 }
 
 #[cfg(test)]
@@ -118,22 +152,56 @@ mod tests {
     use super::*;
 
     #[test]
-    fn trigram_is_skipped_only_when_bm25_fills_the_pool() {
-        assert_eq!(trigram_skip("alpha", 49, 50), None);
-        assert_eq!(trigram_skip("alpha", 50, 50), Some(SkipReason::PoolFull));
+    fn current_policy_skips_trigram_only_when_bm25_fills_the_pool() {
+        assert_eq!(
+            trigram_skip(LayerPolicy::CurrentGating, "alpha", 49, 50),
+            None
+        );
+        assert_eq!(
+            trigram_skip(LayerPolicy::CurrentGating, "alpha", 50, 50),
+            Some(SkipReason::PoolFull)
+        );
     }
 
     #[test]
-    fn fuzzy_gate_counts_trigram_additions() {
+    fn current_policy_fuzzy_gate_counts_trigram_additions() {
         // BM25 is below the limit, but BM25 plus trigram has filled it.
-        assert_eq!(fuzzy_skip(50, 50), Some(SkipReason::PoolFull));
-        assert_eq!(fuzzy_skip(49, 50), None);
+        assert_eq!(
+            fuzzy_skip(LayerPolicy::CurrentGating, 20, 50, 50),
+            Some(SkipReason::PoolFull)
+        );
     }
 
     #[test]
-    fn short_query_skips_trigram_before_the_pool_check() {
-        assert_eq!(trigram_skip("ab", 0, 50), Some(SkipReason::QueryTooShort));
-        assert_eq!(trigram_skip("ab", 50, 50), Some(SkipReason::QueryTooShort));
+    fn own_pool_policy_fuzzy_gate_ignores_trigram_additions() {
+        assert_eq!(fuzzy_skip(LayerPolicy::OwnPoolGating, 20, 50, 50), None);
+        assert_eq!(
+            fuzzy_skip(LayerPolicy::OwnPoolGating, 50, 50, 50),
+            Some(SkipReason::PoolFull)
+        );
+    }
+
+    #[test]
+    fn unconditional_policy_never_gates_on_pool_size() {
+        assert_eq!(
+            trigram_skip(LayerPolicy::Unconditional, "alpha", 500, 50),
+            None
+        );
+        assert_eq!(fuzzy_skip(LayerPolicy::Unconditional, 500, 500, 50), None);
+    }
+
+    #[test]
+    fn short_query_skips_trigram_under_every_policy() {
+        for policy in [
+            LayerPolicy::CurrentGating,
+            LayerPolicy::OwnPoolGating,
+            LayerPolicy::Unconditional,
+        ] {
+            assert_eq!(
+                trigram_skip(policy, "ab", 0, 50),
+                Some(SkipReason::QueryTooShort)
+            );
+        }
     }
 
     #[test]
