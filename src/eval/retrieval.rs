@@ -151,42 +151,41 @@ pub fn run_retrieval_evaluation(
         let judgments = qrels
             .get(&query.query_id)
             .ok_or_else(|| anyhow!("no relevance judgments for query {}", query.query_id))?;
+        let scope = knowledge::query::SearchScope {
+            filter: query.filter.as_deref(),
+            source_label: Some("retrieval-eval"),
+            policy: layer_policy,
+        };
         let _ = knowledge::query::knowledge_search_report_with_policy(
             &store,
             &query.text,
-            query.filter.as_deref(),
-            Some("retrieval-eval"),
+            scope,
             TOP_K as u32,
             &hybrid_weights,
             1024,
-            layer_policy,
         )?;
         let lexical_results = knowledge::query::knowledge_search_report_with_policy(
             &store,
             &query.text,
-            query.filter.as_deref(),
-            Some("retrieval-eval"),
+            scope,
             TOP_K as u32,
             &SearchWeights {
                 keyword_weight: 1.0,
                 vector_weight: 0.0,
             },
             1024,
-            layer_policy,
         )?
         .results;
         let vector_results = knowledge::query::knowledge_search_report_with_policy(
             &store,
             &query.text,
-            query.filter.as_deref(),
-            Some("retrieval-eval"),
+            scope,
             TOP_K as u32,
             &SearchWeights {
                 keyword_weight: 0.0,
                 vector_weight: 1.0,
             },
             1024,
-            layer_policy,
         )?
         .results;
         let mut hybrid = SearchReport::default();
@@ -196,12 +195,10 @@ pub fn run_retrieval_evaluation(
             hybrid = knowledge::query::knowledge_search_report_with_policy(
                 &store,
                 &query.text,
-                query.filter.as_deref(),
-                Some("retrieval-eval"),
+                scope,
                 TOP_K as u32,
                 &hybrid_weights,
                 1024,
-                layer_policy,
             )?;
             query_times.push(started.elapsed());
         }
@@ -280,13 +277,11 @@ pub fn run_retrieval_evaluation(
         let deep_results = knowledge::query::search_with_pool(
             &store,
             &query.text,
-            query.filter.as_deref(),
-            Some("retrieval-eval"),
+            scope,
             DIAGNOSTIC_DEPTH as u32,
             knowledge::query::expanded_candidate_limit(TOP_K as u32),
             &hybrid_weights,
             1024,
-            layer_policy,
         )?
         .results;
         let deep_paths = unique_paths(

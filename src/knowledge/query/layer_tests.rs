@@ -70,13 +70,15 @@ fn every_layer_is_reported_in_pipeline_order() {
     let report = search_with_pool(
         &store,
         "alpha beta",
-        None,
-        None,
+        SearchScope {
+            filter: None,
+            source_label: None,
+            policy: LayerPolicy::CurrentGating,
+        },
         5,
         50,
         &lexical_only(),
         1_000,
-        LayerPolicy::CurrentGating,
     )
     .unwrap();
 
@@ -165,13 +167,15 @@ fn full_pool_skips_trigram_under_current_gating_with_pool_reason() {
     let report = search_with_pool(
         &store,
         "alpha",
-        None,
-        None,
+        SearchScope {
+            filter: None,
+            source_label: None,
+            policy: LayerPolicy::CurrentGating,
+        },
         2,
         3,
         &lexical_only(),
         1_000,
-        LayerPolicy::CurrentGating,
     )
     .unwrap();
 
@@ -194,13 +198,15 @@ fn full_pool_still_runs_trigram_under_unconditional_policy() {
     let report = search_with_pool(
         &store,
         "alpha",
-        None,
-        None,
+        SearchScope {
+            filter: None,
+            source_label: None,
+            policy: LayerPolicy::Unconditional,
+        },
         2,
         3,
         &lexical_only(),
         1_000,
-        LayerPolicy::Unconditional,
     )
     .unwrap();
 
@@ -233,25 +239,29 @@ fn own_pool_policy_runs_fuzzy_when_only_trigram_filled_the_pool() {
     let current = search_with_pool(
         &store,
         "alp",
-        None,
-        None,
+        SearchScope {
+            filter: None,
+            source_label: None,
+            policy: LayerPolicy::CurrentGating,
+        },
         2,
         3,
         &lexical_only(),
         1_000,
-        LayerPolicy::CurrentGating,
     )
     .unwrap();
     let own_pool = search_with_pool(
         &store,
         "alp",
-        None,
-        None,
+        SearchScope {
+            filter: None,
+            source_label: None,
+            policy: LayerPolicy::OwnPoolGating,
+        },
         2,
         3,
         &lexical_only(),
         1_000,
-        LayerPolicy::OwnPoolGating,
     )
     .unwrap();
 
@@ -275,13 +285,15 @@ fn metadata_filter_applies_to_every_layer_that_runs() {
     let report = search_with_pool(
         &store,
         "alpha notes",
-        None,
-        Some("keep"),
+        SearchScope {
+            filter: None,
+            source_label: Some("keep"),
+            policy: LayerPolicy::Unconditional,
+        },
         5,
         50,
         &lexical_only(),
         1_000,
-        LayerPolicy::Unconditional,
     )
     .unwrap();
 
@@ -315,13 +327,15 @@ fn policies_return_identical_results_when_no_gate_fires() {
                 search_with_pool(
                     &store,
                     query,
-                    None,
-                    None,
+                    SearchScope {
+                        filter: None,
+                        source_label: None,
+                        policy: *policy,
+                    },
                     5,
                     50,
                     &lexical_only(),
                     1_000,
-                    *policy,
                 )
                 .unwrap()
             })

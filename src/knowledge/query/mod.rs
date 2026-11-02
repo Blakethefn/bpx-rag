@@ -39,6 +39,15 @@ impl Default for SearchWeights {
     }
 }
 
+/// The filters and gating policy for one search. Grouped so the policy entry point stays
+/// within the argument limit.
+#[derive(Debug, Clone, Copy)]
+pub struct SearchScope<'a> {
+    pub filter: Option<&'a str>,
+    pub source_label: Option<&'a str>,
+    pub policy: LayerPolicy,
+}
+
 /// A search result from the knowledge store (or combined search).
 #[derive(Debug, serde::Serialize)]
 pub struct KnowledgeSearchResult {
@@ -102,12 +111,14 @@ pub fn knowledge_search_report(
     knowledge_search_report_with_policy(
         store,
         query,
-        filter,
-        source_label,
+        SearchScope {
+            filter,
+            source_label,
+            policy: LayerPolicy::default(),
+        },
         limit,
         weights,
         snippet_bytes,
-        LayerPolicy::default(),
     )
 }
 
@@ -116,12 +127,10 @@ pub fn knowledge_search_report(
 pub fn knowledge_search_report_with_policy(
     store: &KnowledgeStore,
     query: &str,
-    filter: Option<&str>,
-    source_label: Option<&str>,
+    scope: SearchScope<'_>,
     limit: u32,
     weights: &SearchWeights,
     snippet_bytes: usize,
-    policy: LayerPolicy,
 ) -> Result<SearchReport> {
     if limit == 0 {
         return Ok(SearchReport::default());
@@ -133,13 +142,11 @@ pub fn knowledge_search_report_with_policy(
     search_with_pool(
         store,
         query,
-        filter,
-        source_label,
+        scope,
         limit,
         expanded_candidate_limit(limit),
         weights,
         snippet_bytes,
-        policy,
     )
 }
 
@@ -151,14 +158,17 @@ pub fn knowledge_search_report_with_policy(
 pub(crate) fn search_with_pool(
     store: &KnowledgeStore,
     query: &str,
-    filter: Option<&str>,
-    source_label: Option<&str>,
+    scope: SearchScope<'_>,
     limit: u32,
     candidate_limit: u32,
     weights: &SearchWeights,
     snippet_bytes: usize,
-    policy: LayerPolicy,
 ) -> Result<SearchReport> {
+    let SearchScope {
+        filter,
+        source_label,
+        policy,
+    } = scope;
     let conn = store.conn();
 
     // Parse metadata filters
