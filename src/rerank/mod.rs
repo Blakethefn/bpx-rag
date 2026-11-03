@@ -5,6 +5,7 @@
 //! fused order in place and is reported in the layer diagnostics and as a warning. A search never
 //! fails because of the reranker.
 
+pub mod install;
 pub mod onnx;
 
 use crate::config::{Config, RerankConfig};
@@ -84,7 +85,7 @@ pub fn status_line(config: &Config) -> String {
         )
     } else {
         format!(
-            "reranker: enabled, but model files are missing in {}: {}",
+            "reranker: enabled, but model files are missing or damaged in {}: {}. Run `bpx-rag models download-reranker`.",
             model_dir.display(),
             missing.join(", ")
         )

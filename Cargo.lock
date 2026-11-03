@@ -197,6 +197,7 @@ dependencies = [
  "tree-sitter-solidity",
  "tree-sitter-swift",
  "tree-sitter-typescript",
+ "ureq",
  "usearch",
 ]
 
