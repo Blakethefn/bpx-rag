@@ -149,7 +149,7 @@ impl Embedder {
     }
 }
 
-fn shared_ort_environment() -> Result<ort::environment::Environment> {
+pub(crate) fn shared_ort_environment() -> Result<ort::environment::Environment> {
     static ENVIRONMENT: OnceLock<Mutex<Option<ort::environment::Environment>>> = OnceLock::new();
     let environment = ENVIRONMENT.get_or_init(|| Mutex::new(None));
     let mut environment = environment

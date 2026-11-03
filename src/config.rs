@@ -73,6 +73,45 @@ pub struct SearchConfig {
     /// Multiplier for keyword (BM25/trigram/fuzzy) RRF scores (default 1.0)
     #[serde(default = "default_weight")]
     pub keyword_weight: f64,
+    /// Cross-encoder reranking of the top fused candidates (off by default)
+    #[serde(default)]
+    pub rerank: RerankConfig,
+}
+
+/// Cross-encoder reranking of the top fused candidates. Off unless `enabled` is set.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct RerankConfig {
+    /// Reorder the top fused candidates with a cross-encoder (default false)
+    pub enabled: bool,
+    /// Directory holding the reranker's `model.onnx` and tokenizer files. Never downloaded
+    /// automatically.
+    pub model_dir: String,
+    /// Fused candidates to reorder before file diversification (default 30)
+    pub candidates: usize,
+    /// Inference provider. CUDA requires a `gpu-cuda` build.
+    pub device: EmbeddingDevice,
+}
+
+impl Default for RerankConfig {
+    fn default() -> Self {
+        let model_dir = dirs::data_local_dir()
+            .map(|d| {
+                d.join(crate::db::APP_NAME)
+                    .join("models")
+                    .join("reranker")
+                    .to_string_lossy()
+                    .to_string()
+            })
+            .unwrap_or_else(|| "~/.local/share/bpx-rag/models/reranker".to_string());
+
+        Self {
+            enabled: false,
+            model_dir,
+            candidates: 30,
+            device: EmbeddingDevice::Cpu,
+        }
+    }
 }
 
 fn default_preview_threshold_bytes() -> usize {
@@ -266,6 +305,7 @@ impl Default for Config {
                 relation_neighbors: default_relation_neighbors(),
                 vector_weight: 1.0,
                 keyword_weight: 1.0,
+                rerank: RerankConfig::default(),
             },
             fetch: FetchConfig {
                 cache_ttl_hours: 24,

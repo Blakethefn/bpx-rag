@@ -9,6 +9,7 @@ mod knowledge;
 mod language;
 mod mcp;
 mod relations;
+mod rerank;
 mod search;
 
 use anyhow::{anyhow, Result};
@@ -227,7 +228,10 @@ fn run_sources(command: Commands) -> Result<()> {
 fn run_models(action: ModelsAction) -> Result<()> {
     let config = config::Config::load()?;
     match action {
-        ModelsAction::Status => println!("{}", app::embedding_model_status(&config)),
+        ModelsAction::Status => {
+            println!("{}", app::embedding_model_status(&config));
+            println!("{}", rerank::status_line(&config));
+        }
         ModelsAction::Download => {
             let model_dir = app::model_directory(&config);
             embed::Embedder::new_with_device(

@@ -187,6 +187,9 @@ pub struct SearchWhy {
     pub layers: LayerScores,
     pub metadata_match: bool,
     pub graph_neighbor: bool,
+    /// The reranker's score, when reranking reordered this result. Shown by `explain` only.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rerank_score: Option<f32>,
 }
 
 impl SearchWhy {
@@ -243,6 +246,9 @@ impl SearchWhy {
         }
         if self.graph_neighbor {
             parts.push("graph-neighbor=true".to_string());
+        }
+        if let Some(score) = self.rerank_score {
+            parts.push(format!("rerank={score:.4}"));
         }
         parts.push(format!("final={final_score:.4}"));
         format!("why: {}", parts.join(", "))

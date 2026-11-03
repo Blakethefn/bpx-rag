@@ -110,6 +110,9 @@ pub fn run_retrieval_evaluation(
 
     let mut store = knowledge::open_in_memory()?;
     store.set_embedder(Arc::new(embedder));
+    if let Some(slot) = crate::rerank::slot_from_config(&config) {
+        store.set_reranker(slot);
+    }
     store.add_source(
         "retrieval-eval",
         &corpus_dir.to_string_lossy(),

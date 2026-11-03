@@ -66,7 +66,10 @@ impl Default for SearchOptions<'_> {
 impl RagApp {
     pub fn open() -> Result<Self> {
         let config = Config::load()?;
-        let knowledge = KnowledgeStore::open()?;
+        let mut knowledge = KnowledgeStore::open()?;
+        if let Some(slot) = crate::rerank::slot_from_config(&config) {
+            knowledge.set_reranker(slot);
+        }
         let embedding_notice = embedding_notice(&config);
         Ok(Self {
             config,
