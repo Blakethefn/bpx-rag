@@ -1230,7 +1230,6 @@ fn store_over(conn: rusqlite::Connection) -> KnowledgeStore {
     KnowledgeStore {
         conn,
         embedder: None,
-        reranker: None,
         vector_index_dir: None,
         vector_index: None,
         vector_index_state: None,

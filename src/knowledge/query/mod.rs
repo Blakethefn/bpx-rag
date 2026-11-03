@@ -11,7 +11,6 @@ mod fuzzy;
 mod layers;
 mod lexical;
 mod rank;
-mod reranking;
 mod vector;
 pub(crate) use fuzzy::VocabularyCache;
 use fuzzy::*;
@@ -47,9 +46,6 @@ pub struct SearchScope<'a> {
     pub filter: Option<&'a str>,
     pub source_label: Option<&'a str>,
     pub policy: LayerPolicy,
-    /// Whether the store's reranker, if one is attached, reorders this search's candidates.
-    /// Diagnostics that measure one layer on its own pass `false` so their output is not reranked.
-    pub rerank: bool,
 }
 
 /// A search result from the knowledge store (or combined search).
@@ -119,7 +115,6 @@ pub fn knowledge_search_report(
             filter,
             source_label,
             policy: LayerPolicy::default(),
-            rerank: true,
         },
         limit,
         weights,
@@ -173,7 +168,6 @@ pub(crate) fn search_with_pool(
         filter,
         source_label,
         policy,
-        rerank,
     } = scope;
     let conn = store.conn();
 
@@ -316,15 +310,6 @@ pub(crate) fn search_with_pool(
             .unwrap_or(std::cmp::Ordering::Equal)
             .then(left_id.cmp(right_id))
     });
-    // Rerank before file diversification, so the output cut sees the reranked order.
-    if let Some(slot) = store.reranker().filter(|_| rerank) {
-        layers.push(reranking::apply_reranker(
-            slot,
-            query,
-            &mut entries,
-            &mut warnings,
-        ));
-    }
     let results: Vec<KnowledgeSearchResult> = entries
         .into_iter()
         .map(|(_, sr)| sr.into_knowledge_result(snippet_bytes))
@@ -371,7 +356,5 @@ impl Clone for KnowledgeSearchResult {
 mod fuzzy_bench;
 #[cfg(test)]
 mod layer_tests;
-#[cfg(test)]
-mod reranking_tests;
 #[cfg(test)]
 mod tests;

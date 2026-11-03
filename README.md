@@ -63,33 +63,6 @@ Build the optional provider with:
 cargo build --release --features gpu-cuda
 ```
 
-### Optional cross-encoder reranking
-
-Reranking is off by default. When enabled, the top fused candidates of each search are reordered by a local cross-encoder before file diversification. Search never downloads anything.
-
-The supported reranker is `jinaai/jina-reranker-v1-turbo-en` (Apache-2.0), pinned to Hugging Face revision `b8c14f4e723d9e0aab4732a7b7b93741eeeb77c2`. Install it explicitly:
-
-```bash
-bpx-rag models download-reranker
-bpx-rag models status
-```
-
-The download fetches five files from that revision: `onnx/model.onnx` (151,296,975 bytes, full precision), `tokenizer.json`, `config.json`, `special_tokens_map.json`, and `tokenizer_config.json`. Each one is checked against its pinned size and SHA-256 before it is moved into the model directory. A file that fails is removed. Running the command again re-verifies the installed files and downloads only what is missing.
-
-Enable it in `~/.config/bpx-rag/config.toml`:
-
-```toml
-[search.rerank]
-enabled = true
-model_dir = "~/.local/share/bpx-rag/models/reranker"  # the default
-candidates = 30   # fused candidates to reorder, from the top
-device = "cpu"    # or "cuda" with a gpu-cuda build
-```
-
-If the model files are missing or damaged, or the reranker fails on a query, the search keeps its normal order. `--explain` reports the failure on a `rerank` layer, and a warning is added. Results never fail because of the reranker. `--explain` also shows each reranked result's own fused score (`rrf=`) and the reranker's score (`rerank=`). The displayed `score` is the position score of the slot the result took.
-
-Reranking adds model inference to every query. Turn it on only after measuring it on your own corpus.
-
 ## CLI
 
 ```text

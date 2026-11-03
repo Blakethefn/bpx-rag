@@ -25,7 +25,6 @@ use crate::embed::Embed;
 pub struct KnowledgeStore {
     conn: Connection,
     embedder: Option<Arc<dyn Embed>>,
-    reranker: Option<crate::rerank::RerankSlot>,
     vector_index_dir: Option<std::path::PathBuf>,
     vector_index: Option<ann::VectorIndex>,
     vector_index_state: Option<VectorIndexState>,
@@ -110,7 +109,6 @@ impl KnowledgeStore {
         Ok(Self {
             conn,
             embedder: None,
-            reranker: None,
             vector_index_dir,
             vector_index: None,
             vector_index_state: None,
@@ -121,16 +119,6 @@ impl KnowledgeStore {
     /// Set the embedder after construction.
     pub fn set_embedder(&mut self, embedder: Arc<dyn Embed>) {
         self.embedder = Some(embedder);
-    }
-
-    /// Attach the reranker slot. Searches report its diagnostics only when one is attached.
-    pub fn set_reranker(&mut self, slot: crate::rerank::RerankSlot) {
-        self.reranker = Some(slot);
-    }
-
-    /// The reranker slot, if reranking is configured.
-    pub fn reranker(&self) -> Option<&crate::rerank::RerankSlot> {
-        self.reranker.as_ref()
     }
 
     /// Register a new knowledge source. Returns the source ID.
@@ -370,7 +358,6 @@ pub(crate) fn open_in_memory() -> anyhow::Result<KnowledgeStore> {
     Ok(KnowledgeStore {
         conn,
         embedder: None,
-        reranker: None,
         vector_index_dir: None,
         vector_index: None,
         vector_index_state: None,

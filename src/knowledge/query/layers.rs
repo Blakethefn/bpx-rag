@@ -41,8 +41,6 @@ pub enum SkipReason {
     TooFewContentWords,
     /// No embedder is attached to the store.
     NoEmbedder,
-    /// Fewer than two fused candidates, so there is nothing to reorder.
-    TooFewCandidates,
 }
 
 impl SkipReason {
@@ -56,7 +54,6 @@ impl SkipReason {
             Self::NoCorrectedWord => "no corrected word",
             Self::TooFewContentWords => "fewer than two content words",
             Self::NoEmbedder => "no embedder attached",
-            Self::TooFewCandidates => "fewer than two candidates",
         }
     }
 }

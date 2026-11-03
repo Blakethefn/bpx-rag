@@ -111,9 +111,6 @@ pub enum ModelsAction {
     Status,
     /// Download the configured embedding model explicitly.
     Download,
-    /// Download and verify the pinned reranker model into `search.rerank.model_dir`. Opt-in.
-    /// Nothing else downloads it, and search never touches the network.
-    DownloadReranker,
 }
 
 #[derive(Subcommand)]

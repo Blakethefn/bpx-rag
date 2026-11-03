@@ -9,7 +9,6 @@ mod knowledge;
 mod language;
 mod mcp;
 mod relations;
-mod rerank;
 mod search;
 
 use anyhow::{anyhow, Result};
@@ -228,26 +227,7 @@ fn run_sources(command: Commands) -> Result<()> {
 fn run_models(action: ModelsAction) -> Result<()> {
     let config = config::Config::load()?;
     match action {
-        ModelsAction::Status => {
-            println!("{}", app::embedding_model_status(&config));
-            println!("{}", rerank::status_line(&config));
-        }
-        ModelsAction::DownloadReranker => {
-            let model_dir = std::path::PathBuf::from(&config.search.rerank.model_dir);
-            for (path, outcome) in rerank::install::install(&model_dir)? {
-                let state = match outcome {
-                    rerank::install::Outcome::AlreadyInstalled => "already installed, verified",
-                    rerank::install::Outcome::Downloaded => "downloaded, verified",
-                };
-                println!("{path}: {state}");
-            }
-            println!(
-                "reranker {} at revision {} is ready in {}.",
-                rerank::install::REPOSITORY,
-                rerank::install::REVISION,
-                model_dir.display()
-            );
-        }
+        ModelsAction::Status => println!("{}", app::embedding_model_status(&config)),
         ModelsAction::Download => {
             let model_dir = app::model_directory(&config);
             embed::Embedder::new_with_device(
