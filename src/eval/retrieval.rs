@@ -158,6 +158,13 @@ pub fn run_retrieval_evaluation(
             filter: query.filter.as_deref(),
             source_label: Some("retrieval-eval"),
             policy: layer_policy,
+            rerank: true,
+        };
+        // The lexical-only and vector-only diagnostics measure one layer each. They never pass
+        // through the reranker, so attaching one does not change what they measure.
+        let layer_scope = knowledge::query::SearchScope {
+            rerank: false,
+            ..scope
         };
         let _ = knowledge::query::knowledge_search_report_with_policy(
             &store,
@@ -170,7 +177,7 @@ pub fn run_retrieval_evaluation(
         let lexical_results = knowledge::query::knowledge_search_report_with_policy(
             &store,
             &query.text,
-            scope,
+            layer_scope,
             TOP_K as u32,
             &SearchWeights {
                 keyword_weight: 1.0,
@@ -182,7 +189,7 @@ pub fn run_retrieval_evaluation(
         let vector_results = knowledge::query::knowledge_search_report_with_policy(
             &store,
             &query.text,
-            scope,
+            layer_scope,
             TOP_K as u32,
             &SearchWeights {
                 keyword_weight: 0.0,

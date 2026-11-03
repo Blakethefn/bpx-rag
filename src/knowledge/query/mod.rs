@@ -47,6 +47,9 @@ pub struct SearchScope<'a> {
     pub filter: Option<&'a str>,
     pub source_label: Option<&'a str>,
     pub policy: LayerPolicy,
+    /// Whether the store's reranker, if one is attached, reorders this search's candidates.
+    /// Diagnostics that measure one layer on its own pass `false` so their output is not reranked.
+    pub rerank: bool,
 }
 
 /// A search result from the knowledge store (or combined search).
@@ -116,6 +119,7 @@ pub fn knowledge_search_report(
             filter,
             source_label,
             policy: LayerPolicy::default(),
+            rerank: true,
         },
         limit,
         weights,
@@ -169,6 +173,7 @@ pub(crate) fn search_with_pool(
         filter,
         source_label,
         policy,
+        rerank,
     } = scope;
     let conn = store.conn();
 
@@ -312,7 +317,7 @@ pub(crate) fn search_with_pool(
             .then(left_id.cmp(right_id))
     });
     // Rerank before file diversification, so the output cut sees the reranked order.
-    if let Some(slot) = store.reranker() {
+    if let Some(slot) = store.reranker().filter(|_| rerank) {
         layers.push(reranking::apply_reranker(
             slot,
             query,

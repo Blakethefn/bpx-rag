@@ -190,6 +190,10 @@ pub struct SearchWhy {
     /// The reranker's score, when reranking reordered this result. Shown by `explain` only.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub rerank_score: Option<f32>,
+    /// This result's own fused (RRF) score, kept when reranking reordered it. The displayed score
+    /// is then the position score of the slot the result took, so this value is what it was fused at.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rrf_score: Option<f64>,
 }
 
 impl SearchWhy {
@@ -246,6 +250,9 @@ impl SearchWhy {
         }
         if self.graph_neighbor {
             parts.push("graph-neighbor=true".to_string());
+        }
+        if let Some(rrf) = self.rrf_score {
+            parts.push(format!("rrf={rrf:.4}"));
         }
         if let Some(score) = self.rerank_score {
             parts.push(format!("rerank={score:.4}"));

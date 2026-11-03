@@ -73,6 +73,7 @@ fn reorder_head(entries: &mut Vec<(i64, ScoredResult)>, order: &[(usize, f32)]) 
         .map(|(((_, (rowid, result)), (_, rerank_score)), slot)| {
             let why = SearchWhy {
                 rerank_score: Some(*rerank_score),
+                rrf_score: Some(result.rrf_score),
                 ..result.why
             };
             (

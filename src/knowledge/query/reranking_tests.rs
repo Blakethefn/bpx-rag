@@ -68,6 +68,7 @@ fn scope() -> SearchScope<'static> {
         filter: None,
         source_label: None,
         policy: LayerPolicy::CurrentGating,
+        rerank: true,
     }
 }
 
@@ -300,6 +301,153 @@ fn reranked_order_is_deterministic_across_repeated_searches() {
     });
 
     assert_eq!(paths(&run(&store, 5)), paths(&run(&store, 5)));
+}
+
+#[test]
+fn diagnostic_scope_is_not_reranked() {
+    let mut store = make_store();
+    seed_three_files(&store);
+    let baseline = run(&store, 5);
+    let reranker = PreferText::new("third note");
+    store.set_reranker(RerankSlot {
+        candidates: 3,
+        reranker: Ok(reranker.clone()),
+    });
+    let diagnostic = SearchScope {
+        rerank: false,
+        ..scope()
+    };
+
+    let report =
+        search_with_pool(&store, "alpha", diagnostic, 5, 50, &lexical_only(), 1024).unwrap();
+
+    assert_eq!(paths(&report), paths(&baseline));
+    assert!(rerank_layer(&report).is_none());
+    assert_eq!(reranker.passages_seen.load(Ordering::SeqCst), 0);
+}
+
+#[test]
+fn reranked_results_keep_their_identity_and_citations() {
+    let mut store = make_store();
+    seed_three_files(&store);
+    let baseline = run(&store, 5);
+    store.set_reranker(RerankSlot {
+        candidates: 3,
+        reranker: Ok(PreferText::new("third note")),
+    });
+
+    let report = run(&store, 5);
+
+    let identity = |report: &SearchReport| {
+        let mut rows: Vec<(String, String, String, String, String)> = report
+            .results
+            .iter()
+            .map(|result| {
+                (
+                    result.file_path.clone(),
+                    result.lines.clone(),
+                    result.title.clone(),
+                    result.snippet.clone(),
+                    result.source_label.clone(),
+                )
+            })
+            .collect();
+        rows.sort();
+        rows
+    };
+    assert_eq!(identity(&report), identity(&baseline));
+    for result in &report.results {
+        let original = baseline
+            .results
+            .iter()
+            .find(|candidate| candidate.file_path == result.file_path)
+            .unwrap();
+        assert_eq!(result.file_id, original.file_id);
+        assert_eq!(result.metadata, original.metadata);
+    }
+}
+
+#[test]
+fn reranked_candidates_respect_the_source_scope() {
+    let mut store = make_store();
+    seed_three_files(&store);
+    seed_chunk(
+        &store,
+        "other",
+        "/other",
+        "d.md",
+        "D",
+        "alpha in another source",
+        "{}",
+    );
+    store.set_reranker(RerankSlot {
+        candidates: 10,
+        reranker: Ok(PreferText::new("another source")),
+    });
+    let scoped = SearchScope {
+        source_label: Some("repo"),
+        ..scope()
+    };
+
+    let report = search_with_pool(&store, "alpha", scoped, 5, 50, &lexical_only(), 1024).unwrap();
+
+    assert!(report
+        .results
+        .iter()
+        .all(|result| result.source_label == "repo"));
+    assert_eq!(rerank_layer(&report).unwrap().candidates, 3);
+}
+
+#[test]
+fn reranked_output_stays_one_chunk_per_file() {
+    let mut store = make_store();
+    seed_three_files(&store);
+    store.set_reranker(RerankSlot {
+        candidates: 3,
+        reranker: Ok(PreferText::new("first note")),
+    });
+
+    let report = run(&store, 2);
+
+    let files: std::collections::HashSet<&str> = report
+        .results
+        .iter()
+        .map(|result| result.file_path.as_str())
+        .collect();
+    assert_eq!(report.results.len(), 2);
+    assert_eq!(files.len(), 2);
+}
+
+#[test]
+fn reranked_results_explain_their_own_fused_score() {
+    let mut store = make_store();
+    seed_three_files(&store);
+    let baseline = run(&store, 5);
+    store.set_reranker(RerankSlot {
+        candidates: 3,
+        reranker: Ok(PreferText::new("third note")),
+    });
+
+    let report = run(&store, 5);
+
+    for result in &report.results {
+        let original = baseline
+            .results
+            .iter()
+            .find(|candidate| candidate.file_path == result.file_path)
+            .unwrap();
+        assert_eq!(result.why.rrf_score, Some(original.score));
+        let line = result.why.detailed_line(result.score);
+        assert!(
+            line.contains(&format!("rrf={:.4}", original.score)),
+            "{line}"
+        );
+        assert!(line.contains("rerank="), "{line}");
+    }
+    assert!(report
+        .results
+        .windows(2)
+        .all(|pair| pair[0].score >= pair[1].score));
 }
 
 #[test]
