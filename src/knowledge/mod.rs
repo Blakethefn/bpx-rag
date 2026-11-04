@@ -12,6 +12,7 @@ pub mod links;
 pub mod query;
 pub mod schema;
 pub mod scope;
+pub mod symbols;
 pub mod sync;
 
 use anyhow::{anyhow, Result};
@@ -186,6 +187,11 @@ impl KnowledgeStore {
                 rusqlite::params![rowid],
             )?;
         }
+
+        self.conn.execute(
+            "DELETE FROM knowledge_symbols WHERE source_id = ?1",
+            rusqlite::params![source_id],
+        )?;
 
         // Delete chunk_meta before the source (FK references files and source).
         self.conn.execute(

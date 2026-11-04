@@ -17,4 +17,5 @@ fn exposes_rag_and_direct_relationship_tools() {
     assert!(names.contains(&"bpx_models"));
     assert!(names.contains(&"bpx_embed"));
     assert!(names.contains(&"bpx_relate"));
+    assert!(names.contains(&"bpx_symbol"));
 }

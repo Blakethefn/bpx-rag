@@ -2,12 +2,16 @@ use std::path::Path;
 
 mod code;
 mod lines;
+mod symbols;
 mod syntax;
 mod text;
 use code::*;
 use lines::*;
 use syntax::*;
 use text::*;
+
+pub(crate) use symbols::symbols_for_path;
+pub use symbols::Symbol;
 
 /// Maximum chunk size in bytes
 const MAX_CHUNK_BYTES: usize = 4096;
@@ -36,6 +40,8 @@ pub struct Chunk {
 pub struct ChunkingResult {
     pub chunks: Vec<Chunk>,
     pub used_tree_sitter: bool,
+    /// Named declarations from the same parse. Empty unless the tree had no parse error.
+    pub symbols: Vec<Symbol>,
 }
 
 /// Result of single-pass content classification
@@ -163,14 +169,17 @@ pub fn chunk_content(content: &str) -> Vec<Chunk> {
 /// Markdown, unknown languages, malformed source, and large files keep the
 /// existing content-based chunker as a fallback.
 pub fn chunk_content_for_path(path: &Path, content: &str) -> ChunkingResult {
+    let mut symbols = Vec::new();
     if content.len() <= MAX_TREE_SITTER_FILE_BYTES {
         if let Some((grammar, tree)) = crate::relations::parse_tree_for_path(path, content) {
             let root = tree.root_node();
             if !root.has_error() {
+                symbols = symbols::symbols_from_tree(content, root, grammar);
                 if let Some(chunks) = chunk_syntax_tree(content, root, grammar) {
                     return ChunkingResult {
                         chunks,
                         used_tree_sitter: true,
+                        symbols,
                     };
                 }
             }
@@ -180,6 +189,7 @@ pub fn chunk_content_for_path(path: &Path, content: &str) -> ChunkingResult {
     ChunkingResult {
         chunks: chunk_content(content),
         used_tree_sitter: false,
+        symbols,
     }
 }
 

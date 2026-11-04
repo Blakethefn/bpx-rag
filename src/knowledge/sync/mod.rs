@@ -3,7 +3,8 @@
 //! Walks registered source directories, compares content hashes against the
 //! database, and re-indexes only changed files.
 
-use crate::chunk::chunker_version_for_path;
+use crate::chunk::{chunker_version_for_path, symbols_for_path, Symbol};
+use crate::knowledge::symbols::{replace_file_symbols, SYMBOL_INDEX_VERSION};
 use crate::knowledge::{scope, KnowledgeSourceInfo, KnowledgeStore};
 use anyhow::{Context, Result};
 use ignore::WalkBuilder;
@@ -80,6 +81,8 @@ pub fn sync_source(
     let mut to_add: Vec<(String, PathBuf, String)> = Vec::new(); // (rel, abs, hash)
     let mut to_update: Vec<(i64, PathBuf, String)> = Vec::new(); // (file_id, abs, hash)
     let mut to_remove: Vec<i64> = Vec::new();
+    // Unchanged files indexed before symbols existed. Their symbols come from the content read here.
+    let mut to_backfill_symbols: Vec<(i64, Vec<Symbol>)> = Vec::new();
     let mut sensitive_content_paths = HashSet::new();
     let mut unchanged: usize = 0;
 
@@ -99,18 +102,23 @@ pub fn sync_source(
         let hash = sha256_hex(content.as_bytes());
 
         let chunker_version = chunker_version_for_path(Path::new(rel_path));
-        if let Some((file_id, old_hash, old_chunker_version)) = db_files.get(rel_path) {
+        if let Some((file_id, old_hash, old_chunker_version, old_symbol_version)) =
+            db_files.get(rel_path)
+        {
             if *old_hash != hash || *old_chunker_version != chunker_version {
                 to_update.push((*file_id, abs_path.clone(), hash));
             } else {
                 unchanged += 1;
+                if *old_symbol_version < SYMBOL_INDEX_VERSION {
+                    to_backfill_symbols.push((*file_id, symbols_for_path(abs_path, &content)));
+                }
             }
         } else {
             to_add.push((rel_path.clone(), abs_path.clone(), hash));
         }
     }
 
-    for (rel_path, (file_id, _, _)) in &db_files {
+    for (rel_path, (file_id, _, _, _)) in &db_files {
         if !disk_files.contains_key(rel_path) || sensitive_content_paths.contains(rel_path) {
             to_remove.push(*file_id);
         }
@@ -226,7 +234,12 @@ pub fn sync_source(
             )?;
         }
 
-        // 4b. Replace changed files and add new files using prepared vectors.
+        // 4b. Backfill symbols for unchanged files. Chunks, hashes, and vectors are not touched.
+        for (file_id, symbols) in &to_backfill_symbols {
+            replace_file_symbols(conn, source.id, *file_id, symbols)?;
+        }
+
+        // 4c. Replace changed files and add new files using prepared vectors.
         for file in &prepared_files {
             let file_id = match file.file_id {
                 Some(file_id) => {

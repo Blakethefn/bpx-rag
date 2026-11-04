@@ -1,6 +1,7 @@
 use super::*;
 use crate::embed::{embedding_to_bytes, normalize_embedding};
 use crate::knowledge::identifiers::identifier_words;
+use crate::knowledge::symbols::{delete_file_symbols, replace_file_symbols};
 use anyhow::{Context, Result};
 use rusqlite::params;
 use std::collections::HashMap;
@@ -91,6 +92,8 @@ pub(super) fn index_prepared_file(
         }
     }
 
+    replace_file_symbols(conn, source_id, file_id, &file.symbols)?;
+
     // Update file record
     conn.execute(
         "UPDATE knowledge_files SET content_hash = ?1, size_bytes = ?2,
@@ -143,6 +146,7 @@ pub(super) fn delete_file_chunks(conn: &rusqlite::Connection, file_id: i64) -> R
         "DELETE FROM knowledge_chunk_meta WHERE file_id = ?1",
         params![file_id],
     )?;
+    delete_file_symbols(conn, file_id)?;
 
     Ok(())
 }

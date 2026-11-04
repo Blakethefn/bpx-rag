@@ -109,7 +109,7 @@ The `language:<name>` filter matches source-file extensions for common languages
 }
 ```
 
-RAG tools include `bpx_search`, `bpx_add` (with `include` and `exclude` arrays), `bpx_sync`, `bpx_status`, `bpx_remove`, `bpx_read`, `bpx_embed`, and `bpx_models` (status and download). `bpx_read` accepts the cited source-relative path and line range. `bpx_relate` analyzes the current filesystem and does not need the RAG index.
+RAG tools include `bpx_search`, `bpx_add` (with `include` and `exclude` arrays), `bpx_sync`, `bpx_status`, `bpx_remove`, `bpx_read`, `bpx_embed`, and `bpx_models` (status and download). `bpx_read` accepts the cited source-relative path and line range. `bpx_symbol` (CLI: `symbol`) finds declarations by exact name, or by prefix with `prefix`, and returns every path and line range that matches. `bpx_relate` analyzes the current filesystem and does not need the RAG index.
 
 ## Direct file relationships
 

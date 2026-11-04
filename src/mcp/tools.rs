@@ -98,6 +98,20 @@ pub fn tool_definitions() -> Value {
                 }
             },
             {
+                "name": "bpx_symbol",
+                "description": "Find declarations (functions, types, methods, modules, constants) by name across registered sources. Returns exact paths and line ranges for every match. Exact match by default; set prefix for names that start with the given text. Matching is case-sensitive.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "name": { "type": "string", "description": "Declaration name to find." },
+                        "prefix": { "type": "boolean", "description": "Match names that start with `name` instead of matching it exactly." },
+                        "source": { "type": "string", "description": "Restrict results to a registered source label." },
+                        "limit": { "type": "integer", "description": "Maximum matches (1–100, default 20)." }
+                    },
+                    "required": ["name"]
+                }
+            },
+            {
                 "name": "bpx_relate",
                 "description": "Analyze direct imports, includes, and links for one current file. Returns exact paths and line evidence without querying the RAG index.",
                 "inputSchema": {

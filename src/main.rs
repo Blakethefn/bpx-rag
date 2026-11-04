@@ -31,6 +31,24 @@ fn main() -> Result<()> {
 
     match command {
         Commands::Serve => mcp::server::run(&project_dir),
+        Commands::Symbol {
+            name,
+            prefix,
+            source,
+            limit,
+        } => {
+            let app = RagApp::open()?;
+            let mode = if prefix {
+                knowledge::symbols::MatchMode::Prefix
+            } else {
+                knowledge::symbols::MatchMode::Exact
+            };
+            println!(
+                "{}",
+                app.find_symbols(&name, mode, source.as_deref(), limit)?
+            );
+            Ok(())
+        }
         Commands::Relate { path, root } => {
             let analysis = relations::analyze_file(&path, root.as_deref())?;
             println!("{}", relations::format_analysis(&analysis));

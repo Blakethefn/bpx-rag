@@ -86,6 +86,17 @@ pub enum Commands {
         #[arg(long)]
         label: Option<String>,
     },
+    /// Find declarations by name, with their paths and line ranges.
+    Symbol {
+        name: String,
+        /// Match names that start with NAME instead of matching it exactly. Matching is case-sensitive.
+        #[arg(long)]
+        prefix: bool,
+        #[arg(short, long)]
+        source: Option<String>,
+        #[arg(short, long, default_value = "20")]
+        limit: usize,
+    },
     /// Show direct imports, includes, and links for one file. Does not use the index.
     Relate {
         #[arg(value_hint = ValueHint::FilePath)]

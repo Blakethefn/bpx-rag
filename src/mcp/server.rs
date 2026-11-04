@@ -60,6 +60,7 @@ fn dispatch_tool(
     let args = &request["params"]["arguments"];
     let result = match name {
         "bpx_relate" => handle_file_relationships(args, project_dir),
+        "bpx_symbol" => with_app(app_slot, |app| handle_symbol(args, app)),
         "bpx_search" => with_app(app_slot, |app| handle_search(args, app)),
         "bpx_add" => with_app(app_slot, |app| handle_knowledge_add(args, app)),
         "bpx_sync" => with_app(app_slot, |app| handle_knowledge_sync(args, app)),
@@ -227,6 +228,17 @@ fn handle_embed(args: &Value, app: &mut RagApp) -> Result<String> {
         Some(_) => return Err(anyhow!("'label' must be a string")),
     };
     Ok(app.backfill_embeddings(label)?.summary())
+}
+
+fn handle_symbol(args: &Value, app: &mut RagApp) -> Result<String> {
+    let name = required_string(args, "name")?;
+    let mode = if args["prefix"].as_bool().unwrap_or(false) {
+        crate::knowledge::symbols::MatchMode::Prefix
+    } else {
+        crate::knowledge::symbols::MatchMode::Exact
+    };
+    let limit = bounded_usize(args, "limit", 20, 1, crate::app::MAX_SYMBOL_LIMIT)?;
+    app.find_symbols(name, mode, args["source"].as_str(), limit)
 }
 
 fn handle_file_relationships(args: &Value, project_dir: &Path) -> Result<String> {

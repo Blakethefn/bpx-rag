@@ -1,4 +1,4 @@
-use crate::chunk::{chunk_content_for_path, chunker_version_for_path};
+use crate::chunk::{chunk_content_for_path, chunker_version_for_path, Symbol};
 use anyhow::{Context, Result};
 use rusqlite::params;
 use sha2::{Digest, Sha256};
@@ -17,6 +17,7 @@ pub(super) struct PreparedFile {
     pub(super) chunks: Vec<crate::chunk::Chunk>,
     pub(super) chunker_version: i64,
     pub(super) used_tree_sitter: bool,
+    pub(super) symbols: Vec<Symbol>,
     pub(super) vectors: Vec<Vec<f32>>,
 }
 
@@ -27,13 +28,18 @@ pub(super) fn sha256_hex(bytes: &[u8]) -> String {
     format!("{:x}", hasher.finalize())
 }
 
+/// Existing file record: (file id, content hash, chunker version, symbol version).
+pub(super) type DbFileState = (i64, String, i64, i64);
+
 /// Load existing file records from the knowledge DB for a source.
 pub(super) fn load_db_files(
     conn: &rusqlite::Connection,
     source_id: i64,
-) -> Result<HashMap<String, (i64, String, i64)>> {
-    let mut stmt = conn
-        .prepare("SELECT id, rel_path, content_hash, chunker_version FROM knowledge_files WHERE source_id = ?1")?;
+) -> Result<HashMap<String, DbFileState>> {
+    let mut stmt = conn.prepare(
+        "SELECT id, rel_path, content_hash, chunker_version, symbol_version
+         FROM knowledge_files WHERE source_id = ?1",
+    )?;
     let mut files = HashMap::new();
     let rows = stmt.query_map(params![source_id], |row| {
         Ok((
@@ -41,11 +47,12 @@ pub(super) fn load_db_files(
             row.get::<_, String>(1)?,
             row.get::<_, String>(2)?,
             row.get::<_, i64>(3)?,
+            row.get::<_, i64>(4)?,
         ))
     })?;
     for row in rows {
-        let (id, rel_path, hash, chunker_version) = row?;
-        files.insert(rel_path, (id, hash, chunker_version));
+        let (id, rel_path, hash, chunker_version, symbol_version) = row?;
+        files.insert(rel_path, (id, hash, chunker_version, symbol_version));
     }
     Ok(files)
 }
@@ -75,6 +82,7 @@ pub(super) fn prepare_file(
         chunks: chunking.chunks,
         chunker_version,
         used_tree_sitter: chunking.used_tree_sitter,
+        symbols: chunking.symbols,
         vectors: Vec::new(),
     }
 }

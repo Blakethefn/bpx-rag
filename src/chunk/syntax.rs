@@ -7,24 +7,22 @@ pub(super) struct SyntaxBoundary {
     pub(super) title: String,
 }
 
-pub(super) fn chunk_syntax_tree(
+/// Declaration nodes that begin a chunk boundary, in depth-first order. A declaration inside a
+/// wrapper is skipped, because the wrapper stands for it.
+pub(super) fn declaration_nodes<'t>(
+    root: Node<'t>,
     content: &str,
-    root: Node<'_>,
     grammar: crate::relations::Grammar,
-) -> Option<Vec<Chunk>> {
+) -> Vec<Node<'t>> {
     let mut pending = vec![root];
-    let mut boundaries = Vec::new();
+    let mut nodes = Vec::new();
 
     while let Some(node) = pending.pop() {
         let parent_is_wrapper = node
             .parent()
             .is_some_and(|parent| is_declaration_wrapper(parent.kind()));
         if is_declaration_boundary(node, grammar, content) && !parent_is_wrapper {
-            let byte = include_leading_trivia(node, content);
-            boundaries.push(SyntaxBoundary {
-                byte,
-                title: syntax_title(node, content),
-            });
+            nodes.push(node);
         }
 
         for index in (0..node.named_child_count() as u32).rev() {
@@ -33,6 +31,21 @@ pub(super) fn chunk_syntax_tree(
             }
         }
     }
+    nodes
+}
+
+pub(super) fn chunk_syntax_tree(
+    content: &str,
+    root: Node<'_>,
+    grammar: crate::relations::Grammar,
+) -> Option<Vec<Chunk>> {
+    let mut boundaries: Vec<SyntaxBoundary> = declaration_nodes(root, content, grammar)
+        .into_iter()
+        .map(|node| SyntaxBoundary {
+            byte: include_leading_trivia(node, content),
+            title: syntax_title(node, content),
+        })
+        .collect();
 
     boundaries.sort_by(|left, right| left.byte.cmp(&right.byte));
     let mut unique_boundaries: Vec<SyntaxBoundary> = Vec::with_capacity(boundaries.len());

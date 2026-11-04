@@ -115,14 +115,29 @@ fn ensure_schema(conn: &Connection) -> Result<()> {
             PRIMARY KEY (source_file_id, target_file_id, link_type)
         );
 
+        CREATE TABLE IF NOT EXISTS knowledge_symbols (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            source_id   INTEGER NOT NULL REFERENCES knowledge_sources(id) ON DELETE CASCADE,
+            file_id     INTEGER NOT NULL REFERENCES knowledge_files(id) ON DELETE CASCADE,
+            name        TEXT NOT NULL,
+            kind        TEXT NOT NULL,
+            container   TEXT,
+            line_start  INTEGER NOT NULL,
+            line_end    INTEGER NOT NULL
+        );
+
         CREATE INDEX IF NOT EXISTS idx_chunk_meta_source ON knowledge_chunk_meta(source_id);
         CREATE INDEX IF NOT EXISTS idx_chunk_meta_file ON knowledge_chunk_meta(file_id);
         CREATE INDEX IF NOT EXISTS idx_files_source ON knowledge_files(source_id);
         CREATE INDEX IF NOT EXISTS idx_links_source ON knowledge_links(source_file_id);
         CREATE INDEX IF NOT EXISTS idx_links_target ON knowledge_links(target_file_id);
+        CREATE INDEX IF NOT EXISTS idx_symbols_name ON knowledge_symbols(name);
+        CREATE INDEX IF NOT EXISTS idx_symbols_file ON knowledge_symbols(file_id);
+        CREATE INDEX IF NOT EXISTS idx_symbols_source ON knowledge_symbols(source_id);
         ",
     )?;
     ensure_chunker_version(conn)?;
+    ensure_symbol_version(conn)?;
     ensure_embedding_model_id(conn)?;
     ensure_database_instance_id(conn)?;
     crate::knowledge::identifiers::ensure_identifier_index(conn)?;
@@ -158,6 +173,21 @@ fn ensure_chunker_version(conn: &Connection) -> Result<()> {
     if !columns.iter().any(|column| column == "chunker_version") {
         conn.execute(
             "ALTER TABLE knowledge_files ADD COLUMN chunker_version INTEGER NOT NULL DEFAULT 1",
+            [],
+        )?;
+    }
+    Ok(())
+}
+
+/// Files indexed before symbols existed have version 0. Sync backfills them.
+fn ensure_symbol_version(conn: &Connection) -> Result<()> {
+    let mut statement = conn.prepare("PRAGMA table_info(knowledge_files)")?;
+    let columns = statement
+        .query_map([], |row| row.get::<_, String>(1))?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    if !columns.iter().any(|column| column == "symbol_version") {
+        conn.execute(
+            "ALTER TABLE knowledge_files ADD COLUMN symbol_version INTEGER NOT NULL DEFAULT 0",
             [],
         )?;
     }
