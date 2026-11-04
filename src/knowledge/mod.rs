@@ -7,8 +7,10 @@
 pub mod ann;
 pub mod enrichment;
 pub mod filter;
+pub mod freshness;
 pub(crate) mod identifiers;
 pub mod links;
+pub(crate) mod lock;
 pub mod query;
 pub mod schema;
 pub mod scope;
@@ -346,6 +348,50 @@ impl KnowledgeStore {
         };
 
         index.candidates(query_embedding, limit as usize, allowed.as_ref())
+    }
+
+    /// Open a database file at `path`, creating it if needed. Used by the watcher and by tests.
+    pub(crate) fn open_at(path: &std::path::Path) -> anyhow::Result<KnowledgeStore> {
+        let conn = crate::db::open_db(path)?;
+        schema::apply_schema(&conn)?;
+        Ok(Self {
+            conn,
+            embedder: None,
+            vector_index_dir: path.parent().map(|parent| parent.join("ann-indexes")),
+            vector_index: None,
+            vector_index_state: None,
+            fuzzy_cache: Default::default(),
+        })
+    }
+
+    /// Turn watch mode on or off for a source. The change takes effect for a running watcher
+    /// within a few seconds.
+    pub fn set_watch(&self, label: &str, enabled: bool) -> Result<()> {
+        let updated = self.conn.execute(
+            "UPDATE knowledge_sources SET watch_enabled = ?1 WHERE label = ?2",
+            rusqlite::params![enabled, label],
+        )?;
+        if updated == 0 {
+            return Err(anyhow!("knowledge source '{}' was not found", label));
+        }
+        Ok(())
+    }
+
+    /// Sources whose watch mode is on, in label order.
+    pub fn watched_sources(&self) -> Result<Vec<KnowledgeSourceInfo>> {
+        let mut statement = self.conn.prepare(
+            "SELECT label FROM knowledge_sources WHERE watch_enabled = 1 ORDER BY label",
+        )?;
+        let labels = statement
+            .query_map([], |row| row.get::<_, String>(0))?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        let mut sources = Vec::with_capacity(labels.len());
+        for label in labels {
+            if let Some(source) = self.get_source(&label)? {
+                sources.push(source);
+            }
+        }
+        Ok(sources)
     }
 
     /// Get a reference to the embedder, if available.

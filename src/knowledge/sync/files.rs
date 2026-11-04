@@ -7,6 +7,29 @@ use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::{fs, io};
 
+/// File metadata read before the content, so a later metadata check can never mistake
+/// a newer file for the one that was indexed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) struct StatRecord {
+    /// Modification time in nanoseconds since the epoch, when the platform reports one.
+    pub(super) mtime_ns: Option<i64>,
+    /// When this sync took the stat, in nanoseconds since the epoch.
+    pub(super) checked_ns: i64,
+}
+
+/// Read a file's metadata. Call this before reading the content it describes.
+pub(super) fn stat_before_read(abs_path: &Path) -> Result<StatRecord> {
+    let metadata = fs::metadata(abs_path)
+        .with_context(|| format!("failed to inspect {}", abs_path.display()))?;
+    Ok(StatRecord {
+        mtime_ns: metadata
+            .modified()
+            .ok()
+            .map(crate::knowledge::freshness::system_time_ns),
+        checked_ns: crate::knowledge::freshness::now_ns(),
+    })
+}
+
 pub(super) struct PreparedFile {
     pub(super) rel_path: String,
     pub(super) abs_path: PathBuf,
@@ -18,6 +41,7 @@ pub(super) struct PreparedFile {
     pub(super) chunker_version: i64,
     pub(super) used_tree_sitter: bool,
     pub(super) symbols: Vec<Symbol>,
+    pub(super) stat: StatRecord,
     pub(super) vectors: Vec<Vec<f32>>,
 }
 
@@ -28,16 +52,24 @@ pub(super) fn sha256_hex(bytes: &[u8]) -> String {
     format!("{:x}", hasher.finalize())
 }
 
-/// Existing file record: (file id, content hash, chunker version, symbol version).
-pub(super) type DbFileState = (i64, String, i64, i64);
+/// An existing file record as the sync sees it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) struct DbFile {
+    pub(super) id: i64,
+    pub(super) hash: String,
+    pub(super) chunker_version: i64,
+    pub(super) symbol_version: i64,
+    /// Whether the file's modification time has been recorded.
+    pub(super) stat_recorded: bool,
+}
 
 /// Load existing file records from the knowledge DB for a source.
 pub(super) fn load_db_files(
     conn: &rusqlite::Connection,
     source_id: i64,
-) -> Result<HashMap<String, DbFileState>> {
+) -> Result<HashMap<String, DbFile>> {
     let mut stmt = conn.prepare(
-        "SELECT id, rel_path, content_hash, chunker_version, symbol_version
+        "SELECT id, rel_path, content_hash, chunker_version, symbol_version, mtime_ns IS NOT NULL
          FROM knowledge_files WHERE source_id = ?1",
     )?;
     let mut files = HashMap::new();
@@ -48,11 +80,21 @@ pub(super) fn load_db_files(
             row.get::<_, String>(2)?,
             row.get::<_, i64>(3)?,
             row.get::<_, i64>(4)?,
+            row.get::<_, bool>(5)?,
         ))
     })?;
     for row in rows {
-        let (id, rel_path, hash, chunker_version, symbol_version) = row?;
-        files.insert(rel_path, (id, hash, chunker_version, symbol_version));
+        let (id, rel_path, hash, chunker_version, symbol_version, stat_recorded) = row?;
+        files.insert(
+            rel_path,
+            DbFile {
+                id,
+                hash,
+                chunker_version,
+                symbol_version,
+                stat_recorded,
+            },
+        );
     }
     Ok(files)
 }
@@ -63,6 +105,7 @@ pub(super) fn prepare_file(
     content: String,
     hash: String,
     file_id: Option<i64>,
+    stat: StatRecord,
     enrichment_fn: Option<&dyn Fn(&str, &Path) -> serde_json::Value>,
 ) -> PreparedFile {
     let size_bytes = content.len() as i64;
@@ -83,6 +126,7 @@ pub(super) fn prepare_file(
         chunker_version,
         used_tree_sitter: chunking.used_tree_sitter,
         symbols: chunking.symbols,
+        stat,
         vectors: Vec::new(),
     }
 }

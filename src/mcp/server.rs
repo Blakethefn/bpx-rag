@@ -7,6 +7,7 @@ use super::{tools, transport};
 use crate::app::{RagApp, SearchOptions};
 
 pub fn run(project_dir: &Path) -> Result<()> {
+    start_watcher();
     let stdin = io::stdin();
     let mut reader = BufReader::new(stdin.lock());
     let mut stdout = io::stdout().lock();
@@ -19,6 +20,35 @@ pub fn run(project_dir: &Path) -> Result<()> {
         }
     }
     Ok(())
+}
+
+/// Run the watcher in a background thread. Only one process per database holds the lease, so a
+/// second server reports that the watcher is elsewhere and does nothing else.
+fn start_watcher() {
+    // Without an existing database there is nothing to watch. Starting one here would create
+    // runtime state for a relationship-only server, so the watcher waits for `add`.
+    let db_path = match crate::db::data_dir() {
+        Ok(dir) => dir.join("knowledge.db"),
+        Err(error) => {
+            eprintln!("[bpx-rag] watch: could not locate the database: {error:#}");
+            return;
+        }
+    };
+    if !db_path.is_file() {
+        return;
+    }
+    std::thread::spawn(move || {
+        let stop = std::sync::atomic::AtomicBool::new(false);
+        let outcome = crate::watch::run_with_loader(
+            &db_path,
+            &crate::watch::WatchOptions::default(),
+            &stop,
+            Box::new(crate::app::load_watch_embedder),
+        );
+        if let Err(error) = outcome {
+            eprintln!("[bpx-rag] watch stopped: {error:#}");
+        }
+    });
 }
 
 fn dispatch(request: &Value, project_dir: &Path, app: &mut Option<RagApp>) -> Option<Value> {
@@ -61,6 +91,7 @@ fn dispatch_tool(
     let result = match name {
         "bpx_relate" => handle_file_relationships(args, project_dir),
         "bpx_symbol" => with_app(app_slot, |app| handle_symbol(args, app)),
+        "bpx_watch" => with_app(app_slot, |app| handle_watch(args, app)),
         "bpx_search" => with_app(app_slot, |app| handle_search(args, app)),
         "bpx_add" => with_app(app_slot, |app| handle_knowledge_add(args, app)),
         "bpx_sync" => with_app(app_slot, |app| handle_knowledge_sync(args, app)),
@@ -228,6 +259,15 @@ fn handle_embed(args: &Value, app: &mut RagApp) -> Result<String> {
         Some(_) => return Err(anyhow!("'label' must be a string")),
     };
     Ok(app.backfill_embeddings(label)?.summary())
+}
+
+fn handle_watch(args: &Value, app: &mut RagApp) -> Result<String> {
+    match args["action"].as_str().unwrap_or("") {
+        "on" => app.set_watch(required_string(args, "label")?, true),
+        "off" => app.set_watch(required_string(args, "label")?, false),
+        "status" => app.watch_status(),
+        action => Err(anyhow!("unknown watch action '{action}'")),
+    }
 }
 
 fn handle_symbol(args: &Value, app: &mut RagApp) -> Result<String> {

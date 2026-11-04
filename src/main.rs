@@ -10,13 +10,14 @@ mod language;
 mod mcp;
 mod relations;
 mod search;
+mod watch;
 
 use anyhow::{anyhow, Result};
 use clap::Parser;
 use std::path::PathBuf;
 
 use app::{RagApp, SearchOptions};
-use cli::{Cli, Commands, EvalAction, ModelsAction};
+use cli::{Cli, Commands, EvalAction, ModelsAction, WatchAction};
 use knowledge::query::SearchWeights;
 
 fn main() -> Result<()> {
@@ -49,6 +50,7 @@ fn main() -> Result<()> {
             );
             Ok(())
         }
+        Commands::Watch { action } => run_watch(action),
         Commands::Relate { path, root } => {
             let analysis = relations::analyze_file(&path, root.as_deref())?;
             println!("{}", relations::format_analysis(&analysis));
@@ -87,6 +89,33 @@ fn main() -> Result<()> {
         | Commands::Scrub { .. } => run_sources(command),
         Commands::Models { action } => run_models(action),
         Commands::Eval { action } => run_evaluation(action),
+    }
+}
+
+fn run_watch(action: WatchAction) -> Result<()> {
+    match action {
+        WatchAction::On { label } => {
+            println!("{}", RagApp::open()?.set_watch(&label, true)?);
+            Ok(())
+        }
+        WatchAction::Off { label } => {
+            println!("{}", RagApp::open()?.set_watch(&label, false)?);
+            Ok(())
+        }
+        WatchAction::Status => {
+            println!("{}", RagApp::open()?.watch_status()?);
+            Ok(())
+        }
+        WatchAction::Run => {
+            match RagApp::open()?.run_watch()? {
+                watch::RunOutcome::Stopped => println!("Watcher stopped."),
+                watch::RunOutcome::AlreadyRunning { pid } => println!(
+                    "A watcher is already running for this database (pid {}).",
+                    pid.map_or_else(|| "unknown".to_string(), |pid| pid.to_string())
+                ),
+            }
+            Ok(())
+        }
     }
 }
 

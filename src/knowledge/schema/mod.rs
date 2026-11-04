@@ -138,6 +138,7 @@ fn ensure_schema(conn: &Connection) -> Result<()> {
     )?;
     ensure_chunker_version(conn)?;
     ensure_symbol_version(conn)?;
+    ensure_freshness_and_watch_columns(conn)?;
     ensure_embedding_model_id(conn)?;
     ensure_database_instance_id(conn)?;
     crate::knowledge::identifiers::ensure_identifier_index(conn)?;
@@ -180,6 +181,39 @@ fn ensure_chunker_version(conn: &Connection) -> Result<()> {
 }
 
 /// Files indexed before symbols existed have version 0. Sync backfills them.
+/// Stage 7 metadata and watch controls. Rows indexed earlier keep NULL metadata until a sync
+/// records it, and sources default to watch disabled.
+fn ensure_freshness_and_watch_columns(conn: &Connection) -> Result<()> {
+    add_column_if_missing(conn, "knowledge_files", "mtime_ns", "INTEGER")?;
+    add_column_if_missing(conn, "knowledge_files", "stat_checked_ns", "INTEGER")?;
+    add_column_if_missing(
+        conn,
+        "knowledge_sources",
+        "watch_enabled",
+        "INTEGER NOT NULL DEFAULT 0",
+    )?;
+    Ok(())
+}
+
+fn add_column_if_missing(
+    conn: &Connection,
+    table: &str,
+    column: &str,
+    definition: &str,
+) -> Result<()> {
+    let mut statement = conn.prepare(&format!("PRAGMA table_info({table})"))?;
+    let columns = statement
+        .query_map([], |row| row.get::<_, String>(1))?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    if !columns.iter().any(|existing| existing == column) {
+        conn.execute(
+            &format!("ALTER TABLE {table} ADD COLUMN {column} {definition}"),
+            [],
+        )?;
+    }
+    Ok(())
+}
+
 fn ensure_symbol_version(conn: &Connection) -> Result<()> {
     let mut statement = conn.prepare("PRAGMA table_info(knowledge_files)")?;
     let columns = statement

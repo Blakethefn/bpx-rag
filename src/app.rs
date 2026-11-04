@@ -7,10 +7,12 @@ use serde_json::json;
 
 use crate::config::Config;
 use crate::embed::{self, Embed, Embedder};
+use crate::knowledge::lock::FileLock;
 use crate::knowledge::symbols::{self, MatchMode, SymbolQuery, SymbolReport};
 use crate::knowledge::{self, KnowledgeSourceInfo, KnowledgeStore};
 use crate::search::profile::SearchProfile;
 use crate::search::{self, QueryRequest};
+use crate::watch::{self, Holder, RunOutcome, WatchOptions};
 
 /// Largest number of symbol matches one lookup returns.
 pub const MAX_SYMBOL_LIMIT: usize = 100;
@@ -131,6 +133,7 @@ impl RagApp {
     ) -> Result<String> {
         validate_label(label)?;
         knowledge::enrichment::validate_enrichments(enrichments)?;
+        let _writer = self.writer_lock()?;
         let canonical_path = path
             .canonicalize()
             .with_context(|| format!("could not resolve source path {}", path.display()))?;
@@ -171,6 +174,7 @@ impl RagApp {
         if sources.is_empty() {
             return Ok(Vec::new());
         }
+        let _writer = self.writer_lock()?;
         self.ensure_embedder();
         sources.iter().map(|source| self.sync_one(source)).collect()
     }
@@ -200,7 +204,93 @@ impl RagApp {
 
     pub fn remove_source(&self, label: &str) -> Result<knowledge::RemoveResult> {
         validate_label(label)?;
+        let _writer = self.writer_lock()?;
         self.knowledge.remove_source(label)
+    }
+
+    /// Turn watch mode on or off for a source. A running watcher picks the change up within a
+    /// second or two.
+    pub fn set_watch(&self, label: &str, enabled: bool) -> Result<String> {
+        validate_label(label)?;
+        let _writer = self.writer_lock()?;
+        self.knowledge.set_watch(label, enabled)?;
+        Ok(format!(
+            "Watch mode {} for source '{label}'.",
+            if enabled { "enabled" } else { "disabled" }
+        ))
+    }
+
+    /// The watcher lease holder and each source's watch setting and last reported state.
+    pub fn watch_status(&self) -> Result<String> {
+        let db_path = knowledge::schema::knowledge_db_path()?;
+        let holder = watch::holder(&db_path)?;
+        let status = watch::read_status(&db_path)?;
+        let watched: Vec<String> = self
+            .knowledge
+            .watched_sources()?
+            .into_iter()
+            .map(|source| source.label)
+            .collect();
+        let mut lines = vec![match holder {
+            Holder::Running { pid } => format!(
+                "watcher: running (pid {})",
+                pid.map_or_else(|| "unknown".to_string(), |pid| pid.to_string())
+            ),
+            Holder::NotRunning => "watcher: not running".to_string(),
+        }];
+        let running = matches!(holder, Holder::Running { .. });
+        for source in self.knowledge.list_sources()? {
+            if !watched.contains(&source.label) {
+                lines.push(format!("{}: watch disabled", source.label));
+                continue;
+            }
+            let reported = status.as_ref().and_then(|status| {
+                status
+                    .sources
+                    .iter()
+                    .find(|entry| entry.label == source.label)
+            });
+            let detail = match reported {
+                Some(entry) => format!(
+                    "state {}, batches {}, reindexed {}, reconciled at {}, last error {}{}",
+                    serde_json::to_value(entry.state)?
+                        .as_str()
+                        .unwrap_or("unknown"),
+                    entry.batches,
+                    entry.reindexed_files,
+                    entry
+                        .reconciled_at
+                        .map_or_else(|| "never".to_string(), |at| at.to_string()),
+                    entry.last_error.as_deref().unwrap_or("none"),
+                    if running {
+                        ""
+                    } else {
+                        " (no watcher is running)"
+                    }
+                ),
+                None => "no watcher has reported yet".to_string(),
+            };
+            lines.push(format!("{}: watch enabled; {detail}", source.label));
+        }
+        Ok(lines.join("\n"))
+    }
+
+    /// Run the watcher in this process until it is stopped. Returns `AlreadyRunning` when another
+    /// process holds the watcher lease.
+    pub fn run_watch(&self) -> Result<RunOutcome> {
+        let db_path = knowledge::schema::knowledge_db_path()?;
+        let stop = std::sync::atomic::AtomicBool::new(false);
+        watch::run_with_loader(
+            &db_path,
+            &WatchOptions::default(),
+            &stop,
+            Box::new(load_watch_embedder),
+        )
+    }
+
+    fn writer_lock(&self) -> Result<FileLock> {
+        let db_path = knowledge::schema::knowledge_db_path()?;
+        FileLock::acquire(&knowledge::lock::writer_lock_path(&db_path))
     }
 
     pub fn read_chunks(
@@ -332,6 +422,7 @@ impl RagApp {
         &mut self,
         source_label: Option<&str>,
     ) -> Result<EmbeddingBackfillReport> {
+        let _writer = self.writer_lock()?;
         let source = match source_label {
             Some(label) if label.trim().is_empty() => {
                 return Err(anyhow!("source label must not be empty"));
@@ -505,6 +596,7 @@ impl RagApp {
         &self,
         source_label: Option<&str>,
     ) -> Result<knowledge::sync::SensitiveIndexScrubReport> {
+        let _writer = self.writer_lock()?;
         let source_id = match source_label {
             Some(label) if label.trim().is_empty() => {
                 return Err(anyhow!("source label must not be empty"));
@@ -607,6 +699,38 @@ impl RagApp {
             )))
         } else {
             Ok(None)
+        }
+    }
+}
+
+/// Load the configured embedder for the watcher. Failure means changed chunks are indexed without
+/// vectors, and the reason is reported on stderr.
+pub fn load_watch_embedder() -> Option<Arc<dyn Embed>> {
+    let config = match Config::load() {
+        Ok(config) => config,
+        Err(error) => {
+            eprintln!("[bpx-rag] watch: could not load config: {error:#}");
+            return None;
+        }
+    };
+    if !config.embeddings.enabled {
+        return None;
+    }
+    let model_dir = model_directory(&config);
+    if !embed::model_files_present(&model_dir, &config.embeddings.model) {
+        return None;
+    }
+    match Embedder::load_cached_with_device(
+        &model_dir,
+        &config.embeddings.model,
+        config.embeddings.batch_size,
+        config.embeddings.intra_threads,
+        config.embeddings.device,
+    ) {
+        Ok(embedder) => Some(Arc::new(embedder)),
+        Err(error) => {
+            eprintln!("[bpx-rag] watch: embedding model could not load; indexing without vectors: {error:#}");
+            None
         }
     }
 }

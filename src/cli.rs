@@ -86,6 +86,11 @@ pub enum Commands {
         #[arg(long)]
         label: Option<String>,
     },
+    /// Keep sources in sync with the filesystem, and show watcher status.
+    Watch {
+        #[command(subcommand)]
+        action: WatchAction,
+    },
     /// Find declarations by name, with their paths and line ranges.
     Symbol {
         name: String,
@@ -114,6 +119,18 @@ pub enum Commands {
         #[command(subcommand)]
         action: EvalAction,
     },
+}
+
+#[derive(Subcommand)]
+pub enum WatchAction {
+    /// Turn watch mode on for a source.
+    On { label: String },
+    /// Turn watch mode off for a source.
+    Off { label: String },
+    /// Show the watcher and each source's watch state.
+    Status,
+    /// Run a watcher in this terminal until it is stopped.
+    Run,
 }
 
 #[derive(Subcommand)]

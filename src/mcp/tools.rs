@@ -112,6 +112,18 @@ pub fn tool_definitions() -> Value {
                 }
             },
             {
+                "name": "bpx_watch",
+                "description": "Control watch mode, which keeps sources synchronized as files change. action `on` or `off` sets it for one source (label required). action `status` reports the watcher and each source's state. A watcher runs inside one MCP server or `bpx-rag watch run` at a time.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "action": { "type": "string", "enum": ["on", "off", "status"] },
+                        "label": { "type": "string", "description": "Source label, for `on` and `off`." }
+                    },
+                    "required": ["action"]
+                }
+            },
+            {
                 "name": "bpx_relate",
                 "description": "Analyze direct imports, includes, and links for one current file. Returns exact paths and line evidence without querying the RAG index.",
                 "inputSchema": {

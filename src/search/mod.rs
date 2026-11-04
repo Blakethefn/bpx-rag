@@ -8,6 +8,7 @@ use anyhow::Result;
 
 use crate::config::Config;
 use crate::knowledge::filter::parse_filter;
+use crate::knowledge::freshness::{check_results, Freshness, FreshnessState};
 use crate::knowledge::query::{
     knowledge_search_report, KnowledgeSearchResult, LayerOutcome, LayerReport, SearchWeights,
 };
@@ -110,6 +111,7 @@ pub fn run_query(
         .secondary_snippet_override()
         .unwrap_or(config.search.secondary_snippet_bytes);
     let related = related_files_for(knowledge, &results, config.search.top_result_count)?;
+    let freshness = check_results(knowledge, &results)?;
     Ok(format_results(
         request.query,
         request.explain,
@@ -117,10 +119,21 @@ pub fn run_query(
         &layers,
         &results,
         &related,
-        top_snippet_bytes,
-        secondary_snippet_bytes,
-        config.search.top_result_count,
+        &freshness,
+        SnippetBudget {
+            top_bytes: top_snippet_bytes,
+            secondary_bytes: secondary_snippet_bytes,
+            top_result_count: config.search.top_result_count,
+        },
     ))
+}
+
+/// How much snippet text each result may show, and how many count as top results.
+#[derive(Debug, Clone, Copy)]
+struct SnippetBudget {
+    top_bytes: usize,
+    secondary_bytes: usize,
+    top_result_count: usize,
 }
 
 /// Linked files to list under each top result, aligned by index with `results`.
@@ -364,9 +377,8 @@ fn format_results(
     layers: &[LayerReport],
     results: &[KnowledgeSearchResult],
     related: &[Vec<String>],
-    top_snippet_bytes: usize,
-    secondary_snippet_bytes: usize,
-    top_result_count: usize,
+    freshness: &[Freshness],
+    budget: SnippetBudget,
 ) -> String {
     let mut output = format!("### \"{original_query}\"\n");
     for warning in warnings {
@@ -382,10 +394,10 @@ fn format_results(
 
     let mut truncated_any = false;
     for (idx, result) in results.iter().enumerate() {
-        let max_bytes = if idx < top_result_count {
-            top_snippet_bytes
+        let max_bytes = if idx < budget.top_result_count {
+            budget.top_bytes
         } else {
-            secondary_snippet_bytes
+            budget.secondary_bytes
         };
         let snippet = crate::search::truncate::preview(&result.snippet, max_bytes);
         if result.snippet.len() > max_bytes {
@@ -396,13 +408,17 @@ fn format_results(
             .filter(|files| !files.is_empty())
             .map(|files| format!("related: {}\n", files.join(", ")))
             .unwrap_or_default();
+        let freshness_label = freshness
+            .get(idx)
+            .map_or_else(|| "unknown (not checked)".to_string(), Freshness::label);
         output.push_str(&format!(
-            "**[{}]** (source: {}, type: knowledge, file: {}, score: {:.4} (lines {}))\n{}\n{}{}\n\n",
+            "**[{}]** (source: {}, type: knowledge, file: {}, score: {:.4} (lines {}), freshness: {})\n{}\n{}{}\n\n",
             result.title,
             result.source_label,
             result.file_path,
             result.score,
             result.lines,
+            freshness_label,
             result.why.compact_line(),
             related_line,
             snippet
@@ -414,6 +430,12 @@ fn format_results(
 
     if truncated_any {
         output.push_str("Some results were truncated. Use bpx_read with the source label, cited relative path, and line range to read the matching full chunk.\n");
+    }
+    if freshness
+        .iter()
+        .any(|check| check.state == FreshnessState::Stale)
+    {
+        output.push_str("Some results are stale: their files changed after they were indexed. Run sync for the source, or enable watch mode.\n");
     }
     output
 }

@@ -97,13 +97,16 @@ pub(super) fn index_prepared_file(
     // Update file record
     conn.execute(
         "UPDATE knowledge_files SET content_hash = ?1, size_bytes = ?2,
-            chunk_count = ?3, chunker_version = ?4, indexed_at = datetime('now')
-         WHERE id = ?5",
+            chunk_count = ?3, chunker_version = ?4, indexed_at = datetime('now'),
+            mtime_ns = ?5, stat_checked_ns = ?6
+         WHERE id = ?7",
         params![
             file.hash,
             file.size_bytes,
             file.chunks.len() as i64,
             file.chunker_version,
+            file.stat.mtime_ns,
+            file.stat.checked_ns,
             file_id
         ],
     )?;
