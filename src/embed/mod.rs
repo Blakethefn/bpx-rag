@@ -5,6 +5,8 @@ use hf_hub::{api::sync::ApiBuilder, Cache};
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, OnceLock};
 
+pub mod query_cache;
+
 /// The legacy MiniLM dimension used by the deterministic mock embedder.
 #[cfg(test)]
 pub const EMBEDDING_DIM: usize = 384;

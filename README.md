@@ -49,7 +49,7 @@ enabled = true
 device = "cpu"
 ```
 
-Embedding batches default to 16 chunks and ONNX uses the available logical CPUs; set `batch_size` or `intra_threads` to tune memory use and throughput. These fields have defaults when omitted from an existing config. The model cache defaults to the local application data directory. `HF_HOME`, when set, selects the Hugging Face cache location.
+Embedding batches default to 16 chunks and ONNX uses the available logical CPUs; set `batch_size` or `intra_threads` to tune memory use and throughput. These fields have defaults when omitted from an existing config. The model cache defaults to the local application data directory. `HF_HOME`, when set, selects the Hugging Face cache location. `query_cache_entries` (default 256; `0` disables) keeps recent query embeddings in memory so that a long-running process skips the model for repeated queries.
 
 ### Optional NVIDIA CUDA inference
 

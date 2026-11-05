@@ -265,10 +265,7 @@ pub(crate) fn search_with_pool(
     if weights.vector_weight <= 0.0 {
         layers.push(LayerReport::skipped("vector", SkipReason::Disabled));
     } else if let Some(emb) = store.embedder() {
-        match emb
-            .embed_one(query)
-            .and_then(|vector| embed::normalize_embedding(&vector, emb.dim()))
-        {
+        match cached_query_embedding(store, emb.as_ref(), query) {
             Ok(query_embedding) => {
                 let candidates = store.vector_candidates(
                     emb.model_id(),
@@ -321,6 +318,24 @@ pub(crate) fn search_with_pool(
     })
 }
 
+/// The normalized query embedding. A vector is reused only when the same model already embedded
+/// this exact query. Only a vector that passed normalization is cached, so failures are retried.
+fn cached_query_embedding(
+    store: &KnowledgeStore,
+    embedder: &dyn embed::Embed,
+    query: &str,
+) -> Result<Vec<f32>> {
+    let cache = store.query_embedding_cache();
+    if let Some(vector) = cache.get(embedder.model_id(), query) {
+        return Ok(vector);
+    }
+    let vector = embedder
+        .embed_one(query)
+        .and_then(|vector| embed::normalize_embedding(&vector, embedder.dim()))?;
+    cache.insert(embedder.model_id(), query, vector.clone());
+    Ok(vector)
+}
+
 const MAX_CANDIDATE_CHUNKS: u32 = 1_000;
 
 pub const CANDIDATE_OVERSAMPLE_FACTOR: u32 = 5;
@@ -353,7 +368,13 @@ impl Clone for KnowledgeSearchResult {
 // ── Search layers ────────────────────────────────────────────────────────────
 
 #[cfg(test)]
+mod cache_bench;
+#[cfg(test)]
+mod embedding_cache_tests;
+#[cfg(test)]
 mod fuzzy_bench;
+#[cfg(test)]
+mod latency_bench;
 #[cfg(test)]
 mod layer_tests;
 #[cfg(test)]

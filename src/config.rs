@@ -135,6 +135,13 @@ pub struct EmbeddingsConfig {
     pub device: EmbeddingDevice,
     /// Enable/disable embedding generation (default true)
     pub enabled: bool,
+    /// Query embeddings kept in memory for repeated searches. 0 disables the cache (default 256).
+    #[serde(default = "default_query_cache_entries")]
+    pub query_cache_entries: usize,
+}
+
+fn default_query_cache_entries() -> usize {
+    crate::embed::query_cache::DEFAULT_CAPACITY
 }
 
 fn default_embedding_threads() -> usize {
@@ -162,6 +169,7 @@ impl Default for EmbeddingsConfig {
             intra_threads: default_embedding_threads(),
             device: EmbeddingDevice::Cpu,
             enabled: true,
+            query_cache_entries: default_query_cache_entries(),
         }
     }
 }

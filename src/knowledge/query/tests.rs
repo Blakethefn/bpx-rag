@@ -1234,6 +1234,7 @@ fn store_over(conn: rusqlite::Connection) -> KnowledgeStore {
         vector_index: None,
         vector_index_state: None,
         fuzzy_cache: Default::default(),
+        query_embedding_cache: Default::default(),
     }
 }
 

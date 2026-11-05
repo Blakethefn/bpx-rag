@@ -677,6 +677,8 @@ impl RagApp {
     fn install_embedder(&mut self, embedder: Embedder) {
         let shared: Arc<dyn Embed> = Arc::new(embedder);
         self.knowledge.set_embedder(shared);
+        self.knowledge
+            .set_query_embedding_cache_capacity(self.config.embeddings.query_cache_entries);
         self.embedding_notice = None;
         self.embedder_loaded = true;
     }

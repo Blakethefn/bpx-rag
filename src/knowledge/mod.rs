@@ -21,6 +21,7 @@ use anyhow::{anyhow, Result};
 use rusqlite::{Connection, OptionalExtension};
 use std::sync::Arc;
 
+use crate::embed::query_cache::QueryEmbeddingCache;
 use crate::embed::Embed;
 
 /// Persistent knowledge store — indexes directories of files for durable
@@ -32,6 +33,7 @@ pub struct KnowledgeStore {
     vector_index: Option<ann::VectorIndex>,
     vector_index_state: Option<VectorIndexState>,
     fuzzy_cache: query::VocabularyCache,
+    query_embedding_cache: QueryEmbeddingCache,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -116,12 +118,24 @@ impl KnowledgeStore {
             vector_index: None,
             vector_index_state: None,
             fuzzy_cache: Default::default(),
+            query_embedding_cache: Default::default(),
         })
     }
 
     /// Set the embedder after construction.
     pub fn set_embedder(&mut self, embedder: Arc<dyn Embed>) {
         self.embedder = Some(embedder);
+    }
+
+    /// Set how many query embeddings are kept in memory. Zero disables the cache.
+    /// Replacing the capacity discards existing entries.
+    pub fn set_query_embedding_cache_capacity(&mut self, capacity: usize) {
+        self.query_embedding_cache = QueryEmbeddingCache::new(capacity);
+    }
+
+    /// The query embedding cache. Its counters are read by benchmarks and tests.
+    pub(crate) fn query_embedding_cache(&self) -> &QueryEmbeddingCache {
+        &self.query_embedding_cache
     }
 
     /// Register a new knowledge source. Returns the source ID.
@@ -361,6 +375,7 @@ impl KnowledgeStore {
             vector_index: None,
             vector_index_state: None,
             fuzzy_cache: Default::default(),
+            query_embedding_cache: Default::default(),
         })
     }
 
@@ -414,6 +429,7 @@ pub(crate) fn open_in_memory() -> anyhow::Result<KnowledgeStore> {
         vector_index: None,
         vector_index_state: None,
         fuzzy_cache: Default::default(),
+        query_embedding_cache: Default::default(),
     })
 }
 
