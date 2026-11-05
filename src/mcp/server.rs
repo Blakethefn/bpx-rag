@@ -151,6 +151,7 @@ fn handle_search(args: &Value, app: &mut RagApp) -> Result<String> {
         source: args["source"].as_str(),
         filter: args["filter"].as_str(),
         limit: bounded_u32(args, "limit", 10, 1, 50)?,
+        max_per_file: bounded_u32(args, "max_per_file", 1, 1, 50)?,
         profile: args["profile"].as_str(),
         explain: args["explain"].as_bool().unwrap_or(false),
         count_only: args["count_only"].as_bool().unwrap_or(false),

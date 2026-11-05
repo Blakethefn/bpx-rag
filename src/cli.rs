@@ -27,6 +27,10 @@ pub enum Commands {
         filter: Option<String>,
         #[arg(short, long, default_value = "10")]
         limit: u32,
+        /// Most passages from one file before other files fill the limit. Raise it to get
+        /// several passages from one file.
+        #[arg(long, default_value = "1", value_parser = clap::value_parser!(u32).range(1..))]
+        max_per_file: u32,
         #[arg(long)]
         profile: Option<String>,
         #[arg(long)]

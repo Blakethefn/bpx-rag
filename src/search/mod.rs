@@ -10,7 +10,8 @@ use crate::config::Config;
 use crate::knowledge::filter::parse_filter;
 use crate::knowledge::freshness::{check_results, Freshness, FreshnessState};
 use crate::knowledge::query::{
-    knowledge_search_report, KnowledgeSearchResult, LayerOutcome, LayerReport, SearchWeights,
+    knowledge_search_report_with_policy, KnowledgeSearchResult, LayerOutcome, LayerPolicy,
+    LayerReport, SearchScope, SearchWeights,
 };
 use crate::knowledge::KnowledgeStore;
 use crate::search::profile::{SearchProfile, SearchWhy};
@@ -21,6 +22,8 @@ pub struct QueryRequest<'a> {
     pub source: Option<&'a str>,
     pub knowledge_filter: Option<&'a str>,
     pub limit: u32,
+    /// Most passages kept from one file before other files fill the limit. Must be at least 1.
+    pub max_per_file: u32,
     pub snippet_bytes: usize,
     pub profile: SearchProfile,
     pub explain: bool,
@@ -56,11 +59,15 @@ pub fn run_query(
     };
 
     let scoped = request.source.is_some() || request.knowledge_filter.is_some();
-    let report = knowledge_search_report(
+    let report = knowledge_search_report_with_policy(
         knowledge,
         &effective_query,
-        request.knowledge_filter,
-        request.source,
+        SearchScope {
+            filter: request.knowledge_filter,
+            source_label: request.source,
+            policy: LayerPolicy::default(),
+            max_per_file: request.max_per_file,
+        },
         request.limit,
         &weights,
         request.snippet_bytes,

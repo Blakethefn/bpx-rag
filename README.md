@@ -67,7 +67,7 @@ cargo build --release --features gpu-cuda
 
 ```text
 bpx-rag serve                                   start the MCP server on stdio
-bpx-rag search <query> [--source <label>] [--filter <key:value>] [--limit N]
+bpx-rag search <query> [--source <label>] [--filter <key:value>] [--limit N] [--max-per-file N]
 bpx-rag add <path> --label <label> [--include <glob>]... [--exclude <glob>]...
 bpx-rag sync [--label <label>]
 bpx-rag status
@@ -76,6 +76,8 @@ bpx-rag read <label> [--path <relative-path>] [--line-start N] [--line-end N]
 bpx-rag embed [--label <label>]                 compute missing vectors
 bpx-rag scrub [--label <label>]                 delete rows matching the sensitive-data policy
 bpx-rag relate <path> [--root <project>]        direct imports and links, no index needed
+bpx-rag symbol <name> [--prefix]               find declarations by name
+bpx-rag watch on|off <label> | status | run   keep sources in sync with the filesystem
 bpx-rag models status|download
 bpx-rag eval retrieval|scaling|embeddings|pool|import-pool
 ```
@@ -93,6 +95,8 @@ bpx-rag add ~/code/api --label api --include 'src/**' --include 'docs/**' --excl
 A scope is set when a source is added. Invalid patterns fail immediately. The sensitive-data policy still applies to everything in scope.
 
 Each top search result lists the files it links to or is linked from, as `related:` under the hit. Wikilink and frontmatter edges provide these links.
+
+By default each search returns at most one passage per file, so the results cover as many files as possible. To read several passages from one file, pass `--max-per-file N` on the CLI or `max_per_file` to `bpx_search` (1 to 50, default 1). The first pass keeps the best N passages of each file, in score order, until the limit is reached. If the other files do not supply enough passages to reach the limit, the remaining slots are filled with the next-best passages, including more from the same file. A cap is therefore a preference that applies while other files can fill the results. Output is ordered by score, as before. Ranking, candidate generation, and citations are unchanged.
 
 The `language:<name>` filter matches source-file extensions for common languages as well as an optional YAML frontmatter `language` value. For example, `--filter language:rust` works on ordinary `.rs` files without requiring frontmatter or reindexing existing sources. Registered aliases include names such as `c++`/`cpp` and `c#`/`csharp`; unregistered safe names such as `nix` or `tf` match that extension. `.h` is intentionally included in both C and C++ filters because the extension is ambiguous.
 
