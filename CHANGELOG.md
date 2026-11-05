@@ -36,6 +36,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- A stored embedding that contains a NaN or infinite value fails the search with an error. The exact vector search used to pass such a score to its sort, which panicked inside the standard library. Finite embeddings are unaffected, and the approximate index already rejected non-finite vectors when it loaded them.
 - A failed query embedding is reported in the search output as a warning. Lexical results still return.
 - Corrupt knowledge rows fail the query instead of being skipped or defaulted. BM25 and trigram search used to drop any row that failed to decode, and malformed line numbers became `0`. Vector search now rejects an embedding whose length does not match the query dimension, instead of scoring a truncated vector. Malformed chunk metadata, source enrichments, and wikilink metadata during sync are reported as errors.
 - Creating the vocabulary table for fuzzy matching no longer ignores its own errors.

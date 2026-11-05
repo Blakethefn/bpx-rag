@@ -137,7 +137,11 @@ fn decode_stored_embedding(chunk_rowid: i64, blob: &[u8], dimensions: usize) -> 
             dimensions * 4
         );
     }
-    Ok(embed::bytes_to_embedding(blob))
+    let embedding = embed::bytes_to_embedding(blob);
+    if embedding.iter().any(|value| !value.is_finite()) {
+        anyhow::bail!("embedding for chunk {chunk_rowid} has a non-finite value");
+    }
+    Ok(embedding)
 }
 
 /// Dot product for cosine similarity (vectors are L2-normalized at index time).

@@ -997,6 +997,44 @@ fn vector_search_rejects_embedding_with_wrong_byte_length() {
 }
 
 #[test]
+fn vector_search_rejects_non_finite_stored_embedding_instead_of_panicking() {
+    let store = make_store();
+    // Many rows with a NaN component, so the score sort has to compare NaN values.
+    for index in 0..60 {
+        let rowid = seed_chunk(
+            &store,
+            "repo",
+            "/repo",
+            &format!("src/nan{index}.md"),
+            &format!("Nan {index}"),
+            "whale migration notes",
+            "{}",
+        );
+        let first = if index % 3 == 0 { f32::NAN } else { index as f32 / 60.0 };
+        let bytes: Vec<u8> = [first, 0.5f32]
+            .iter()
+            .flat_map(|value| value.to_le_bytes())
+            .collect();
+        store
+            .conn()
+            .execute(
+                "INSERT INTO knowledge_embeddings (chunk_rowid, embedding, dim, model_id)
+                 VALUES (?1, ?2, 2, 'test-model')",
+                params![rowid, bytes],
+            )
+            .unwrap();
+    }
+
+    let result =
+        knowledge_vector_search(store.conn(), &[1.0, 0.0], 60, "", &[], "test-model", None);
+
+    assert!(
+        result.is_err(),
+        "a non-finite stored embedding must fail the query, not reach the score sort"
+    );
+}
+
+#[test]
 fn search_errors_on_invalid_chunk_metadata_instead_of_defaulting_it() {
     let store = make_store();
     seed_chunk(
