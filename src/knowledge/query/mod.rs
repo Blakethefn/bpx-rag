@@ -46,6 +46,8 @@ pub struct SearchScope<'a> {
     pub filter: Option<&'a str>,
     pub source_label: Option<&'a str>,
     pub policy: LayerPolicy,
+    /// Most passages kept from one file before other files fill the limit. Must be at least 1.
+    pub max_per_file: u32,
 }
 
 /// A search result from the knowledge store (or combined search).
@@ -115,6 +117,7 @@ pub fn knowledge_search_report(
             filter,
             source_label,
             policy: LayerPolicy::default(),
+            max_per_file: 1,
         },
         limit,
         weights,
@@ -132,6 +135,9 @@ pub fn knowledge_search_report_with_policy(
     weights: &SearchWeights,
     snippet_bytes: usize,
 ) -> Result<SearchReport> {
+    if scope.max_per_file == 0 {
+        anyhow::bail!("max_per_file must be at least 1");
+    }
     if limit == 0 {
         return Ok(SearchReport::default());
     }
@@ -168,6 +174,7 @@ pub(crate) fn search_with_pool(
         filter,
         source_label,
         policy,
+        max_per_file,
     } = scope;
     let conn = store.conn();
 
@@ -312,7 +319,7 @@ pub(crate) fn search_with_pool(
         .map(|(_, sr)| sr.into_knowledge_result(snippet_bytes))
         .collect::<Result<Vec<_>>>()?;
     Ok(SearchReport {
-        results: diversify_by_file(results, limit as usize),
+        results: diversify_by_file(results, limit as usize, max_per_file as usize),
         warnings,
         layers,
     })
@@ -369,6 +376,8 @@ impl Clone for KnowledgeSearchResult {
 
 #[cfg(test)]
 mod cache_bench;
+#[cfg(test)]
+mod diversity_tests;
 #[cfg(test)]
 mod embedding_cache_tests;
 #[cfg(test)]

@@ -155,6 +155,7 @@ pub fn run_retrieval_evaluation(
             filter: query.filter.as_deref(),
             source_label: Some("retrieval-eval"),
             policy: layer_policy,
+            max_per_file: 1,
         };
         let _ = knowledge::query::knowledge_search_report_with_policy(
             &store,

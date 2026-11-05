@@ -3,33 +3,38 @@ use crate::search::profile::SearchWhy;
 use anyhow::Context;
 use std::collections::HashMap;
 
-/// Keep the highest-scoring passage from each file before returning repeated
-/// files. If fewer files than `limit` are available, duplicate passages fill
-/// the remaining slots in score order; in that fallback case, output order is
-/// file-diversity-first rather than globally score-descending.
+/// Keep up to `max_per_file` passages from each file, taken in score order,
+/// until `limit` passages are selected. Passages past that cap are used only
+/// to fill slots that the capped passages cannot, again in score order, so a
+/// corpus with few files still returns `limit` results. With
+/// `max_per_file = 1` this is one passage per file first, then repeats in
+/// score order, and the output order is file-diversity-first. The caller
+/// must reject `max_per_file = 0`.
 pub(super) fn diversify_by_file(
     results: Vec<KnowledgeSearchResult>,
     limit: usize,
+    max_per_file: usize,
 ) -> Vec<KnowledgeSearchResult> {
-    let mut seen_file_ids = std::collections::HashSet::new();
-    let mut unique_files = Vec::with_capacity(limit);
-    let mut duplicate_chunks = Vec::new();
+    if limit == 0 {
+        return Vec::new();
+    }
+    let mut kept_per_file: HashMap<i64, usize> = HashMap::new();
+    let mut selected = Vec::with_capacity(limit);
+    let mut overflow = Vec::new();
     for result in results {
-        if seen_file_ids.insert(result.file_id) {
-            unique_files.push(result);
-            if unique_files.len() == limit {
-                return unique_files;
+        let kept = kept_per_file.entry(result.file_id).or_insert(0);
+        if *kept < max_per_file {
+            *kept += 1;
+            selected.push(result);
+            if selected.len() == limit {
+                return selected;
             }
         } else {
-            duplicate_chunks.push(result);
+            overflow.push(result);
         }
     }
-    unique_files.extend(
-        duplicate_chunks
-            .into_iter()
-            .take(limit - unique_files.len()),
-    );
-    unique_files
+    selected.extend(overflow.into_iter().take(limit - selected.len()));
+    selected
 }
 
 /// A chunk row returned by one retrieval layer, before RRF fusion.
