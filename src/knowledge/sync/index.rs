@@ -1,6 +1,6 @@
 use super::*;
 use crate::embed::{embedding_to_bytes, normalize_embedding};
-use crate::knowledge::identifiers::identifier_words;
+use crate::knowledge::identifiers::write_chunk_identifiers;
 use crate::knowledge::symbols::{delete_file_symbols, replace_file_symbols};
 use anyhow::{Context, Result};
 use rusqlite::params;
@@ -58,16 +58,7 @@ pub(super) fn index_prepared_file(
             params![rowid, chunk.title, chunk.content],
         )?;
 
-        // Identifier words, keyed by the same rowid. The content row above is unchanged.
-        conn.execute(
-            "INSERT INTO knowledge_identifiers(rowid, words) VALUES (?1, ?2)",
-            params![
-                rowid,
-                identifier_words(&format!("{} {}", chunk.title, chunk.content))
-            ],
-        )?;
-
-        // Chunk metadata
+        // Chunk metadata. Its insert trigger queues the chunk for identifier indexing.
         conn.execute(
             "INSERT INTO knowledge_chunk_meta
                 (chunk_rowid, file_id, source_id, line_start, line_end, metadata)
@@ -81,6 +72,10 @@ pub(super) fn index_prepared_file(
                 file.metadata
             ],
         )?;
+
+        // Identifier words, keyed by the same rowid. This replaces any row left under the
+        // rowid and clears the queue entry the insert above created.
+        write_chunk_identifiers(conn, rowid, &format!("{} {}", chunk.title, chunk.content))?;
         if let Some(model_id) = model_id {
             let embedding = &file.vectors[chunk_index];
             let blob = embedding_to_bytes(embedding);
@@ -92,9 +87,7 @@ pub(super) fn index_prepared_file(
         }
     }
 
-    replace_file_symbols(conn, source_id, file_id, &file.symbols)?;
-
-    // Update file record
+    // Update file record first: the symbol rows are stamped with the content hash it stores.
     conn.execute(
         "UPDATE knowledge_files SET content_hash = ?1, size_bytes = ?2,
             chunk_count = ?3, chunker_version = ?4, indexed_at = datetime('now'),
@@ -110,6 +103,7 @@ pub(super) fn index_prepared_file(
             file_id
         ],
     )?;
+    replace_file_symbols(conn, source_id, file_id, &file.symbols)?;
 
     Ok(file.chunks.len())
 }

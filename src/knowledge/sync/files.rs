@@ -1,4 +1,5 @@
 use crate::chunk::{chunk_content_for_path, chunker_version_for_path, Symbol};
+use crate::knowledge::symbols::SYMBOL_INDEX_VERSION;
 use anyhow::{Context, Result};
 use rusqlite::params;
 use sha2::{Digest, Sha256};
@@ -58,7 +59,8 @@ pub(super) struct DbFile {
     pub(super) id: i64,
     pub(super) hash: String,
     pub(super) chunker_version: i64,
-    pub(super) symbol_version: i64,
+    /// Whether the file's symbol rows are current for its content hash (see `symbols`).
+    pub(super) symbols_current: bool,
     /// Whether the file's modification time has been recorded.
     pub(super) stat_recorded: bool,
 }
@@ -68,10 +70,12 @@ pub(super) fn load_db_files(
     conn: &rusqlite::Connection,
     source_id: i64,
 ) -> Result<HashMap<String, DbFile>> {
-    let mut stmt = conn.prepare(
-        "SELECT id, rel_path, content_hash, chunker_version, symbol_version, mtime_ns IS NOT NULL
-         FROM knowledge_files WHERE source_id = ?1",
-    )?;
+    let mut stmt = conn.prepare(&format!(
+        "SELECT id, rel_path, content_hash, chunker_version,
+                symbol_version >= {SYMBOL_INDEX_VERSION} AND symbols_hash IS content_hash,
+                mtime_ns IS NOT NULL
+         FROM knowledge_files WHERE source_id = ?1"
+    ))?;
     let mut files = HashMap::new();
     let rows = stmt.query_map(params![source_id], |row| {
         Ok((
@@ -79,19 +83,19 @@ pub(super) fn load_db_files(
             row.get::<_, String>(1)?,
             row.get::<_, String>(2)?,
             row.get::<_, i64>(3)?,
-            row.get::<_, i64>(4)?,
+            row.get::<_, bool>(4)?,
             row.get::<_, bool>(5)?,
         ))
     })?;
     for row in rows {
-        let (id, rel_path, hash, chunker_version, symbol_version, stat_recorded) = row?;
+        let (id, rel_path, hash, chunker_version, symbols_current, stat_recorded) = row?;
         files.insert(
             rel_path,
             DbFile {
                 id,
                 hash,
                 chunker_version,
-                symbol_version,
+                symbols_current,
                 stat_recorded,
             },
         );

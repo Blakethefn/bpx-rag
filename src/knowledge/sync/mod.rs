@@ -5,7 +5,7 @@
 
 use crate::chunk::{chunker_version_for_path, symbols_for_path, Symbol};
 use crate::embed::Embed;
-use crate::knowledge::symbols::{replace_file_symbols, SYMBOL_INDEX_VERSION};
+use crate::knowledge::symbols::replace_file_symbols;
 use crate::knowledge::{scope, KnowledgeSourceInfo, KnowledgeStore};
 use anyhow::{Context, Result};
 use ignore::WalkBuilder;
@@ -207,7 +207,9 @@ fn classify_file(
         }
         Some(db_file) => {
             plan.unchanged += 1;
-            if db_file.symbol_version < SYMBOL_INDEX_VERSION {
+            // The content matches, but its symbol rows may come from an older writer's
+            // content. `symbols_current` compares them with the stored hash.
+            if !db_file.symbols_current {
                 plan.backfill_symbols
                     .push((db_file.id, symbols_for_path(abs_path, &content)));
             }
@@ -452,6 +454,10 @@ fn commit_plan(
             params![source.id],
         )?;
 
+        // 4d-2. Index identifier words for chunks that older writers queued. Current writers
+        // handle their own chunks, so this only does work for legacy inserts.
+        crate::knowledge::identifiers::index_pending(conn)?;
+
         // 4e. Resolve wikilinks and code relations to graph edges. Code edges
         // depend on the whole indexed set, so they are rebuilt only when this
         // sync changed something or the source has none yet.
@@ -578,6 +584,8 @@ pub(crate) fn walk_source_dir_with_report(
     })
 }
 
+#[cfg(test)]
+mod identifier_maintenance_tests;
 #[cfg(test)]
 mod paths_tests;
 #[cfg(test)]

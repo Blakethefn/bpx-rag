@@ -134,6 +134,23 @@ fn ensure_schema(conn: &Connection) -> Result<()> {
         CREATE INDEX IF NOT EXISTS idx_symbols_name ON knowledge_symbols(name);
         CREATE INDEX IF NOT EXISTS idx_symbols_file ON knowledge_symbols(file_id);
         CREATE INDEX IF NOT EXISTS idx_symbols_source ON knowledge_symbols(source_id);
+
+        -- Identifier-index maintenance. SQLite cannot put triggers on FTS5 tables, so the
+        -- triggers sit on this ordinary table, which every chunk writer (including builds
+        -- that predate the identifier index) inserts into and deletes from.
+        CREATE TABLE IF NOT EXISTS knowledge_identifier_pending (
+            chunk_rowid INTEGER PRIMARY KEY
+        );
+        CREATE TRIGGER IF NOT EXISTS knowledge_chunk_meta_identifier_delete
+        AFTER DELETE ON knowledge_chunk_meta BEGIN
+            DELETE FROM knowledge_identifiers WHERE rowid = OLD.chunk_rowid;
+            DELETE FROM knowledge_identifier_pending WHERE chunk_rowid = OLD.chunk_rowid;
+        END;
+        CREATE TRIGGER IF NOT EXISTS knowledge_chunk_meta_identifier_insert
+        AFTER INSERT ON knowledge_chunk_meta BEGIN
+            INSERT OR IGNORE INTO knowledge_identifier_pending (chunk_rowid)
+                VALUES (NEW.chunk_rowid);
+        END;
         ",
     )?;
     ensure_chunker_version(conn)?;
@@ -180,7 +197,6 @@ fn ensure_chunker_version(conn: &Connection) -> Result<()> {
     Ok(())
 }
 
-/// Files indexed before symbols existed have version 0. Sync backfills them.
 /// Stage 7 metadata and watch controls. Rows indexed earlier keep NULL metadata until a sync
 /// records it, and sources default to watch disabled.
 fn ensure_freshness_and_watch_columns(conn: &Connection) -> Result<()> {
@@ -214,18 +230,20 @@ fn add_column_if_missing(
     Ok(())
 }
 
+/// Files indexed before symbols existed have version 0. Sync backfills them.
+///
+/// `symbol_version` records the parser version the file's symbol rows were extracted with.
+/// `symbols_hash` records the content hash those rows were extracted from. A writer that
+/// predates symbols updates `content_hash` but never `symbols_hash`, so the mismatch marks
+/// the rows stale. Symbol lookup then skips them until the next sync rebuilds them.
 fn ensure_symbol_version(conn: &Connection) -> Result<()> {
-    let mut statement = conn.prepare("PRAGMA table_info(knowledge_files)")?;
-    let columns = statement
-        .query_map([], |row| row.get::<_, String>(1))?
-        .collect::<rusqlite::Result<Vec<_>>>()?;
-    if !columns.iter().any(|column| column == "symbol_version") {
-        conn.execute(
-            "ALTER TABLE knowledge_files ADD COLUMN symbol_version INTEGER NOT NULL DEFAULT 0",
-            [],
-        )?;
-    }
-    Ok(())
+    add_column_if_missing(
+        conn,
+        "knowledge_files",
+        "symbol_version",
+        "INTEGER NOT NULL DEFAULT 0",
+    )?;
+    add_column_if_missing(conn, "knowledge_files", "symbols_hash", "TEXT")
 }
 
 fn ensure_database_instance_id(conn: &Connection) -> Result<()> {

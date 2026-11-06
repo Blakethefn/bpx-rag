@@ -1,7 +1,9 @@
 //! Symbol index: rows written by sync and exact or prefix lookup over them.
 //!
-//! Rows are written in the same transaction as a file's chunks. A file whose
-//! `symbol_version` is below `SYMBOL_INDEX_VERSION` has no current rows, and sync backfills it.
+//! Rows are written in the same transaction as a file's chunks. A file has current rows only
+//! when its `symbol_version` is at least `SYMBOL_INDEX_VERSION` and its `symbols_hash` equals its
+//! `content_hash`. Any other file is pending, and sync backfills it. Lookup returns no rows
+//! for a pending file, so a stale line range is never cited.
 
 use anyhow::{anyhow, bail, Result};
 use rusqlite::{params, Connection};
@@ -111,6 +113,8 @@ fn select_hits(
          JOIN knowledge_sources s ON s.id = ks.source_id
          JOIN knowledge_files kf ON kf.id = ks.file_id
          WHERE {predicate} AND (?2 IS NULL OR ks.source_id = ?2)
+           AND kf.symbol_version >= {SYMBOL_INDEX_VERSION}
+           AND kf.symbols_hash IS kf.content_hash
          ORDER BY ks.name, s.label, kf.rel_path, ks.line_start
          LIMIT ?3"
     );
@@ -147,7 +151,8 @@ fn pending_sources(conn: &Connection, source_id: Option<i64>) -> Result<Vec<Pend
         "SELECT s.label, COUNT(*)
          FROM knowledge_files kf
          JOIN knowledge_sources s ON s.id = kf.source_id
-         WHERE kf.symbol_version < ?1 AND (?2 IS NULL OR kf.source_id = ?2)
+         WHERE (kf.symbol_version < ?1 OR kf.symbols_hash IS NOT kf.content_hash)
+           AND (?2 IS NULL OR kf.source_id = ?2)
          GROUP BY s.label
          ORDER BY s.label",
     )?;
@@ -161,6 +166,9 @@ fn pending_sources(conn: &Connection, source_id: Option<i64>) -> Result<Vec<Pend
 }
 
 /// Replace a file's symbol rows and mark the file as current. Runs inside the sync transaction.
+///
+/// The file's `content_hash` must already hold the content the symbols came from. The rows
+/// are stamped with that hash, so a later content change by an older writer marks them stale.
 pub(crate) fn replace_file_symbols(
     conn: &Connection,
     source_id: i64,
@@ -185,7 +193,10 @@ pub(crate) fn replace_file_symbols(
         ])?;
     }
     conn.execute(
-        "UPDATE knowledge_files SET symbol_version = ?1 WHERE id = ?2",
+        "UPDATE knowledge_files
+         SET symbol_version = ?1,
+             symbols_hash = (SELECT content_hash FROM knowledge_files WHERE id = ?2)
+         WHERE id = ?2",
         params![SYMBOL_INDEX_VERSION, file_id],
     )?;
     Ok(())
