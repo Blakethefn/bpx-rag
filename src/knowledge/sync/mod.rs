@@ -34,6 +34,9 @@ pub struct SyncResult {
     pub files_scanned: usize,
     /// Files reached by this scan that were excluded by the sensitive path/content policy.
     pub sensitive_files_skipped: usize,
+    /// Files read by this scan that are not valid UTF-8, with the reason. They are not indexed,
+    /// and any rows they had are removed. Other files are unaffected.
+    pub skipped_invalid_utf8: Vec<SkippedFile>,
     pub files_added: usize,
     pub files_updated: usize,
     pub files_removed: usize,
@@ -59,6 +62,13 @@ pub struct SyncResult {
     pub duration_ms: u64,
 }
 
+/// A file that a sync read but did not index, and why.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct SkippedFile {
+    pub rel_path: String,
+    pub reason: String,
+}
+
 /// Sync a single knowledge source. Walks the directory, hashes files,
 /// and re-indexes only changed/new files. Removes chunks for deleted files.
 /// Prepared-file edits are revalidated after embedding; edits to unselected
@@ -82,15 +92,26 @@ pub fn sync_source(
 
     // 3. Classify every file on disk. Indexed files that are no longer selected are removed.
     let mut plan = ChangePlan::default();
-    let mut sensitive_content_paths = HashSet::new();
+    let mut excluded_content_paths = HashSet::new();
+    let mut invalid_utf8 = Vec::new();
     for (rel_path, abs_path) in &disk_files {
-        if classify_file(rel_path, abs_path, &db_files, &mut plan)? == Classification::Sensitive {
-            sensitive_files_skipped += 1;
-            sensitive_content_paths.insert(rel_path.clone());
+        match classify_file(rel_path, abs_path, &db_files, &mut plan)? {
+            Classification::Indexed => {}
+            Classification::Sensitive => {
+                sensitive_files_skipped += 1;
+                excluded_content_paths.insert(rel_path.clone());
+            }
+            Classification::InvalidUtf8(reason) => {
+                invalid_utf8.push(SkippedFile {
+                    rel_path: rel_path.clone(),
+                    reason,
+                });
+                excluded_content_paths.insert(rel_path.clone());
+            }
         }
     }
     for (rel_path, db_file) in &db_files {
-        if !disk_files.contains_key(rel_path) || sensitive_content_paths.contains(rel_path) {
+        if !disk_files.contains_key(rel_path) || excluded_content_paths.contains(rel_path) {
             plan.to_remove.push(db_file.id);
         }
     }
@@ -98,6 +119,7 @@ pub fn sync_source(
     let counts = ScanCounts {
         files_scanned: disk_files.len(),
         sensitive_files_skipped,
+        invalid_utf8,
     };
     apply_plan(store, source, &db_files, plan, enrichment_fn, start, counts)
 }
@@ -123,30 +145,32 @@ pub fn sync_paths(
     let db_files = load_db_files(conn, source.id)?;
 
     let mut plan = ChangePlan::default();
+    let mut invalid_utf8 = Vec::new();
     let unique_paths: BTreeSet<&String> = rel_paths.iter().collect();
     for rel_path in unique_paths {
         match walk.files.get(rel_path) {
-            Some(abs_path) => {
-                if classify_file(rel_path, abs_path, &db_files, &mut plan)?
-                    == Classification::Sensitive
-                {
+            Some(abs_path) => match classify_file(rel_path, abs_path, &db_files, &mut plan)? {
+                Classification::Indexed => {}
+                Classification::Sensitive => {
                     sensitive_files_skipped += 1;
-                    if let Some(db_file) = db_files.get(rel_path) {
-                        plan.to_remove.push(db_file.id);
-                    }
+                    mark_excluded(&db_files, rel_path, &mut plan);
                 }
-            }
-            None => {
-                if let Some(db_file) = db_files.get(rel_path) {
-                    plan.to_remove.push(db_file.id);
+                Classification::InvalidUtf8(reason) => {
+                    invalid_utf8.push(SkippedFile {
+                        rel_path: rel_path.clone(),
+                        reason,
+                    });
+                    mark_excluded(&db_files, rel_path, &mut plan);
                 }
-            }
+            },
+            None => mark_excluded(&db_files, rel_path, &mut plan),
         }
     }
 
     let counts = ScanCounts {
         files_scanned,
         sensitive_files_skipped,
+        invalid_utf8,
     };
     apply_plan(store, source, &db_files, plan, enrichment_fn, start, counts)
 }
@@ -155,6 +179,7 @@ pub fn sync_paths(
 struct ScanCounts {
     files_scanned: usize,
     sensitive_files_skipped: usize,
+    invalid_utf8: Vec<SkippedFile>,
 }
 
 /// Changes decided by classification, applied in one transaction.
@@ -172,10 +197,19 @@ struct ChangePlan {
     unchanged: usize,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 enum Classification {
     Indexed,
     Sensitive,
+    /// Not valid UTF-8. The file is skipped with this reason, and any rows it had are removed.
+    InvalidUtf8(String),
+}
+
+/// Record a file that was not indexed and must lose any rows it had.
+fn mark_excluded(db_files: &HashMap<String, DbFile>, rel_path: &str, plan: &mut ChangePlan) {
+    if let Some(db_file) = db_files.get(rel_path) {
+        plan.to_remove.push(db_file.id);
+    }
 }
 
 /// Read one included file, decide whether it is new, changed, or unchanged, and record any
@@ -190,10 +224,16 @@ fn classify_file(
     let bytes =
         fs::read(abs_path).with_context(|| format!("failed to read {}", abs_path.display()))?;
 
-    // Abort before the transaction if a candidate file cannot be indexed.
-    // Silently skipping it can leave stale indexed content behind.
-    let content = String::from_utf8(bytes)
-        .with_context(|| format!("file is not valid UTF-8: {}", abs_path.display()))?;
+    // Invalid UTF-8 is a skip with a reason, not a sync failure, so one undecodable file
+    // cannot stop the other files from syncing. Read errors returned above still propagate.
+    let content = match String::from_utf8(bytes) {
+        Ok(content) => content,
+        Err(error) => {
+            return Ok(Classification::InvalidUtf8(format!(
+                "not valid UTF-8: {error}"
+            )))
+        }
+    };
     if contains_google_api_key(&content) {
         return Ok(Classification::Sensitive);
     }
@@ -325,6 +365,7 @@ fn apply_plan(
         source_label: source.label.clone(),
         files_scanned: counts.files_scanned,
         sensitive_files_skipped: counts.sensitive_files_skipped,
+        skipped_invalid_utf8: counts.invalid_utf8,
         files_added,
         files_updated,
         files_removed,
@@ -590,3 +631,5 @@ mod identifier_maintenance_tests;
 mod paths_tests;
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod utf8_tests;

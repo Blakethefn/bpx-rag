@@ -255,7 +255,7 @@ impl RagApp {
             });
             let detail = match reported {
                 Some(entry) => format!(
-                    "state {}, batches {}, reindexed {}, reconciled at {}, last error {}{}",
+                    "state {}, batches {}, reindexed {}, reconciled at {}, last error {}{}{}",
                     serde_json::to_value(entry.state)?
                         .as_str()
                         .unwrap_or("unknown"),
@@ -269,7 +269,8 @@ impl RagApp {
                         ""
                     } else {
                         " (no watcher is running)"
-                    }
+                    },
+                    skipped_note(&entry.skipped_files),
                 ),
                 None => "no watcher has reported yet".to_string(),
             };
@@ -740,8 +741,21 @@ pub fn load_watch_embedder() -> Option<Arc<dyn Embed>> {
     }
 }
 
-pub fn format_sync_result(result: &knowledge::sync::SyncResult) -> String {
+/// One status line for files a watcher sync skipped because they are not valid UTF-8.
+fn skipped_note(skipped: &[knowledge::sync::SkippedFile]) -> String {
+    if skipped.is_empty() {
+        return String::new();
+    }
+    let names: Vec<&str> = skipped.iter().map(|file| file.rel_path.as_str()).collect();
     format!(
+        ", skipped {} file(s) that are not valid UTF-8: {}",
+        skipped.len(),
+        names.join(", ")
+    )
+}
+
+pub fn format_sync_result(result: &knowledge::sync::SyncResult) -> String {
+    let summary = format!(
         "Source '{}': scanned {}, added {}, updated {}, removed {}, unchanged {}; {} sensitive files skipped by policy; {} chunks indexed this sync ({} total; {} Tree-sitter / {} existing chunker across {} / {} changed files) in {} ms.",
         result.source_label,
         result.files_scanned,
@@ -757,7 +771,16 @@ pub fn format_sync_result(result: &knowledge::sync::SyncResult) -> String {
         result.tree_sitter_files_indexed,
         result.existing_chunker_files_indexed,
         result.duration_ms
-    )
+    );
+    result
+        .skipped_invalid_utf8
+        .iter()
+        .fold(summary, |text, skipped| {
+            format!(
+                "{text}\nwarning: skipped '{}' from this source: {}",
+                skipped.rel_path, skipped.reason
+            )
+        })
 }
 
 pub fn model_directory(config: &Config) -> PathBuf {

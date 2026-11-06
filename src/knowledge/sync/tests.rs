@@ -232,37 +232,25 @@ fn sync_skips_binary_files() {
 }
 
 #[test]
-fn sync_invalid_utf8_aborts_without_removing_existing_index() {
+fn sync_invalid_utf8_skips_the_file_and_removes_its_stale_rows() {
+    // Invalid UTF-8 is a reported skip. The other files still sync, and the file's old rows go
+    // so the index never serves content the file no longer has.
     let store = make_store();
     let dir = tempdir().unwrap();
     let file_path = dir.path().join("keep.md");
     fs::write(&file_path, "# Kept content\nsearchable phrase").unwrap();
+    fs::write(dir.path().join("other.md"), "# Other\nunrelated text").unwrap();
 
     let source = register_source(&store, dir.path());
     sync_source(&store, &source, None).unwrap();
-    let indexed_hash: String = store
-        .conn()
-        .query_row(
-            "SELECT content_hash FROM knowledge_files WHERE source_id = ?1",
-            params![source.id],
-            |row| row.get(0),
-        )
-        .unwrap();
+    assert_eq!(file_count_for_source(&store, source.id), 2);
 
     fs::write(&file_path, [0xff, 0xfe, 0xfd]).unwrap();
-    let result = sync_source(&store, &source, None);
+    let result = sync_source(&store, &source, None).unwrap();
 
-    assert!(result.is_err());
+    assert_eq!(result.skipped_invalid_utf8.len(), 1);
+    assert_eq!(result.skipped_invalid_utf8[0].rel_path, "keep.md");
     assert_eq!(file_count_for_source(&store, source.id), 1);
-    let retained_hash: String = store
-        .conn()
-        .query_row(
-            "SELECT content_hash FROM knowledge_files WHERE source_id = ?1",
-            params![source.id],
-            |row| row.get(0),
-        )
-        .unwrap();
-    assert_eq!(retained_hash, indexed_hash);
     assert!(chunk_count_for_source(&store, source.id) > 0);
 }
 

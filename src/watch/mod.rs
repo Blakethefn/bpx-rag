@@ -20,7 +20,7 @@ use serde::{Deserialize, Serialize};
 use crate::embed::Embed;
 use crate::knowledge::enrichment::build_enrichment_fn;
 use crate::knowledge::lock::{writer_lock_path, FileLock};
-use crate::knowledge::sync::{sync_paths, sync_source, EnrichmentFn, SyncResult};
+use crate::knowledge::sync::{sync_paths, sync_source, EnrichmentFn, SkippedFile, SyncResult};
 use crate::knowledge::{KnowledgeSourceInfo, KnowledgeStore};
 
 /// How often the watcher rereads which sources have watch mode on.
@@ -80,6 +80,9 @@ pub struct SourceStatus {
     /// Files reindexed from events and retries, excluding the startup reconcile.
     pub reindexed_files: u64,
     pub last_error: Option<String>,
+    /// Files the last sync read but did not index because they are not valid UTF-8.
+    #[serde(default)]
+    pub skipped_files: Vec<SkippedFile>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -172,6 +175,7 @@ struct Watched {
     batches: u64,
     reindexed_files: u64,
     last_error: Option<String>,
+    skipped: Vec<SkippedFile>,
     retry_at: Option<Instant>,
     backoff: Duration,
     pending: BTreeSet<String>,
@@ -251,6 +255,7 @@ impl Engine {
                         batches: 0,
                         reindexed_files: 0,
                         last_error: None,
+                        skipped: Vec::new(),
                         retry_at: None,
                         backoff: self.options.retry_base,
                         pending: BTreeSet::new(),
@@ -311,7 +316,8 @@ impl Engine {
             |store, source, enrichment| sync_source(store, source, enrichment),
         );
         match result {
-            Ok(_) => {
+            Ok(result) => {
+                entry.skipped = result.skipped_invalid_utf8;
                 entry.state = SourceState::Watching;
                 entry.reconciled_at = Some(unix_now());
                 entry.last_error = None;
@@ -438,6 +444,14 @@ impl Engine {
         );
         match result {
             Ok(outcome) => {
+                if full {
+                    entry.skipped = outcome.skipped_invalid_utf8.clone();
+                } else {
+                    entry.skipped.retain(|file| !paths.contains(&file.rel_path));
+                    entry
+                        .skipped
+                        .extend(outcome.skipped_invalid_utf8.iter().cloned());
+                }
                 entry.batches += 1;
                 entry.reindexed_files += changed_files(&outcome);
                 entry.state = SourceState::Watching;
@@ -462,6 +476,7 @@ impl Engine {
                     batches: entry.batches,
                     reindexed_files: entry.reindexed_files,
                     last_error: entry.last_error.clone(),
+                    skipped_files: entry.skipped.clone(),
                 })
                 .collect(),
         };
