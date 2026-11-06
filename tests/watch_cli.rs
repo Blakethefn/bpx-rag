@@ -139,7 +139,11 @@ fn killed_watcher_is_reported_stopped_and_a_restart_reconciles_offline_changes()
     let running = wait_for(Duration::from_secs(20), || {
         text(&run(&env, &["watch", "status"])).contains("watching")
     });
-    assert!(running, "the watcher never reported watching");
+    assert!(
+        running,
+        "the watcher never reported watching: {}",
+        text(&run(&env, &["watch", "status"]))
+    );
     first.kill().unwrap();
     first.wait().unwrap();
 

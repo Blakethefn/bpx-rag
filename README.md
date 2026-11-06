@@ -143,7 +143,7 @@ Syntax-aware Tree-sitter chunking supports 29 source grammars. Parse-error and o
 `bpx-rag` is developed and tested on Linux. Watch mode uses Linux inotify events through the `notify` crate, and it has only been validated on local filesystems. It has these limits:
 
 - Changes made on another machine, or through a network or FUSE mount that does not deliver local filesystem events, are not seen. This includes NFS, SMB/CIFS, and Windows-mounted drives. Watch mode reconciles each source with a full sync when it starts, but it misses later edits made outside the local kernel. Run `bpx-rag sync` on such sources, or leave watch mode off for them.
-- inotify has a per-user limit on watches (`fs.inotify.max_user_watches`). A tree larger than that limit fails registration with `watch registration failed`. The source stays in an error state and is retried with backoff.
+- inotify has per-user limits on instances (`fs.inotify.max_user_instances`, default 128) and watches (`fs.inotify.max_user_watches`). Desktop applications and editors share the instance limit. When it is used up, or a tree exceeds the watch limit, registration fails with `watch registration failed`, for example `Too many open files`. The source stays in an error state and is retried with backoff. `watch status` shows the error.
 - The writer lock and the watcher lease use `flock`. Network filesystems may not enforce it, so keep the data directory on a local filesystem.
 - Only one watcher runs per database.
 - Watch mode is off by default for every source. `bpx-rag watch on <label>` enables it for one source.
