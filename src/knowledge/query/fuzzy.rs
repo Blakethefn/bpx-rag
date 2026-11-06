@@ -179,13 +179,9 @@ impl FuzzyVocabulary {
     }
 }
 
-/// Distinct content terms, in sorted order. A missing vocab table is created
-/// first. Creation and query errors are returned, not treated as a missing table.
+/// Distinct content terms, in sorted order. The vocabulary table is created when the schema is
+/// applied, so this read path never writes. A query error is returned, not treated as empty.
 pub(super) fn extract_knowledge_terms(conn: &Connection) -> Result<Vec<String>> {
-    conn.execute_batch(
-        "CREATE VIRTUAL TABLE IF NOT EXISTS knowledge_chunks_vocab \
-         USING fts5vocab(knowledge_chunks, instance);",
-    )?;
     let mut stmt = conn.prepare(
         "SELECT DISTINCT term FROM knowledge_chunks_vocab WHERE col = 'content' ORDER BY term",
     )?;

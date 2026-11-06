@@ -1010,7 +1010,11 @@ fn vector_search_rejects_non_finite_stored_embedding_instead_of_panicking() {
             "whale migration notes",
             "{}",
         );
-        let first = if index % 3 == 0 { f32::NAN } else { index as f32 / 60.0 };
+        let first = if index % 3 == 0 {
+            f32::NAN
+        } else {
+            index as f32 / 60.0
+        };
         let bytes: Vec<u8> = [first, 0.5f32]
             .iter()
             .flat_map(|value| value.to_le_bytes())
@@ -1061,7 +1065,7 @@ fn search_errors_on_invalid_chunk_metadata_instead_of_defaulting_it() {
 }
 
 #[test]
-fn fuzzy_term_extraction_recreates_missing_vocab_table() {
+fn fuzzy_term_extraction_reads_the_vocab_table_created_by_the_schema() {
     let store = make_store();
     seed_chunk(
         &store,
@@ -1077,7 +1081,10 @@ fn fuzzy_term_extraction_recreates_missing_vocab_table() {
         .execute_batch("DROP TABLE IF EXISTS knowledge_chunks_vocab")
         .unwrap();
 
-    let terms = extract_knowledge_terms(store.conn()).expect("vocab table is recreated");
+    // Searching never creates the table: a missing table is an error until the schema runs.
+    assert!(extract_knowledge_terms(store.conn()).is_err());
+    crate::knowledge::schema::apply_schema(store.conn()).unwrap();
+    let terms = extract_knowledge_terms(store.conn()).expect("schema recreates the vocab table");
 
     assert!(terms.iter().any(|term| term == "whale"));
 }
@@ -1698,4 +1705,40 @@ fn identifier_layer_results_are_deterministic_across_repeated_searches() {
     };
 
     assert_eq!(run(), run());
+}
+
+#[test]
+fn fuzzy_search_runs_on_a_query_only_connection() {
+    // With `query_only` set, any write fails. A search that corrects a misspelled word goes
+    // through the vocabulary read, so this proves the search path performs no writes.
+    let store = make_store();
+    seed_chunk(
+        &store,
+        "repo",
+        "/repo",
+        "src/a.md",
+        "Whale notes",
+        "whale migration routes",
+        "{}",
+    );
+    store
+        .conn()
+        .execute_batch("PRAGMA query_only = ON")
+        .unwrap();
+
+    let report = knowledge_search_report(
+        &store,
+        "whale migraton",
+        None,
+        None,
+        5,
+        &SearchWeights::default(),
+        1_000,
+    )
+    .expect("a search must not need to write");
+
+    assert!(report
+        .results
+        .iter()
+        .any(|result| result.file_path == "src/a.md"));
 }

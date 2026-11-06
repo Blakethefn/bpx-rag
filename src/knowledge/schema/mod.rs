@@ -135,6 +135,10 @@ fn ensure_schema(conn: &Connection) -> Result<()> {
         CREATE INDEX IF NOT EXISTS idx_symbols_file ON knowledge_symbols(file_id);
         CREATE INDEX IF NOT EXISTS idx_symbols_source ON knowledge_symbols(source_id);
 
+        -- Vocabulary for fuzzy correction. Created here, not on the search path, so searching
+        -- never writes to the database.
+        CREATE VIRTUAL TABLE IF NOT EXISTS knowledge_chunks_vocab USING fts5vocab(knowledge_chunks, instance);
+
         -- Identifier-index maintenance. SQLite cannot put triggers on FTS5 tables, so the
         -- triggers sit on this ordinary table, which every chunk writer (including builds
         -- that predate the identifier index) inserts into and deletes from.
