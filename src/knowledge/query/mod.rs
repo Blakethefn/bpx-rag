@@ -135,8 +135,8 @@ pub fn knowledge_search_report_with_policy(
     weights: &SearchWeights,
     snippet_bytes: usize,
 ) -> Result<SearchReport> {
-    if scope.max_per_file == 0 {
-        anyhow::bail!("max_per_file must be at least 1");
+    if !(1..=MAX_PER_FILE).contains(&scope.max_per_file) {
+        anyhow::bail!("max_per_file must be between 1 and {MAX_PER_FILE}");
     }
     if limit == 0 {
         return Ok(SearchReport::default());
@@ -344,6 +344,9 @@ fn cached_query_embedding(
 }
 
 const MAX_CANDIDATE_CHUNKS: u32 = 1_000;
+
+/// Largest accepted `max_per_file`. The CLI, MCP, and library all enforce 1 through this value.
+pub const MAX_PER_FILE: u32 = 50;
 
 pub const CANDIDATE_OVERSAMPLE_FACTOR: u32 = 5;
 

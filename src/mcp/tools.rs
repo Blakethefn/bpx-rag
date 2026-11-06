@@ -14,7 +14,7 @@ pub fn tool_definitions() -> Value {
                         "source": { "type": "string", "description": "Restrict results to a registered source label." },
                         "filter": { "type": "string", "description": "Metadata filter, e.g. `language:rust type:code`." },
                         "limit": { "type": "integer", "description": "Maximum results per query (1–50, default 10)." },
-                        "max_per_file": { "type": "integer", "description": "Most passages returned from any one file before other files fill the remaining results (1–50, default 1). Raise it to get several passages from one file." },
+                        "max_per_file": { "type": "integer", "description": "Preferred cap on passages returned from one file (1–50, default 1). Passages from one file are taken first, up to this number. If the other files cannot fill the results, the remaining slots take the next-best passages from the same file, so the cap is not strict." },
                         "profile": { "type": "string", "enum": ["code_review", "debug", "planning", "vault_navigation"] },
                         "explain": { "type": "boolean", "description": "Include ranking evidence for each result." },
                         "count_only": { "type": "boolean", "description": "Return result count and token estimate without chunk text." }

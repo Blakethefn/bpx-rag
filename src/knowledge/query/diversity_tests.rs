@@ -271,3 +271,39 @@ fn max_per_file_three_keeps_three_passages_from_one_file_before_filling() {
         ]),
     );
 }
+
+#[test]
+fn max_per_file_accepts_the_boundaries_one_and_fifty_and_rejects_fifty_one() {
+    let store = seed_corpus();
+    let scope_with = |max_per_file| SearchScope {
+        filter: None,
+        source_label: None,
+        policy: LayerPolicy::default(),
+        max_per_file,
+    };
+
+    for accepted in [1, MAX_PER_FILE] {
+        assert!(
+            knowledge_search_report_with_policy(
+                &store,
+                "retry",
+                scope_with(accepted),
+                4,
+                &WEIGHTS,
+                1_000
+            )
+            .is_ok(),
+            "max_per_file {accepted} must be accepted"
+        );
+    }
+    let error = knowledge_search_report_with_policy(
+        &store,
+        "retry",
+        scope_with(MAX_PER_FILE + 1),
+        4,
+        &WEIGHTS,
+        1_000,
+    )
+    .expect_err("max_per_file above the maximum must be rejected");
+    assert!(error.to_string().contains("between 1 and 50"), "{error}");
+}
