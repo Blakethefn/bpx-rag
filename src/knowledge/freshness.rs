@@ -60,7 +60,8 @@ impl Freshness {
             FreshnessState::Unknown => "unknown",
         };
         let basis = match self.basis {
-            FreshnessBasis::Metadata => "metadata",
+            // Not a content check: size and mtime agree, but edits that keep both are missed.
+            FreshnessBasis::Metadata => "metadata match, content not hashed",
             FreshnessBasis::Hash => "hash",
             FreshnessBasis::Missing => "missing",
             FreshnessBasis::Changed => "changed",
