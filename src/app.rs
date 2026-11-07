@@ -788,15 +788,12 @@ pub fn format_sync_result(result: &knowledge::sync::SyncResult) -> String {
         result.existing_chunker_files_indexed,
         result.duration_ms
     );
-    result
-        .skipped_invalid_utf8
-        .iter()
-        .fold(summary, |text, skipped| {
-            format!(
-                "{text}\nwarning: skipped '{}' from this source: {}",
-                skipped.rel_path, skipped.reason
-            )
-        })
+    result.skipped_files.iter().fold(summary, |text, skipped| {
+        format!(
+            "{text}\nwarning: skipped '{}' from this source: {}",
+            skipped.rel_path, skipped.reason
+        )
+    })
 }
 
 pub fn model_directory(config: &Config) -> PathBuf {

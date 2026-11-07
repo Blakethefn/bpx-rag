@@ -34,9 +34,9 @@ pub struct SyncResult {
     pub files_scanned: usize,
     /// Files reached by this scan that were excluded by the sensitive path/content policy.
     pub sensitive_files_skipped: usize,
-    /// Files read by this scan that are not valid UTF-8, with the reason. They are not indexed,
+    /// Files this scan could not index, with the reason: not valid UTF-8, or unreadable. They are not indexed,
     /// and any rows they had are removed. Other files are unaffected.
-    pub skipped_invalid_utf8: Vec<SkippedFile>,
+    pub skipped_files: Vec<SkippedFile>,
     pub files_added: usize,
     pub files_updated: usize,
     pub files_removed: usize,
@@ -93,7 +93,7 @@ pub fn sync_source(
     // 3. Classify every file on disk. Indexed files that are no longer selected are removed.
     let mut plan = ChangePlan::default();
     let mut excluded_content_paths = HashSet::new();
-    let mut invalid_utf8 = Vec::new();
+    let mut skipped = Vec::new();
     for (rel_path, abs_path) in &disk_files {
         match classify_file(rel_path, abs_path, &db_files, &mut plan)? {
             Classification::Indexed => {}
@@ -101,8 +101,8 @@ pub fn sync_source(
                 sensitive_files_skipped += 1;
                 excluded_content_paths.insert(rel_path.clone());
             }
-            Classification::InvalidUtf8(reason) => {
-                invalid_utf8.push(SkippedFile {
+            Classification::Skipped(reason) => {
+                skipped.push(SkippedFile {
                     rel_path: rel_path.clone(),
                     reason,
                 });
@@ -119,7 +119,7 @@ pub fn sync_source(
     let counts = ScanCounts {
         files_scanned: disk_files.len(),
         sensitive_files_skipped,
-        invalid_utf8,
+        skipped,
     };
     apply_plan(store, source, &db_files, plan, enrichment_fn, start, counts)
 }
@@ -145,7 +145,7 @@ pub fn sync_paths(
     let db_files = load_db_files(conn, source.id)?;
 
     let mut plan = ChangePlan::default();
-    let mut invalid_utf8 = Vec::new();
+    let mut skipped = Vec::new();
     let unique_paths: BTreeSet<&String> = rel_paths.iter().collect();
     for rel_path in unique_paths {
         match walk.files.get(rel_path) {
@@ -155,8 +155,8 @@ pub fn sync_paths(
                     sensitive_files_skipped += 1;
                     mark_excluded(&db_files, rel_path, &mut plan);
                 }
-                Classification::InvalidUtf8(reason) => {
-                    invalid_utf8.push(SkippedFile {
+                Classification::Skipped(reason) => {
+                    skipped.push(SkippedFile {
                         rel_path: rel_path.clone(),
                         reason,
                     });
@@ -170,7 +170,7 @@ pub fn sync_paths(
     let counts = ScanCounts {
         files_scanned,
         sensitive_files_skipped,
-        invalid_utf8,
+        skipped,
     };
     apply_plan(store, source, &db_files, plan, enrichment_fn, start, counts)
 }
@@ -179,7 +179,7 @@ pub fn sync_paths(
 struct ScanCounts {
     files_scanned: usize,
     sensitive_files_skipped: usize,
-    invalid_utf8: Vec<SkippedFile>,
+    skipped: Vec<SkippedFile>,
 }
 
 /// Changes decided by classification, applied in one transaction.
@@ -202,7 +202,7 @@ enum Classification {
     Indexed,
     Sensitive,
     /// Not valid UTF-8. The file is skipped with this reason, and any rows it had are removed.
-    InvalidUtf8(String),
+    Skipped(String),
 }
 
 /// Record a file that was not indexed and must lose any rows it had.
@@ -228,11 +228,7 @@ fn classify_file(
     // cannot stop the other files from syncing. Read errors returned above still propagate.
     let content = match String::from_utf8(bytes) {
         Ok(content) => content,
-        Err(error) => {
-            return Ok(Classification::InvalidUtf8(format!(
-                "not valid UTF-8: {error}"
-            )))
-        }
+        Err(error) => return Ok(Classification::Skipped(format!("not valid UTF-8: {error}"))),
     };
     if contains_google_api_key(&content) {
         return Ok(Classification::Sensitive);
@@ -365,7 +361,7 @@ fn apply_plan(
         source_label: source.label.clone(),
         files_scanned: counts.files_scanned,
         sensitive_files_skipped: counts.sensitive_files_skipped,
-        skipped_invalid_utf8: counts.invalid_utf8,
+        skipped_files: counts.skipped,
         files_added,
         files_updated,
         files_removed,

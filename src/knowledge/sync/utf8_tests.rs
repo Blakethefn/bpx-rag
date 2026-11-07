@@ -60,14 +60,14 @@ fn invalid_utf8_file_is_skipped_with_a_reason_and_other_files_still_sync() {
         "the valid file must still be indexed"
     );
     assert_eq!(indexed_paths(&store), vec!["alpha.rs".to_string()]);
-    assert_eq!(result.skipped_invalid_utf8.len(), 1);
-    assert_eq!(result.skipped_invalid_utf8[0].rel_path, "menu.txt");
+    assert_eq!(result.skipped_files.len(), 1);
+    assert_eq!(result.skipped_files[0].rel_path, "menu.txt");
     assert!(
-        result.skipped_invalid_utf8[0]
+        result.skipped_files[0]
             .reason
             .starts_with("not valid UTF-8"),
         "reason was: {}",
-        result.skipped_invalid_utf8[0].reason
+        result.skipped_files[0].reason
     );
 }
 
@@ -86,7 +86,7 @@ fn file_that_becomes_invalid_loses_its_rows_and_is_reported() {
     assert!(indexed_paths(&store).is_empty(), "stale rows survived");
     assert_eq!(chunk_count_for(&store, "notes.txt"), 0);
     assert_eq!(result.files_removed, 1);
-    assert_eq!(result.skipped_invalid_utf8[0].rel_path, "notes.txt");
+    assert_eq!(result.skipped_files[0].rel_path, "notes.txt");
 }
 
 #[test]
@@ -102,7 +102,7 @@ fn file_is_indexed_again_once_its_content_is_valid() {
     let result = sync_source(&store, &source, None).unwrap();
 
     assert_eq!(indexed_paths(&store), vec!["notes.txt".to_string()]);
-    assert!(result.skipped_invalid_utf8.is_empty());
+    assert!(result.skipped_files.is_empty());
     assert!(chunk_count_for(&store, "notes.txt") > 0);
 }
 
@@ -117,12 +117,12 @@ fn event_driven_sync_skips_then_recovers_the_same_way() {
 
     fs::write(dir.path().join("notes.txt"), LATIN1).unwrap();
     let skipped = sync_paths(&store, &source, None, &["notes.txt".to_string()]).unwrap();
-    assert_eq!(skipped.skipped_invalid_utf8[0].rel_path, "notes.txt");
+    assert_eq!(skipped.skipped_files[0].rel_path, "notes.txt");
     assert!(indexed_paths(&store).is_empty());
 
     fs::write(dir.path().join("notes.txt"), "alpha beta gamma\n").unwrap();
     let recovered = sync_paths(&store, &source, None, &["notes.txt".to_string()]).unwrap();
-    assert!(recovered.skipped_invalid_utf8.is_empty());
+    assert!(recovered.skipped_files.is_empty());
     assert_eq!(indexed_paths(&store), vec!["notes.txt".to_string()]);
 }
 

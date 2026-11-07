@@ -317,7 +317,7 @@ impl Engine {
         );
         match result {
             Ok(result) => {
-                entry.skipped = result.skipped_invalid_utf8;
+                entry.skipped = result.skipped_files;
                 entry.state = SourceState::Watching;
                 entry.reconciled_at = Some(unix_now());
                 entry.last_error = None;
@@ -445,12 +445,10 @@ impl Engine {
         match result {
             Ok(outcome) => {
                 if full {
-                    entry.skipped = outcome.skipped_invalid_utf8.clone();
+                    entry.skipped = outcome.skipped_files.clone();
                 } else {
                     entry.skipped.retain(|file| !paths.contains(&file.rel_path));
-                    entry
-                        .skipped
-                        .extend(outcome.skipped_invalid_utf8.iter().cloned());
+                    entry.skipped.extend(outcome.skipped_files.iter().cloned());
                 }
                 entry.batches += 1;
                 entry.reindexed_files += changed_files(&outcome);

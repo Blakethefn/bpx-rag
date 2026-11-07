@@ -248,8 +248,8 @@ fn sync_invalid_utf8_skips_the_file_and_removes_its_stale_rows() {
     fs::write(&file_path, [0xff, 0xfe, 0xfd]).unwrap();
     let result = sync_source(&store, &source, None).unwrap();
 
-    assert_eq!(result.skipped_invalid_utf8.len(), 1);
-    assert_eq!(result.skipped_invalid_utf8[0].rel_path, "keep.md");
+    assert_eq!(result.skipped_files.len(), 1);
+    assert_eq!(result.skipped_files[0].rel_path, "keep.md");
     assert_eq!(file_count_for_source(&store, source.id), 1);
     assert!(chunk_count_for_source(&store, source.id) > 0);
 }
