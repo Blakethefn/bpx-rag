@@ -164,6 +164,21 @@ The first open rebuilds the identifier index once, with one row per chunk. Chunk
 
 Processes that predate this version can keep using the database afterward. Their writes are still covered by database triggers. A current process that was already running when an older build wrote chunks does not match them in the identifier layer until it reopens the database or syncs. Stop older processes anyway, so the rebuild is not repeated against live writers.
 
+### Symbol lookup after upgrading
+
+A database whose sources already have symbol rows (built by the release before this one) is upgraded conservatively. The migration cannot prove that those rows still match each file's content, because an older writer may have changed a file without updating its symbols. It therefore adds the new `symbols_hash` column empty and does not trust the existing rows. The rows stay in the database, but `bpx-rag symbol` and `bpx_symbol` return no matches from a source until that source syncs. They report `Symbol index pending for source '<label>': N file(s) not yet symbol-indexed` instead, and `bpx-rag status` reports the same count.
+
+Run one `bpx-rag sync --label <label>` per source after the upgrade (or `bpx-rag sync` for all). Sync rebuilds each file's symbols from the content it reads. It does not re-chunk or re-embed unchanged files.
+
+### Rolling back
+
+1. Stop every process that uses the database: `serve`, `watch run`, and any CLI command.
+2. Optionally keep a copy of the current `knowledge.db` to inspect later.
+3. Restore the backup you took before the upgrade over `knowledge.db`, and delete `knowledge.db-wal` and `knowledge.db-shm` next to it. A write-ahead log left by the newer build must not be replayed against the restored file.
+4. Start the previous binary.
+
+Restoring the backup discards every index change made after it was taken. Run the previous binary's `sync` to bring the sources current. If you have no backup, the previous builds tested here (the release before this one, and an earlier build that predates the identifier index) still open and write a migrated database. The identifier triggers, the queue table, and the version 2 identifier rows stay in the file, and older builds do not use them. Because the triggers remain, rows an older build writes are queued and indexed the next time a current build opens or syncs the database.
+
 ## Build from source
 
 ```bash
