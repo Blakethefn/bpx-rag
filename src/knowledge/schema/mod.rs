@@ -97,8 +97,6 @@ fn ensure_schema(conn: &Connection) -> Result<()> {
             generation INTEGER NOT NULL DEFAULT 0,
             database_id TEXT NOT NULL DEFAULT ''
         );
-        INSERT OR IGNORE INTO knowledge_embedding_state (state_id, generation, database_id)
-            VALUES (1, 0, '');
 
         CREATE TABLE IF NOT EXISTS knowledge_embedding_changes (
             change_id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -157,6 +155,7 @@ fn ensure_schema(conn: &Connection) -> Result<()> {
         END;
         ",
     )?;
+    ensure_embedding_state_row(conn)?;
     ensure_chunker_version(conn)?;
     ensure_symbol_version(conn)?;
     ensure_freshness_and_watch_columns(conn)?;
@@ -184,6 +183,25 @@ fn ensure_schema(conn: &Connection) -> Result<()> {
             UPDATE knowledge_embedding_state SET generation = last_insert_rowid() WHERE state_id = 1;
          END;",
     )?;
+    Ok(())
+}
+
+/// Create the single embedding-state row. It is checked first, because even an `INSERT OR
+/// IGNORE` that inserts nothing takes SQLite's write lock. An up-to-date database must open
+/// without it, so a search is not blocked by a sync or the watcher.
+fn ensure_embedding_state_row(conn: &Connection) -> Result<()> {
+    let exists: bool = conn.query_row(
+        "SELECT EXISTS(SELECT 1 FROM knowledge_embedding_state WHERE state_id = 1)",
+        [],
+        |row| row.get(0),
+    )?;
+    if !exists {
+        conn.execute(
+            "INSERT OR IGNORE INTO knowledge_embedding_state (state_id, generation, database_id)
+             VALUES (1, 0, '')",
+            [],
+        )?;
+    }
     Ok(())
 }
 
@@ -290,5 +308,7 @@ fn ensure_embedding_model_id(conn: &Connection) -> Result<()> {
     Ok(())
 }
 
+#[cfg(test)]
+mod lock_tests;
 #[cfg(test)]
 mod tests;
