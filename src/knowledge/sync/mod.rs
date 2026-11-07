@@ -93,7 +93,9 @@ pub fn sync_source(
     // 3. Classify every file on disk. Indexed files that are no longer selected are removed.
     let mut plan = ChangePlan::default();
     let mut excluded_content_paths = HashSet::new();
-    let mut skipped = Vec::new();
+    // Files the walk could not open are skipped. They are not in `disk_files`, so any rows
+    // they had are removed below.
+    let mut skipped = walk.unreadable;
     for (rel_path, abs_path) in &disk_files {
         match classify_file(rel_path, abs_path, &db_files, &mut plan)? {
             Classification::Indexed => {}
@@ -145,8 +147,15 @@ pub fn sync_paths(
     let db_files = load_db_files(conn, source.id)?;
 
     let mut plan = ChangePlan::default();
-    let mut skipped = Vec::new();
     let unique_paths: BTreeSet<&String> = rel_paths.iter().collect();
+    // Report only the unreadable files that were asked about. A listed file the walk could
+    // not open is absent from `walk.files`, so its rows are removed below.
+    let mut skipped: Vec<SkippedFile> = walk
+        .unreadable
+        .iter()
+        .filter(|file| unique_paths.contains(&file.rel_path))
+        .cloned()
+        .collect();
     for rel_path in unique_paths {
         match walk.files.get(rel_path) {
             Some(abs_path) => match classify_file(rel_path, abs_path, &db_files, &mut plan)? {
@@ -205,6 +214,14 @@ enum Classification {
     Skipped(String),
 }
 
+/// A file that could not be read, with the operating system's reason.
+fn unreadable_file(rel_path: &str, error: &dyn std::fmt::Display) -> SkippedFile {
+    SkippedFile {
+        rel_path: rel_path.to_string(),
+        reason: format!("unreadable: {error}"),
+    }
+}
+
 /// Record a file that was not indexed and must lose any rows it had.
 fn mark_excluded(db_files: &HashMap<String, DbFile>, rel_path: &str, plan: &mut ChangePlan) {
     if let Some(db_file) = db_files.get(rel_path) {
@@ -220,12 +237,24 @@ fn classify_file(
     db_files: &HashMap<String, DbFile>,
     plan: &mut ChangePlan,
 ) -> Result<Classification> {
-    let stat = stat_before_read(abs_path)?;
-    let bytes =
-        fs::read(abs_path).with_context(|| format!("failed to read {}", abs_path.display()))?;
+    // A file that cannot be inspected or read (permission denied, an I/O error, or removed
+    // since the walk) is a skip with a reason, like invalid UTF-8, so one bad file cannot stop
+    // the other files from syncing. Its indexed rows are removed, because the index could no
+    // longer be checked against the file.
+    let stat = match stat_before_read(abs_path) {
+        Ok(stat) => stat,
+        Err(error) => {
+            return Ok(Classification::Skipped(format!(
+                "unreadable: {}",
+                error.root_cause()
+            )))
+        }
+    };
+    let bytes = match fs::read(abs_path) {
+        Ok(bytes) => bytes,
+        Err(error) => return Ok(Classification::Skipped(format!("unreadable: {error}"))),
+    };
 
-    // Invalid UTF-8 is a skip with a reason, not a sync failure, so one undecodable file
-    // cannot stop the other files from syncing. Read errors returned above still propagate.
     let content = match String::from_utf8(bytes) {
         Ok(content) => content,
         Err(error) => return Ok(Classification::Skipped(format!("not valid UTF-8: {error}"))),
@@ -532,8 +561,9 @@ fn commit_plan(
 
 /// Walk a knowledge source directory, returning files keyed by relative path.
 /// Respects .gitignore, skips binary/empty/sensitive files, and applies the glob filter.
-/// Any traversal or inspection error aborts the sync so reconciliation cannot
-/// mistake an incomplete scan for deleted files.
+/// A traversal error aborts the sync so reconciliation cannot mistake an incomplete scan
+/// for deleted files. A file that cannot be opened or inspected is left out of `files`, and
+/// `walk_source_dir_with_report` names it with the reason.
 pub(crate) fn walk_source_dir(
     base_path: &Path,
     patterns: &[String],
@@ -546,6 +576,8 @@ pub(crate) fn walk_source_dir(
 pub(crate) struct SourceWalkReport {
     pub files: BTreeMap<String, PathBuf>,
     pub sensitive_files_skipped: usize,
+    /// Files the walk could not open or inspect, keyed like `files`, with the reason.
+    pub unreadable: Vec<SkippedFile>,
 }
 
 pub(crate) fn walk_source_dir_with_report(
@@ -578,6 +610,7 @@ pub(crate) fn walk_source_dir_with_report(
 
     let mut files = BTreeMap::new();
     let mut sensitive_files_skipped = 0;
+    let mut unreadable = Vec::new();
 
     for entry in builder.build() {
         let entry = entry.context("failed while traversing knowledge source")?;
@@ -592,25 +625,33 @@ pub(crate) fn walk_source_dir_with_report(
             continue;
         }
 
-        // Skip binary files (null byte in first 1KB)
-        if is_binary(&abs_path)
-            .with_context(|| format!("failed to inspect {}", abs_path.display()))?
-        {
-            continue;
-        }
-
-        // Skip empty files
-        let metadata = fs::metadata(&abs_path)
-            .with_context(|| format!("failed to inspect {}", abs_path.display()))?;
-        if metadata.len() == 0 {
-            continue;
-        }
-
         let rel_path = abs_path
             .strip_prefix(base_path)
             .unwrap_or(&abs_path)
             .to_string_lossy()
             .to_string();
+
+        // A file that cannot be opened or inspected is skipped with a reason. Only a failure
+        // of the traversal itself (above) is fatal, because it hides what a directory holds.
+        // Skip binary files (null byte in first 1KB)
+        match is_binary(&abs_path) {
+            Ok(true) => continue,
+            Ok(false) => {}
+            Err(error) => {
+                unreadable.push(unreadable_file(&rel_path, &error));
+                continue;
+            }
+        }
+
+        // Skip empty files
+        match fs::metadata(&abs_path) {
+            Ok(metadata) if metadata.len() == 0 => continue,
+            Ok(_) => {}
+            Err(error) => {
+                unreadable.push(unreadable_file(&rel_path, &error));
+                continue;
+            }
+        }
 
         files.insert(rel_path, abs_path);
     }
@@ -618,6 +659,7 @@ pub(crate) fn walk_source_dir_with_report(
     Ok(SourceWalkReport {
         files,
         sensitive_files_skipped,
+        unreadable,
     })
 }
 
@@ -627,5 +669,7 @@ mod identifier_maintenance_tests;
 mod paths_tests;
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod unreadable_tests;
 #[cfg(test)]
 mod utf8_tests;

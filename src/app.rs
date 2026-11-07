@@ -757,17 +757,16 @@ pub fn load_watch_embedder() -> Option<Arc<dyn Embed>> {
     }
 }
 
-/// One status line for files a watcher sync skipped because they are not valid UTF-8.
+/// One status line for files a watcher sync skipped, with each file's reason.
 fn skipped_note(skipped: &[knowledge::sync::SkippedFile]) -> String {
     if skipped.is_empty() {
         return String::new();
     }
-    let names: Vec<&str> = skipped.iter().map(|file| file.rel_path.as_str()).collect();
-    format!(
-        ", skipped {} file(s) that are not valid UTF-8: {}",
-        skipped.len(),
-        names.join(", ")
-    )
+    let names: Vec<String> = skipped
+        .iter()
+        .map(|file| format!("{} ({})", file.rel_path, file.reason))
+        .collect();
+    format!(", skipped {} file(s): {}", skipped.len(), names.join(", "))
 }
 
 pub fn format_sync_result(result: &knowledge::sync::SyncResult) -> String {

@@ -1,4 +1,4 @@
-//! Invalid UTF-8 files are skipped with a reason; genuine read failures still abort.
+//! Invalid UTF-8 files are skipped with a reason. Unreadable files are covered in `unreadable_tests`.
 
 use super::*;
 use tempfile::tempdir;
@@ -124,26 +124,4 @@ fn event_driven_sync_skips_then_recovers_the_same_way() {
     let recovered = sync_paths(&store, &source, None, &["notes.txt".to_string()]).unwrap();
     assert!(recovered.skipped_files.is_empty());
     assert_eq!(indexed_paths(&store), vec!["notes.txt".to_string()]);
-}
-
-#[test]
-fn an_unreadable_file_is_an_error_not_a_silent_skip() {
-    let store = make_store();
-    let dir = tempdir().unwrap();
-    let locked = dir.path().join("locked.txt");
-    fs::write(&locked, "alpha beta gamma\n").unwrap();
-    fs::set_permissions(&locked, std::os::unix::fs::PermissionsExt::from_mode(0o000)).unwrap();
-    if fs::read(&locked).is_ok() {
-        // Running as root, so permissions do not block reads. The I/O path is then untestable here.
-        return;
-    }
-    let source = register(&store, dir.path());
-
-    let result = sync_source(&store, &source, None);
-
-    assert!(
-        result.is_err(),
-        "a permission failure must surface, not be skipped"
-    );
-    fs::set_permissions(&locked, std::os::unix::fs::PermissionsExt::from_mode(0o644)).unwrap();
 }

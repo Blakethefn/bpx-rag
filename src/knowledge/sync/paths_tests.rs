@@ -135,7 +135,7 @@ fn sensitive_content_removes_the_indexed_file() {
 }
 
 #[test]
-fn unreadable_changed_file_is_an_error_and_other_files_stay_indexed() {
+fn unreadable_changed_file_is_skipped_and_other_files_stay_indexed() {
     let store = open_in_memory().unwrap();
     let dir = tempdir().unwrap();
     fs::write(dir.path().join("a.rs"), "pub fn alpha() -> u8 { 1 }\n").unwrap();
@@ -157,13 +157,14 @@ fn unreadable_changed_file_is_an_error_and_other_files_stay_indexed() {
         &source,
         None,
         &["a.rs".to_string(), "b.rs".to_string()],
-    );
-    assert!(
-        result.is_err(),
-        "an unreadable changed file must fail the reindex"
-    );
-    assert_eq!(indexed_paths(&store), vec!["a.rs", "b.rs"]);
-    assert_eq!(symbol_names(&store), vec!["alpha", "beta"]);
+    )
+    .expect("an unreadable changed file is skipped, not an error");
+    assert_eq!(result.skipped_files.len(), 1);
+    assert_eq!(result.skipped_files[0].rel_path, "a.rs");
+    assert!(result.skipped_files[0].reason.starts_with("unreadable: "));
+    // The stale rows of the unreadable file are removed. The other file is untouched.
+    assert_eq!(indexed_paths(&store), vec!["b.rs"]);
+    assert_eq!(symbol_names(&store), vec!["beta"]);
 }
 
 #[test]
