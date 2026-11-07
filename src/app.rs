@@ -155,12 +155,28 @@ impl RagApp {
             &patterns,
             enrichments,
         )?;
+        // Registration and the first sync succeed or fail together. A source left registered
+        // with no content would also refuse a retry under the same label.
+        match self.register_and_sync(label) {
+            Ok(result) => Ok(format_sync_result(&result)),
+            Err(error) => {
+                if let Err(cleanup) = self.knowledge.remove_source(label) {
+                    eprintln!(
+                        "[bpx-rag] could not remove source '{label}' after its first sync failed: {cleanup:#}"
+                    );
+                }
+                Err(error)
+            }
+        }
+    }
+
+    /// The first sync of a source that was just registered.
+    fn register_and_sync(&self, label: &str) -> Result<knowledge::sync::SyncResult> {
         let source = self
             .knowledge
             .get_source(label)?
             .ok_or_else(|| anyhow!("new source could not be loaded"))?;
-        let result = self.sync_one(&source)?;
-        Ok(format_sync_result(&result))
+        self.sync_one(&source)
     }
 
     pub fn sync_sources(
