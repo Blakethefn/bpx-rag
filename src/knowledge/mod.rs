@@ -159,18 +159,23 @@ impl KnowledgeStore {
 
     /// Remove a knowledge source and all its indexed content.
     /// FTS5 virtual tables don't support ON DELETE CASCADE so chunks are
-    /// removed manually before deleting the source record.
+    /// removed manually before deleting the source record. Every delete runs in one
+    /// transaction, so a failure part-way leaves the source exactly as it was.
     pub fn remove_source(&self, label: &str) -> Result<RemoveResult> {
         let source = self
             .get_source(label)?
             .ok_or_else(|| anyhow!("Knowledge source '{}' not found", label))?;
 
         let source_id = source.id;
+        let transaction = rusqlite::Transaction::new_unchecked(
+            &self.conn,
+            rusqlite::TransactionBehavior::Immediate,
+        )?;
+        let mut step = 0usize;
 
         // Collect chunk rowids before any deletions so we still have references.
         let chunk_rowids: Vec<i64> = {
-            let mut stmt = self
-                .conn
+            let mut stmt = transaction
                 .prepare("SELECT chunk_rowid FROM knowledge_chunk_meta WHERE source_id = ?1")?;
             let rows = stmt.query_map(rusqlite::params![source_id], |row| row.get(0))?;
             rows.collect::<rusqlite::Result<Vec<_>>>()?
@@ -178,7 +183,7 @@ impl KnowledgeStore {
 
         let chunks_removed = chunk_rowids.len() as i64;
 
-        let files_removed: i64 = self.conn.query_row(
+        let files_removed: i64 = transaction.query_row(
             "SELECT COUNT(*) FROM knowledge_files WHERE source_id = ?1",
             rusqlite::params![source_id],
             |row| row.get(0),
@@ -186,41 +191,46 @@ impl KnowledgeStore {
 
         // Delete from FTS5 virtual tables first (no FK cascade support).
         for rowid in &chunk_rowids {
-            self.conn.execute(
+            transaction.execute(
                 "DELETE FROM knowledge_chunks WHERE rowid = ?1",
                 rusqlite::params![rowid],
             )?;
-            self.conn.execute(
+            transaction.execute(
                 "DELETE FROM knowledge_chunks_trigram WHERE rowid = ?1",
                 rusqlite::params![rowid],
             )?;
-            self.conn.execute(
+            transaction.execute(
                 "DELETE FROM knowledge_identifiers WHERE rowid = ?1",
                 rusqlite::params![rowid],
             )?;
-            self.conn.execute(
+            transaction.execute(
                 "DELETE FROM knowledge_embeddings WHERE chunk_rowid = ?1",
                 rusqlite::params![rowid],
             )?;
+            remove_failpoint(&mut step)?;
         }
 
-        self.conn.execute(
+        transaction.execute(
             "DELETE FROM knowledge_symbols WHERE source_id = ?1",
             rusqlite::params![source_id],
         )?;
+        remove_failpoint(&mut step)?;
 
         // Delete chunk_meta before the source (FK references files and source).
-        self.conn.execute(
+        transaction.execute(
             "DELETE FROM knowledge_chunk_meta WHERE source_id = ?1",
             rusqlite::params![source_id],
         )?;
+        remove_failpoint(&mut step)?;
 
         // Delete the source — ON DELETE CASCADE removes knowledge_files.
-        self.conn.execute(
+        transaction.execute(
             "DELETE FROM knowledge_sources WHERE id = ?1",
             rusqlite::params![source_id],
         )?;
+        remove_failpoint(&mut step)?;
 
+        transaction.commit()?;
         Ok(RemoveResult {
             files_removed,
             chunks_removed,
@@ -433,6 +443,31 @@ pub(crate) fn open_in_memory() -> anyhow::Result<KnowledgeStore> {
     })
 }
 
+// Test hook: fail `remove_source` after the given number of completed steps (one per chunk,
+// then the symbol, metadata, and source deletes), to prove that a failure part-way leaves the
+// source intact. Thread-local, like `REBUILD_FAILPOINT` in `identifiers.rs`.
+#[cfg(test)]
+thread_local! {
+    pub(crate) static REMOVE_FAILPOINT: std::cell::Cell<Option<usize>> =
+        const { std::cell::Cell::new(None) };
+}
+
+#[cfg(test)]
+fn remove_failpoint(step: &mut usize) -> Result<()> {
+    *step += 1;
+    if REMOVE_FAILPOINT.with(|point| point.get()) == Some(*step) {
+        anyhow::bail!("injected failure after remove step {step}");
+    }
+    Ok(())
+}
+
+#[cfg(not(test))]
+fn remove_failpoint(_step: &mut usize) -> Result<()> {
+    Ok(())
+}
+
+#[cfg(test)]
+mod remove_tests;
 #[cfg(test)]
 mod tests;
 
