@@ -80,7 +80,7 @@ pub struct SourceStatus {
     /// Files reindexed from events and retries, excluding the startup reconcile.
     pub reindexed_files: u64,
     pub last_error: Option<String>,
-    /// Files the last sync read but did not index because they are not valid UTF-8.
+    /// Files the last sync could not index (not valid UTF-8, or unreadable), with the reason.
     #[serde(default)]
     pub skipped_files: Vec<SkippedFile>,
 }
@@ -484,12 +484,53 @@ impl Engine {
 }
 
 fn register(label: &str, root: &Path, events: Sender<Event>) -> Result<RecommendedWatcher> {
+    register_failpoint()?;
     let label = label.to_string();
     let mut watcher = notify::recommended_watcher(move |outcome| {
         let _ = events.send((label.clone(), outcome));
     })?;
     watcher.watch(root, RecursiveMode::Recursive)?;
     Ok(watcher)
+}
+
+// Test hook: fail the next registrations without touching host inotify resources. A test
+// installs a probe on the thread that runs the engine. Like `REBUILD_FAILPOINT` in
+// `knowledge/identifiers.rs`, the hook is thread-local, so parallel tests do not interfere.
+#[cfg(test)]
+pub(crate) struct RegisterProbe {
+    /// How many upcoming registrations fail.
+    pub(crate) fail_first: std::sync::atomic::AtomicU32,
+    /// When each registration was attempted.
+    pub(crate) attempts: std::sync::Mutex<Vec<Instant>>,
+}
+
+#[cfg(test)]
+thread_local! {
+    pub(crate) static REGISTER_PROBE: std::cell::RefCell<Option<Arc<RegisterProbe>>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+#[cfg(test)]
+fn register_failpoint() -> Result<()> {
+    let Some(probe) = REGISTER_PROBE.with(|probe| probe.borrow().clone()) else {
+        return Ok(());
+    };
+    probe.attempts.lock().unwrap().push(Instant::now());
+    let failing = probe
+        .fail_first
+        .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |remaining| {
+            remaining.checked_sub(1)
+        })
+        .is_ok();
+    if failing {
+        anyhow::bail!("injected registration failure: Too many open files (os error 24)");
+    }
+    Ok(())
+}
+
+#[cfg(not(test))]
+fn register_failpoint() -> Result<()> {
+    Ok(())
 }
 
 /// Record a failure and schedule the next attempt with doubling backoff, capped at `retry_max`.
