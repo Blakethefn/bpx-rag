@@ -16,6 +16,7 @@ fn fast_options() -> WatchOptions {
         max_batch: Duration::from_secs(3),
         retry_base: Duration::from_millis(100),
         retry_max: Duration::from_millis(500),
+        lease_wait: Duration::from_millis(150),
     }
 }
 
@@ -428,4 +429,51 @@ fn watcher_thread_recovers_from_registration_failures_and_then_follows_edits() {
     assert!(wait_for(Duration::from_secs(10), || symbols(&fixture.db)
         == vec!["after_recovery"]));
     assert_eq!(stop_and_join(stop, handle), RunOutcome::Stopped);
+}
+
+// ── lease probes ────────────────────────────────────────────────────────────────────────────
+//
+// `watch status` and `serve` probe the lease by taking it for an instant. A watcher that starts
+// at the same moment must not read that probe as another watcher and exit.
+
+#[test]
+fn watcher_starts_when_the_lease_is_only_held_briefly_by_a_probe() {
+    let fixture = fixture();
+    let (held_tx, held_rx) = std::sync::mpsc::channel();
+    let path = lease_path(&fixture.db);
+    let probe = std::thread::spawn(move || {
+        let lock = FileLock::try_acquire(&path)
+            .unwrap()
+            .expect("lease is free");
+        held_tx.send(()).unwrap();
+        std::thread::sleep(Duration::from_millis(60));
+        drop(lock);
+    });
+    held_rx.recv().unwrap();
+
+    let stop = AtomicBool::new(true);
+    let outcome = run_without_vectors(&fixture.db, &fast_options(), &stop).unwrap();
+
+    probe.join().unwrap();
+    assert_eq!(
+        outcome,
+        RunOutcome::Stopped,
+        "a momentary probe must not be reported as a running watcher"
+    );
+}
+
+#[test]
+fn a_lease_that_stays_held_is_still_reported_as_already_running_after_the_wait() {
+    let fixture = fixture();
+    let _held = FileLock::acquire(&lease_path(&fixture.db)).unwrap();
+    let stop = AtomicBool::new(true);
+    let started = Instant::now();
+
+    let outcome = run_without_vectors(&fixture.db, &fast_options(), &stop).unwrap();
+
+    assert!(matches!(outcome, RunOutcome::AlreadyRunning { .. }));
+    assert!(
+        started.elapsed() >= fast_options().lease_wait,
+        "the wait must elapse before reporting"
+    );
 }

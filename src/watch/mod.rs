@@ -37,6 +37,10 @@ pub struct WatchOptions {
     /// First retry delay after a failure. It doubles up to `retry_max`.
     pub retry_base: Duration,
     pub retry_max: Duration,
+    /// How long a starting watcher keeps trying for the lease before it reports another watcher.
+    /// `watch status` and `serve` probe the lease by taking it for an instant, and a watcher that
+    /// starts then must not mistake that probe for a running watcher.
+    pub lease_wait: Duration,
 }
 
 impl Default for WatchOptions {
@@ -46,6 +50,7 @@ impl Default for WatchOptions {
             max_batch: Duration::from_secs(5),
             retry_base: Duration::from_secs(1),
             retry_max: Duration::from_secs(60),
+            lease_wait: Duration::from_secs(1),
         }
     }
 }
@@ -109,7 +114,7 @@ pub fn run_with_loader(
     stop: &AtomicBool,
     embedder_loader: EmbedderLoader,
 ) -> Result<RunOutcome> {
-    let Some(lease) = FileLock::try_acquire(&lease_path(db_path))? else {
+    let Some(lease) = acquire_lease(&lease_path(db_path), options.lease_wait)? else {
         let pid = read_status(db_path)?.map(|status| status.pid);
         return Ok(RunOutcome::AlreadyRunning { pid });
     };
@@ -117,6 +122,21 @@ pub fn run_with_loader(
     engine.run_until(stop)?;
     drop(lease);
     Ok(RunOutcome::Stopped)
+}
+
+/// Take the watcher lease, retrying briefly. A holder that keeps it past `wait` is a running
+/// watcher. One that releases it sooner was a probe (see `holder`).
+fn acquire_lease(path: &Path, wait: Duration) -> Result<Option<FileLock>> {
+    let deadline = Instant::now() + wait;
+    loop {
+        if let Some(lease) = FileLock::try_acquire(path)? {
+            return Ok(Some(lease));
+        }
+        if Instant::now() >= deadline {
+            return Ok(None);
+        }
+        std::thread::sleep(Duration::from_millis(10));
+    }
 }
 
 /// The last status the running watcher wrote, if any.
