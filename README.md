@@ -111,7 +111,15 @@ Each search result shows `freshness: <state> (<basis>)`. The basis says how the 
 - `stale (changed)` or `stale (missing)`: the content changed or the file was deleted since the last sync.
 - `unknown (...)`: the source directory is unavailable, the file cannot be read, or the index has no metadata for it yet.
 
-Freshness is computed only for returned results. Searching does not hash files and does not write to the database. Run `bpx-rag sync` to re-verify a source by content hash.
+Freshness is computed only for returned results. Searching does not hash files. Run `bpx-rag sync` to re-verify a source by content hash.
+
+### Searching and the database write lock
+
+A search does not change indexed content, but opening the database is not always read-only:
+
+- Opening an up-to-date database takes no write lock, so a search is not blocked while a sync or the watcher holds one.
+- An open that has work to do takes SQLite's write lock: a schema or index migration, or identifier rows queued by chunks that an older build wrote. A search drains that queue, so the first search or open after such a write indexes those chunks. If another process holds the write lock for longer than the 5 second busy timeout, that search fails with `database is locked`.
+- Fuzzy matching's vocabulary table is created with the schema, not on the first fuzzy search.
 
 ## MCP
 
