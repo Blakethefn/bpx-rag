@@ -27,6 +27,10 @@ pub struct QueryRequest<'a> {
     pub snippet_bytes: usize,
     pub profile: SearchProfile,
     pub explain: bool,
+    /// Why vector retrieval is not running for this search (for example, the model could not
+    /// load, or CUDA was configured on a CPU-only build). `--explain` shows it first, as a
+    /// warning, because ranking then uses the keyword layers only. `None` when vectors run.
+    pub vector_unavailable: Option<&'a str>,
 }
 
 /// Run a hybrid knowledge search and render the result text.
@@ -72,7 +76,13 @@ pub fn run_query(
         &weights,
         request.snippet_bytes,
     )?;
-    let warnings = report.warnings;
+    let mut warnings = report.warnings;
+    if let (true, Some(reason)) = (request.explain, request.vector_unavailable) {
+        warnings.insert(
+            0,
+            format!("vector retrieval is not running, so ranking uses the keyword layers only: {reason}"),
+        );
+    }
     let layers = report.layers;
     let mut results = report.results;
     apply_knowledge_bias(&mut results, request.profile);

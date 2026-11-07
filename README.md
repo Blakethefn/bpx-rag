@@ -65,6 +65,8 @@ Build the optional provider with:
 cargo build --release --features gpu-cuda
 ```
 
+**A configuration with `device = "cuda"` needs a `gpu-cuda` build.** A build without the feature cannot honor it. Searches still succeed and exit 0, but the embedding model does not load, so retrieval silently becomes keyword-only (BM25, trigram, fuzzy, and identifier layers, with no vector layer). The only signs are a trailing `Embedding status:` note that says `CUDA was selected, but this binary lacks CUDA support; rebuild with `--features gpu-cuda``, and `device: cuda requested, but this binary was built without `gpu-cuda`` in `bpx-rag models status`. `bpx-rag search --explain` puts a `Warning: vector retrieval is not running ...` line first and shows the vector layer as not run. Before you point a client at a new binary, run `search --explain` with the production config and confirm the `layers:` line shows `vector ran`. A CPU build that reads a CUDA config is a deployment error, not a supported fallback; set `device = "cpu"` for CPU builds.
+
 ## CLI
 
 ```text

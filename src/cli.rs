@@ -34,6 +34,8 @@ pub enum Commands {
         max_per_file: u32,
         #[arg(long)]
         profile: Option<String>,
+        /// Show what each retrieval layer did. Warns first when vector retrieval is not running,
+        /// for example when the config asks for CUDA on a build without `gpu-cuda`.
         #[arg(long)]
         explain: bool,
         /// Return result count and token estimate without snippets.

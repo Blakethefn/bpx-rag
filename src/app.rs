@@ -114,6 +114,11 @@ impl RagApp {
                 snippet_bytes: self.config.search.snippet_bytes,
                 profile,
                 explain: options.explain,
+                vector_unavailable: if self.knowledge.embedder().is_none() {
+                    self.embedding_notice.as_deref()
+                } else {
+                    None
+                },
             },
             &self.config,
             &self.knowledge,
