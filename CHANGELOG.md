@@ -4,7 +4,21 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## [Unreleased]
+## [0.4.0] - 2026-11-06
+
+### Breaking changes
+
+Read these before upgrading. Details are under Changed and Removed below.
+
+- **CLI commands are flat verbs.** `knowledge add|sync|status|remove|read` are now `add|sync|status|remove|read`. `knowledge embed-backfill` is `embed`, `knowledge scrub-sensitive` is `scrub`, `analyze-file` is `relate`, and `evaluate` is `eval`. Scripts that call the old names fail.
+- **MCP tool names changed.** `bpx_knowledge_add|sync|status|remove|read` are `bpx_add|sync|status|remove|read`, `bpx_file_relationships` is `bpx_relate`, and `bpx_embeddings` is split into `bpx_models` and `bpx_embed`. Client configurations and agent instructions that name the old tools must be updated.
+- **The data and config directories are `bpx-rag`, not `bpcontext`.** With only the old directory present, bpx-rag refuses to start and prints the `mv` or `ln -s` command.
+- **The database is migrated on first open.** Stop every process that writes the database and back up `knowledge.db` before the first open with this version. Older builds can still open and write a migrated database, because triggers in the file cover their writes. To go back, restore the backup. See "Upgrading an existing database" and "Rolling back" in the README.
+- **Symbol lookup is empty for existing sources until each one syncs.** Run `bpx-rag sync --label <label>` once per source after upgrading.
+- **Sync behavior changed for unreadable files.** A file that cannot be read is now skipped with a reason instead of failing the sync, and its rows are removed. Failures of the directory walk still fail the sync.
+- **`add` removes the source if its first sync fails**, so a failed add no longer leaves an empty registered source.
+- **Search runs only against the knowledge store.** The per-project content index, session memory, and the `bpcontext` launcher binary were removed.
+- **A build with `device = "cuda"` in its config needs the `gpu-cuda` feature.** Without it, retrieval is keyword-only.
 
 ### Added
 
