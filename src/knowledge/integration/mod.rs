@@ -1,10 +1,10 @@
 use crate::knowledge::*;
 use std::sync::Arc;
 
-mod enrichment_tests;
-mod scope_tests;
-mod search_tests;
-mod sync_tests;
+mod enrichment;
+mod scope;
+mod search;
+mod sync;
 
 fn link_count(store: &KnowledgeStore, source_id: i64) -> i64 {
     store

@@ -1,4 +1,9 @@
 use super::*;
+
+mod identifier;
+mod paths;
+mod unreadable;
+mod utf8;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;

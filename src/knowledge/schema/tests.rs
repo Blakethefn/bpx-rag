@@ -1,5 +1,7 @@
 use super::*;
 
+mod lock;
+
 #[test]
 fn old_embedding_rows_are_migrated_to_their_legacy_model_identity() {
     let conn = Connection::open_in_memory().unwrap();

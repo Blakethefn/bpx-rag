@@ -309,6 +309,4 @@ fn ensure_embedding_model_id(conn: &Connection) -> Result<()> {
 }
 
 #[cfg(test)]
-mod lock_tests;
-#[cfg(test)]
 mod tests;

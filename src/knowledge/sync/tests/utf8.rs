@@ -1,6 +1,6 @@
-//! Invalid UTF-8 files are skipped with a reason. Unreadable files are covered in `unreadable_tests`.
+//! Invalid UTF-8 files are skipped with a reason. Unreadable files are covered in `unreadable`.
 
-use super::*;
+use super::super::*;
 use tempfile::tempdir;
 
 fn make_store() -> KnowledgeStore {

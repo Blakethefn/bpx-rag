@@ -4,7 +4,7 @@
 //! performs. A build that predates the identifier index runs exactly these statements, and
 //! the database triggers must keep the identifier table consistent for them too.
 
-use super::*;
+use super::super::*;
 use crate::knowledge::schema::apply_schema;
 use rusqlite::Connection;
 

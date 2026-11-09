@@ -1,4 +1,4 @@
-mod c_family;
+mod cfamily;
 mod modules;
 mod python;
 mod scripting;
@@ -21,7 +21,7 @@ pub(super) fn extract_specifiers(
     metadata: &ProjectMetadata,
 ) -> Vec<(&'static str, String)> {
     match grammar {
-        Grammar::C | Grammar::Cpp => c_family::extract(grammar, node, &source.content),
+        Grammar::C | Grammar::Cpp => cfamily::extract(grammar, node, &source.content),
         Grammar::Python => python::extract(node, source, root, files, metadata),
         Grammar::Go
         | Grammar::Java

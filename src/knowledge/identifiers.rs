@@ -235,7 +235,4 @@ pub(crate) fn identifier_words(text: &str) -> String {
 }
 
 #[cfg(test)]
-mod tests;
-
-#[cfg(test)]
-pub(crate) mod maintenance_tests;
+pub(crate) mod tests;

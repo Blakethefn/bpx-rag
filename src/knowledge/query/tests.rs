@@ -1,4 +1,8 @@
 use super::*;
+
+mod diversity;
+mod embedding;
+mod layer;
 use crate::embed::Embed;
 use crate::knowledge;
 use rusqlite::params;

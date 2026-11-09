@@ -378,16 +378,6 @@ impl Clone for KnowledgeSearchResult {
 // ── Search layers ────────────────────────────────────────────────────────────
 
 #[cfg(test)]
-mod cache_bench;
-#[cfg(test)]
-mod diversity_tests;
-#[cfg(test)]
-mod embedding_cache_tests;
-#[cfg(test)]
-mod fuzzy_bench;
-#[cfg(test)]
-mod latency_bench;
-#[cfg(test)]
-mod layer_tests;
+mod bench;
 #[cfg(test)]
 mod tests;

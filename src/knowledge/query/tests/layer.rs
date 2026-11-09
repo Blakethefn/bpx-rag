@@ -1,8 +1,8 @@
 //! Which layers run for each query shape, and what the diagnostics report.
 
-use super::layers::{LayerOutcome, LayerPolicy, LayerReport, SkipReason};
-use super::tests::{make_store, seed_chunk};
-use super::*;
+use super::super::layers::{LayerOutcome, LayerPolicy, LayerReport, SkipReason};
+use super::{make_store, seed_chunk};
+use super::super::*;
 use crate::embed::Embed;
 use std::sync::Arc;
 

@@ -2,7 +2,7 @@
 //! cannot stop the rest of its source from syncing. A failure of the directory walk itself
 //! is not a per-file problem and still fails the sync.
 
-use super::*;
+use super::super::*;
 use std::os::unix::fs::PermissionsExt;
 use tempfile::tempdir;
 

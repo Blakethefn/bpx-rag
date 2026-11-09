@@ -21,7 +21,7 @@ use anyhow::{anyhow, Result};
 use rusqlite::{Connection, OptionalExtension};
 use std::sync::Arc;
 
-use crate::embed::query_cache::QueryEmbeddingCache;
+use crate::embed::cache::QueryEmbeddingCache;
 use crate::embed::Embed;
 
 /// Persistent knowledge store — indexes directories of files for durable
@@ -467,8 +467,6 @@ fn remove_failpoint(_step: &mut usize) -> Result<()> {
 }
 
 #[cfg(test)]
-mod remove_tests;
-#[cfg(test)]
 mod tests;
 
 /// Cross-module integration tests exercising the full knowledge store pipeline:
@@ -477,4 +475,4 @@ mod tests;
 /// These verify the spec's "Verification Contracts" and "Test Anchors" that span
 /// multiple modules (P01 through P06).
 #[cfg(test)]
-mod integration_tests;
+mod integration;

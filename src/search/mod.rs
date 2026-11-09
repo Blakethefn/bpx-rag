@@ -458,40 +458,4 @@ fn format_results(
 }
 
 #[cfg(test)]
-mod layer_summary_tests {
-    use super::*;
-    use crate::knowledge::query::SkipReason;
-
-    #[test]
-    fn layer_summary_names_each_state_and_skip_reason() {
-        let layers = vec![
-            LayerReport {
-                layer: "bm25",
-                outcome: LayerOutcome::Ran,
-                candidates: 12,
-            },
-            LayerReport {
-                layer: "trigram",
-                outcome: LayerOutcome::Skipped {
-                    reason: SkipReason::PoolFull,
-                },
-                candidates: 0,
-            },
-            LayerReport {
-                layer: "vector",
-                outcome: LayerOutcome::Failed {
-                    error: "model unavailable".to_string(),
-                },
-                candidates: 0,
-            },
-        ];
-
-        assert_eq!(
-            layer_summary(&layers),
-            "layers: bm25 ran (12 candidates); trigram skipped (candidate pool full); vector failed (model unavailable)\n"
-        );
-    }
-}
-
-#[cfg(test)]
 mod tests;

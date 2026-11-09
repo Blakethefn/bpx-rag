@@ -1,4 +1,4 @@
-use super::*;
+use super::super::*;
 use crate::knowledge::open_in_memory;
 use rusqlite::params;
 use std::fs;

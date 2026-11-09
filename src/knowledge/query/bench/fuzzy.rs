@@ -6,7 +6,7 @@
 //! The vocabulary comes from a fixed-seed generator and the misspelling set is
 //! derived from it, so every run measures the same workload.
 
-use super::*;
+use super::super::*;
 use crate::knowledge;
 use rusqlite::params;
 use std::collections::HashSet;

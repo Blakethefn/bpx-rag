@@ -1,7 +1,7 @@
 //! `remove_source` deletes from many tables. A failure part-way must leave the source intact,
 //! not metadata with no chunk rows.
 
-use super::*;
+use super::super::*;
 use crate::knowledge::sync::sync_source;
 use tempfile::tempdir;
 

@@ -1,14 +1,14 @@
 //! Stage 8 latency measurements that compile against both HEAD and the cache branch.
 //!
 //! Ignored by default. Set `BPX_BENCH_MODEL_DIR` to the jina model directory and run:
-//! `cargo test --release --bin bpx-rag latency_bench -- --ignored --nocapture`
+//! `cargo test --release --bin bpx-rag bench::latency -- --ignored --nocapture`
 //!
 //! The corpus is synthetic: deterministic chunk text and random unit vectors. Only time and
 //! bytes are measured, not ranking quality.
 
-use super::tests::{make_store, seed_chunk};
-use super::vector::knowledge_vector_search;
-use super::*;
+use super::super::tests::{make_store, seed_chunk};
+use super::super::vector::knowledge_vector_search;
+use super::super::*;
 use crate::config::EmbeddingDevice;
 use crate::embed::{self, Embed, Embedder, CODE_MODEL};
 use rusqlite::params;

@@ -1,13 +1,13 @@
 //! Stage 8 measurements of the query embedding cache. Only this tree has the cache.
 //!
 //! Ignored by default. Set `BPX_BENCH_MODEL_DIR` to the jina model directory and run:
-//! `cargo test --release --bin bpx-rag cache_bench -- --ignored --nocapture`
+//! `cargo test --release --bin bpx-rag bench::cache -- --ignored --nocapture`
 
-use super::latency_bench::{
+use super::latency::{
     load_jina, percentile, store_with_corpus, unit_vector, MODEL_ID, QUERIES,
 };
-use super::*;
-use crate::embed::query_cache::QueryEmbeddingCache;
+use super::super::*;
+use crate::embed::cache::QueryEmbeddingCache;
 use crate::embed::Embed;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
@@ -210,7 +210,7 @@ fn cache_memory_at_capacity() {
 
 const DIM_BYTES: usize = 768 * std::mem::size_of::<f32>();
 
-/// The first-pass search measurement of `latency_bench`, with the cache disabled. Comparing it
+/// The first-pass search measurement of `bench::latency`, with the cache disabled. Comparing it
 /// with the cached first pass isolates the cache's own cost from build-to-build differences.
 #[test]
 #[ignore]

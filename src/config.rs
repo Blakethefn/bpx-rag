@@ -141,7 +141,7 @@ pub struct EmbeddingsConfig {
 }
 
 fn default_query_cache_entries() -> usize {
-    crate::embed::query_cache::DEFAULT_CAPACITY
+    crate::embed::cache::DEFAULT_CAPACITY
 }
 
 fn default_embedding_threads() -> usize {

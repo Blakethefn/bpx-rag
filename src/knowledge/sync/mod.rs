@@ -664,12 +664,4 @@ pub(crate) fn walk_source_dir_with_report(
 }
 
 #[cfg(test)]
-mod identifier_maintenance_tests;
-#[cfg(test)]
-mod paths_tests;
-#[cfg(test)]
 mod tests;
-#[cfg(test)]
-mod unreadable_tests;
-#[cfg(test)]
-mod utf8_tests;

@@ -1,8 +1,8 @@
 //! Sync against a database that a pre-identifier writer has modified.
 
-use super::*;
+use super::super::*;
 use crate::knowledge::identifiers::identifier_words;
-use crate::knowledge::identifiers::maintenance_tests::legacy;
+use crate::knowledge::identifiers::tests::maintenance::legacy;
 use tempfile::tempdir;
 
 fn make_store() -> KnowledgeStore {
