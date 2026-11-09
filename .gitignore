@@ -27,3 +27,10 @@ Thumbs.db
 # Machine-specific local settings
 .claude/
 scripts/bpx-rag-cuda.env
+
+# Local agent instructions. Not part of the published tree.
+/AGENTS.md
+/agents.md
+/CLAUDE.md
+/claude.md
+/CLAUDE.local.md
