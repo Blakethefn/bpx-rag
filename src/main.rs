@@ -17,11 +17,15 @@ use clap::Parser;
 use std::path::PathBuf;
 
 use app::{RagApp, SearchOptions};
-use cli::{Cli, Commands, EvalAction, ModelsAction, WatchAction};
+use cli::{
+    Cli, Commands, EvalAction, ModelsAction, PoolAction, PoolCreateArgs, PoolImportArgs,
+    WatchAction,
+};
 use knowledge::query::SearchWeights;
 
 fn main() -> Result<()> {
     let cli = Cli::parse();
+    // `--init` remains the old flag. It writes the config and does not run a command after it.
     if cli.init {
         return config::Config::init_default();
     }
@@ -31,6 +35,7 @@ fn main() -> Result<()> {
     let project_dir = project_dir();
 
     match command {
+        Commands::Init => config::Config::init_default(),
         Commands::Serve => mcp::server::run(&project_dir),
         Commands::Symbol {
             name,
@@ -96,11 +101,11 @@ fn main() -> Result<()> {
 
 fn run_watch(action: WatchAction) -> Result<()> {
     match action {
-        WatchAction::On { label } => {
+        WatchAction::Enable { label } => {
             println!("{}", RagApp::open()?.set_watch(&label, true)?);
             Ok(())
         }
-        WatchAction::Off { label } => {
+        WatchAction::Disable { label } => {
             println!("{}", RagApp::open()?.set_watch(&label, false)?);
             Ok(())
         }
@@ -176,39 +181,11 @@ fn run_evaluation(action: EvalAction) -> Result<()> {
             )?;
             println!("{}", serde_json::to_string_pretty(&report)?);
         }
-        EvalAction::Pool {
-            dataset,
-            corpus_root,
-            output,
-            key_output,
-            depth,
-            seed,
-        } => {
-            let report = eval::generate_judgment_pool(
-                dataset.as_deref(),
-                corpus_root.as_deref(),
-                &output,
-                &key_output,
-                depth,
-                seed,
-            )?;
-            println!("{}", serde_json::to_string_pretty(&report)?);
-        }
-        EvalAction::ImportPool {
-            pool,
-            key,
-            dataset,
-            corpus_root,
-            output,
-        } => {
-            let imported =
-                eval::import_judgment_pool(&pool, &key, &dataset, &corpus_root, &output)?;
-            println!(
-                "Imported {} explicit relevance grades into {}.",
-                imported,
-                output.display()
-            );
-        }
+        EvalAction::Pool(pool) => match pool.resolve()? {
+            PoolAction::Create(args) => generate_pool(args)?,
+            PoolAction::Import(args) => import_pool(args)?,
+        },
+        EvalAction::ImportPool(args) => import_pool(args)?,
     }
     Ok(())
 }
@@ -270,6 +247,35 @@ fn run_sources(command: Commands) -> Result<()> {
             ))
         }
     }
+    Ok(())
+}
+
+fn generate_pool(args: PoolCreateArgs) -> Result<()> {
+    let report = eval::generate_judgment_pool(
+        args.dataset.as_deref(),
+        args.corpus_root.as_deref(),
+        &args.output,
+        &args.key_output,
+        args.depth,
+        args.seed,
+    )?;
+    println!("{}", serde_json::to_string_pretty(&report)?);
+    Ok(())
+}
+
+fn import_pool(args: PoolImportArgs) -> Result<()> {
+    let imported = eval::import_judgment_pool(
+        &args.pool,
+        &args.key,
+        &args.dataset,
+        &args.corpus_root,
+        &args.output,
+    )?;
+    println!(
+        "Imported {} explicit relevance grades into {}.",
+        imported,
+        args.output.display()
+    );
     Ok(())
 }
 

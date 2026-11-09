@@ -92,7 +92,7 @@ fn watch_controls_report_enabled_sources_and_no_running_watcher() {
     let env = env();
     add_source(&env);
 
-    let on = run(&env, &["watch", "on", "atlas"]);
+    let on = run(&env, &["watch", "enable", "atlas"]);
     assert!(on.status.success(), "{}", text(&on));
     let status = run(&env, &["watch", "status"]);
     assert!(status.status.success(), "{}", text(&status));
@@ -101,7 +101,7 @@ fn watch_controls_report_enabled_sources_and_no_running_watcher() {
     assert!(report.contains("enabled"), "{report}");
     assert!(report.contains("not running"), "{report}");
 
-    let off = run(&env, &["watch", "off", "atlas"]);
+    let off = run(&env, &["watch", "disable", "atlas"]);
     assert!(off.status.success(), "{}", text(&off));
     let report = text(&run(&env, &["watch", "status"]));
     assert!(report.contains("disabled"), "{report}");

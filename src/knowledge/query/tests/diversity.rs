@@ -1,8 +1,8 @@
 //! Per-file diversification. The default must keep the pre-Stage-9 output exactly.
 
 use super::super::layers::LayerPolicy;
-use super::{make_store, seed_chunk};
 use super::super::*;
+use super::{make_store, seed_chunk};
 use crate::search::profile::SearchWhy;
 
 const WEIGHTS: SearchWeights = SearchWeights {

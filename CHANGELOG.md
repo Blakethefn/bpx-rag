@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased]
+
+### Changed
+
+- CLI names. `init` writes a default config when none exists and does not change a file that is already there. `--init` still does that, and a command written after the flag is not run. The source flag on `add`, `sync`, `embed`, and `scrub` is `--source`; `--label` still works. `watch enable` and `watch disable` record the per-source setting and do not start or stop the watcher (`watch on` and `watch off` still work). `eval pool create` generates a relevance-judgment pool and `eval pool import` imports grades. `eval pool --output <file> --key-output <file>` and `eval import-pool` still work. `remove` deletes one source's indexed rows and does not delete files on disk. `scrub` deletes matching index rows and does not delete files on disk.
+
 ## [0.4.0] - 2026-11-06
 
 ### Breaking changes

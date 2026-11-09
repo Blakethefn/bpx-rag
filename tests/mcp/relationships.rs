@@ -162,6 +162,7 @@ fn cli_exposes_rag_commands_alongside_file_analysis_and_mcp_server() {
     let help = String::from_utf8(output.stdout).unwrap();
     assert!(help.contains("relate"));
     assert!(help.contains("serve"));
+    assert!(help.contains("init"));
     assert!(help.contains("search"));
     assert!(help.contains("sync"));
     assert!(help.contains("models"));

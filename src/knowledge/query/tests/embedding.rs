@@ -1,7 +1,7 @@
 //! Query embedding cache on the search path: reuse, misses, failures, and result parity.
 
-use super::{make_store, seed_chunk};
 use super::super::*;
+use super::{make_store, seed_chunk};
 use crate::embed::{self, Embed};
 use rusqlite::params;
 use std::sync::atomic::{AtomicUsize, Ordering};

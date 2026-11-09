@@ -8,7 +8,7 @@ It also provides on-demand direct import, include, and link analysis from the cu
 
 ```bash
 # Register and index a project directory.
-bpx-rag add /path/to/project --label my-project
+bpx-rag add /path/to/project --source my-project
 
 # Search indexed code and docs.
 bpx-rag search "where is quote status persisted" --source my-project
@@ -17,9 +17,10 @@ bpx-rag search "where is quote status persisted" --source my-project
 bpx-rag read my-project --path src/quotes/repository.ts --line-start 30 --line-end 55
 
 # Update changed, added, and deleted files.
-bpx-rag sync --label my-project
-# Purge already-indexed files matched by the sensitive path/content policy.
-bpx-rag scrub [--label my-project]
+bpx-rag sync --source my-project
+# Delete already-indexed rows matched by the sensitive path/content policy.
+# This does not delete files on disk.
+bpx-rag scrub [--source my-project]
 ```
 
 Sources are persisted in a local SQLite knowledge database and incrementally synced using content hashes and per-file chunker versions. RAG chunking has bundled Tree-sitter grammars for 29 source languages: Rust, JavaScript/TypeScript/TSX, C/C++, C#, Go, Java, Python, PHP, Ruby, Bash, Lua, Dart, Swift, Kotlin, SQL, Scala, Haskell, Elixir, Erlang, R, Julia, Perl, PowerShell, Solidity, HTML, and CSS. Tree-sitter declaration boundaries keep functions and related syntax together; Markdown, unsupported extensions, parse-error files, and source files over 2 MiB use the existing content chunker. Chunks remain capped at 4 KiB. When a supported code file is first encountered after upgrading, its stored legacy chunker version causes it to be reindexed on the next sync even if its content is unchanged. Sync summaries report Tree-sitter and existing-chunker file/chunk counts for files indexed during that operation. Search works immediately with BM25/trigram/fuzzy retrieval. Semantic search becomes available after an embedding model has been downloaded and indexed. The source walker skips VCS metadata directories (`.git`, `.hg`, `.svn`), common credential-store directories (`.aws`, `.azure`, `.gnupg`, `.kube`, `.ssh`, `.terraform`, `credentials`, `secrets`), common credential files, `.env` files other than names ending in `.example`, `.sample`, `.template`, `.dist`, or `.defaults`, key/certificate containers (`.key`, `.pem`, `.p12`, `.pfx`, `.jks`, `.keystore`), and Terraform state—even when those paths are not in `.gitignore`. It also skips files matching a high-confidence Google API-key signature. `scrub` removes already-indexed rows matched by the path/name policy or the recognized key signature, without walking or indexing source trees; it reports aggregate counts only. Sync and scrub summaries never list skipped paths or contents. Sample-file exceptions are based on the filename suffix and still require placeholder contents; benign `.npmrc`, `.pypirc`, or PEM certificate files are also excluded by this conservative rule. These are targeted safeguards, not comprehensive secret scanning; other secret formats may still be indexed.
@@ -35,12 +36,12 @@ bpx-rag models status
 bpx-rag models download
 bpx-rag embed
 # Backfill one registered source at a time for large knowledge stores.
-bpx-rag embed --label my-project
+bpx-rag embed --source my-project
 ```
 
 The default `jina-embeddings-v2-base-code` model is tuned for code retrieval across 30 programming languages and supports an 8K token input window ([upstream model card](https://huggingface.co/jinaai/jina-embeddings-v2-base-code)). bpx-rag caps each embedded chunk at 1,024 tokens to control local inference cost; the full local model artifacts take about 644 MB. Set `embeddings.model` in `~/.config/bpx-rag/config.toml` to `all-MiniLM-L6-v2` to use the smaller 91 MB general-purpose model.
 
-Vectors are stored with a canonical model ID. Switching models never mixes vectors from different spaces; run `embed` to replace vectors for existing chunks. Use `--label <source-label>` to backfill just one registered source; omitting it retains all-source behavior. Backfill processes bounded batches, rechecks chunks before writing to account for concurrent syncs/removals, and reports remaining chunks for the active model. Search reports incomplete active-model coverage and continues to use lexical results while backfill is pending. The `bpx_embed` MCP tool accepts the same optional `label`.
+Vectors are stored with a canonical model ID. Switching models never mixes vectors from different spaces; run `embed` to replace vectors for existing chunks. Use `--source <source>` to backfill just one registered source; omitting it retains all-source behavior. `--label` is still accepted. Backfill processes bounded batches, rechecks chunks before writing to account for concurrent syncs/removals, and reports remaining chunks for the active model. Search reports incomplete active-model coverage and continues to use lexical results while backfill is pending. The `bpx_embed` MCP tool accepts the same optional `label`.
 
 Example model configuration:
 
@@ -70,21 +71,27 @@ cargo build --release --features gpu-cuda
 ## CLI
 
 ```text
-bpx-rag serve                                   start the MCP server on stdio
-bpx-rag search <query> [--source <label>] [--filter <key:value>] [--limit N] [--max-per-file N]
-bpx-rag add <path> --label <label> [--include <glob>]... [--exclude <glob>]...
-bpx-rag sync [--label <label>]
+bpx-rag init                                        write a default config if none exists; an existing file is left unchanged
+bpx-rag serve                                       start the MCP server on stdio
+bpx-rag search <query> [--source <source>] [--filter <key:value>] [--limit N] [--max-per-file N]
+bpx-rag add <path> --source <source> [--include <glob>]... [--exclude <glob>]...
+bpx-rag sync [--source <source>]
 bpx-rag status
-bpx-rag remove <label>
-bpx-rag read <label> [--path <relative-path>] [--line-start N] [--line-end N]
-bpx-rag embed [--label <label>]                 compute missing vectors
-bpx-rag scrub [--label <label>]                 delete rows matching the sensitive-data policy
-bpx-rag relate <path> [--root <project>]        direct imports and links, no index needed
-bpx-rag symbol <name> [--prefix]               find declarations by name
-bpx-rag watch on|off <label> | status | run   keep sources in sync with the filesystem
+bpx-rag remove <source>                             delete one source from the index; files on disk stay
+bpx-rag read <source> [--path <relative-path>] [--line-start N] [--line-end N]
+bpx-rag embed [--source <source>]                   compute missing vectors
+bpx-rag scrub [--source <source>]                   delete matching index rows; files on disk stay
+bpx-rag relate <path> [--root <project>]            direct imports and links, no index needed
+bpx-rag symbol <name> [--prefix]                    find declarations by name
+bpx-rag watch enable|disable <source> | status | run
 bpx-rag models status|download
-bpx-rag eval retrieval|scaling|embeddings|pool|import-pool
+bpx-rag eval retrieval|scaling|embeddings
+bpx-rag eval pool create|import
 ```
+
+`remove` deletes that source's indexed rows and leaves the directory on disk alone. `scrub` deletes matching index rows only. `watch enable` and `watch disable` record the per-source setting; they do not start or stop the watcher. Start it with `watch run` or `serve`.
+
+These earlier spellings still run: `--init`, `--label` in place of `--source`, `watch on` and `watch off`, `eval pool --output <file> --key-output <file>`, and `eval import-pool`.
 
 `read` accepts a relative path and an overlapping 1-based line range from a search citation. This lets agents expand a specific result instead of receiving only the first chunks from a source.
 
@@ -93,7 +100,7 @@ bpx-rag eval retrieval|scaling|embeddings|pool|import-pool
 `add` takes repeatable `--include` and `--exclude` globs, so a source can cover a subtree and skip what does not matter:
 
 ```bash
-bpx-rag add ~/code/api --label api --include 'src/**' --include 'docs/**' --exclude '**/*.test.ts'
+bpx-rag add ~/code/api --source api --include 'src/**' --include 'docs/**' --exclude '**/*.test.ts'
 ```
 
 A scope is set when a source is added. Invalid patterns fail immediately. The sensitive-data policy still applies to everything in scope.
@@ -136,7 +143,7 @@ A search does not change indexed content, but opening the database is not always
 }
 ```
 
-RAG tools include `bpx_search`, `bpx_add` (with `include` and `exclude` arrays), `bpx_sync`, `bpx_status`, `bpx_remove`, `bpx_read`, `bpx_embed`, and `bpx_models` (status and download). Earlier builds named these `bpx_knowledge_add`, `bpx_knowledge_sync`, `bpx_knowledge_status`, `bpx_knowledge_remove`, `bpx_knowledge_read`, `bpx_embeddings`, and `bpx_file_relationships` (now `bpx_relate`); update client configuration that uses the old names. `bpx_read` accepts the cited source-relative path and line range. `bpx_watch` (CLI: `watch on|off|status|run`) controls watch mode per source, which keeps a source in sync as its files change. A watcher runs in one server or terminal per database. `bpx_symbol` (CLI: `symbol`) finds declarations by exact name, or by prefix with `prefix`, and returns every path and line range that matches. `bpx_relate` analyzes the current filesystem and does not need the RAG index.
+RAG tools include `bpx_search`, `bpx_add` (with `include` and `exclude` arrays), `bpx_sync`, `bpx_status`, `bpx_remove`, `bpx_read`, `bpx_embed`, and `bpx_models` (status and download). Earlier builds named these `bpx_knowledge_add`, `bpx_knowledge_sync`, `bpx_knowledge_status`, `bpx_knowledge_remove`, `bpx_knowledge_read`, `bpx_embeddings`, and `bpx_file_relationships` (now `bpx_relate`); update client configuration that uses the old names. `bpx_read` accepts the cited source-relative path and line range. `bpx_watch` still takes `on`, `off`, and `status`. The CLI commands are `watch enable`, `watch disable`, `watch status`, and `watch run`; `watch on` and `watch off` are still accepted. Enable and disable record the setting for one source and do not start or stop the watcher. A watcher runs in one server or terminal per database. `bpx_symbol` (CLI: `symbol`) finds declarations by exact name, or by prefix with `prefix`, and returns every path and line range that matches. `bpx_relate` analyzes the current filesystem and does not need the RAG index.
 
 ## Direct file relationships
 
@@ -156,7 +163,7 @@ Syntax-aware Tree-sitter chunking supports 29 source grammars. Parse-error and o
 - inotify has per-user limits on instances (`fs.inotify.max_user_instances`, default 128) and watches (`fs.inotify.max_user_watches`). Desktop applications and editors share the instance limit. When it is used up, or a tree exceeds the watch limit, registration fails with `watch registration failed`, for example `Too many open files`. The source stays in an error state and is retried with backoff. `watch status` shows the error.
 - The writer lock and the watcher lease use `flock`. Network filesystems may not enforce it, so keep the data directory on a local filesystem.
 - Only one watcher runs per database.
-- Watch mode is off by default for every source. `bpx-rag watch on <label>` enables it for one source.
+- Watch mode is off by default for every source. `bpx-rag watch enable <source>` records that it should be kept in sync. `watch on` is still accepted. Neither command starts the watcher.
 
 ## Upgrading an existing database
 
@@ -170,7 +177,7 @@ Processes that predate this version can keep using the database afterward. Their
 
 A database whose sources already have symbol rows (built by the release before this one) is upgraded conservatively. The migration cannot prove that those rows still match each file's content, because an older writer may have changed a file without updating its symbols. It therefore adds the new `symbols_hash` column empty and does not trust the existing rows. The rows stay in the database, but `bpx-rag symbol` and `bpx_symbol` return no matches from a source until that source syncs. They report `Symbol index pending for source '<label>': N file(s) not yet symbol-indexed` instead, and `bpx-rag status` reports the same count.
 
-Run one `bpx-rag sync --label <label>` per source after the upgrade (or `bpx-rag sync` for all). Sync rebuilds each file's symbols from the content it reads. It does not re-chunk or re-embed unchanged files.
+Run one `bpx-rag sync --source <source>` per source after the upgrade (or `bpx-rag sync` for all). `--label` is still accepted. Sync rebuilds each file's symbols from the content it reads. It does not re-chunk or re-embed unchanged files.
 
 ### Rolling back
 

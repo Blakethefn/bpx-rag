@@ -1,26 +1,38 @@
-use clap::{Parser, Subcommand, ValueHint};
+use anyhow::{bail, Result};
+use clap::{Args, Parser, Subcommand, ValueHint};
 use std::path::PathBuf;
 
-#[derive(Parser)]
+const DEFAULT_POOL_DEPTH: usize = 20;
+const DEFAULT_POOL_SEED: u64 = 20261021;
+
+#[derive(Debug, Parser)]
 #[command(name = "bpx-rag")]
 #[command(about = "Local-first hybrid retrieval for code and project knowledge")]
 #[command(version)]
 pub struct Cli {
     /// Write a default config file if one does not already exist.
-    #[arg(long)]
+    #[arg(long, hide = true)]
     pub init: bool,
     #[command(subcommand)]
     pub command: Option<Commands>,
 }
 
-#[derive(Subcommand)]
+#[derive(Debug, Subcommand)]
 pub enum Commands {
+    /// Write a default config file when none exists, and leave an existing file unchanged.
+    ///
+    /// Creates the config with the built-in defaults. A file that is already there is left as it
+    /// is, and this command prints its path. `--init` is still accepted and does the same thing,
+    /// including when another command is written after it: the config is written and that command
+    /// is not run.
+    Init,
     /// Start the MCP server on stdio.
     Serve,
     /// Search registered sources and return cited evidence chunks.
     Search {
         query: String,
-        #[arg(short, long)]
+        /// Restrict to one registered source.
+        #[arg(short, long, value_name = "SOURCE")]
         source: Option<String>,
         /// Metadata filter, e.g. `language:rust type:code`.
         #[arg(long)]
@@ -46,7 +58,8 @@ pub enum Commands {
     Add {
         #[arg(value_hint = ValueHint::DirPath)]
         path: PathBuf,
-        #[arg(long)]
+        /// Registered source name. `--label` is still accepted.
+        #[arg(long = "source", alias = "label", value_name = "SOURCE")]
         label: String,
         /// Index only paths matching this glob. Repeat for several patterns.
         #[arg(long = "include", alias = "glob", value_name = "GLOB")]
@@ -59,15 +72,25 @@ pub enum Commands {
     },
     /// Re-index changed files and drop deleted ones, for one source or all.
     Sync {
-        #[arg(long)]
+        /// Restrict to one registered source. Omit to sync every source. `--label` is still accepted.
+        #[arg(long = "source", alias = "label", value_name = "SOURCE")]
         label: Option<String>,
     },
     /// List sources, file and chunk counts, and embedding coverage.
     Status,
-    /// Unregister a source and delete its indexed chunks.
-    Remove { label: String },
+    /// Delete one source and its indexed rows. Does not delete files on disk.
+    ///
+    /// Removes the registration and every indexed file, chunk, symbol, and embedding for that
+    /// source. The directory that was added is left untouched. Indexing it again requires `add`.
+    Remove {
+        /// Registered source name.
+        #[arg(value_name = "SOURCE")]
+        label: String,
+    },
     /// Print stored chunks for a source in original order.
     Read {
+        /// Registered source name.
+        #[arg(value_name = "SOURCE")]
         label: String,
         #[arg(long, default_value = "20")]
         max_chunks: usize,
@@ -83,14 +106,18 @@ pub enum Commands {
     },
     /// Compute missing vectors for the configured embedding model.
     Embed {
-        /// Restrict to one source label. Omit to process all sources.
-        #[arg(long)]
+        /// Restrict to one registered source. Omit to process every source. `--label` is still accepted.
+        #[arg(long = "source", alias = "label", value_name = "SOURCE")]
         label: Option<String>,
     },
-    /// Delete indexed files that match the sensitive-data policy.
+    /// Delete indexed rows that match the sensitive-data policy. Does not delete files on disk.
+    ///
+    /// Reads stored index rows and deletes the ones the policy matches. It does not walk the
+    /// source directory and prints counts rather than paths or file contents. Omit `--source` to
+    /// scan every registered source.
     Scrub {
-        /// Restrict to one source label. Omit to scan every stored row.
-        #[arg(long)]
+        /// Restrict to one registered source. Omit to scan every stored row. `--label` is still accepted.
+        #[arg(long = "source", alias = "label", value_name = "SOURCE")]
         label: Option<String>,
     },
     /// Keep sources in sync with the filesystem, and show watcher status.
@@ -104,7 +131,8 @@ pub enum Commands {
         /// Match names that start with NAME instead of matching it exactly. Matching is case-sensitive.
         #[arg(long)]
         prefix: bool,
-        #[arg(short, long)]
+        /// Restrict to one registered source.
+        #[arg(short, long, value_name = "SOURCE")]
         source: Option<String>,
         #[arg(short, long, default_value = "20")]
         limit: usize,
@@ -128,19 +156,35 @@ pub enum Commands {
     },
 }
 
-#[derive(Subcommand)]
+#[derive(Debug, Subcommand)]
 pub enum WatchAction {
-    /// Turn watch mode on for a source.
-    On { label: String },
-    /// Turn watch mode off for a source.
-    Off { label: String },
+    /// Record that a source should be kept in sync. Does not start the watcher.
+    ///
+    /// A watcher that is already running picks the change up within a second or two. Start one
+    /// with `watch run` or `bpx-rag serve`. `watch on` is still accepted.
+    #[command(name = "enable", alias = "on")]
+    Enable {
+        /// Registered source name.
+        #[arg(value_name = "SOURCE")]
+        label: String,
+    },
+    /// Record that a source should not be kept in sync. Does not stop the watcher.
+    ///
+    /// A watcher that is already running picks the change up within a second or two and then
+    /// leaves this source alone. `watch off` is still accepted.
+    #[command(name = "disable", alias = "off")]
+    Disable {
+        /// Registered source name.
+        #[arg(value_name = "SOURCE")]
+        label: String,
+    },
     /// Show the watcher and each source's watch state.
     Status,
     /// Run a watcher in this terminal until it is stopped.
     Run,
 }
 
-#[derive(Subcommand)]
+#[derive(Debug, Subcommand)]
 pub enum ModelsAction {
     /// Show model configuration and whether all local model files are present.
     Status,
@@ -148,7 +192,7 @@ pub enum ModelsAction {
     Download,
 }
 
-#[derive(Subcommand)]
+#[derive(Debug, Subcommand)]
 pub enum EvalAction {
     /// Run the real-model retrieval benchmark. This never downloads a model.
     Retrieval {
@@ -198,39 +242,147 @@ pub enum EvalAction {
         #[arg(long, default_value = "32")]
         max_chunks: usize,
     },
-    /// Build a blinded pool of lexical, vector, and hybrid file candidates for human relevance grading.
-    Pool {
-        /// Dataset directory containing queries.jsonl. Defaults to the bundled fixture.
-        #[arg(long, value_hint = ValueHint::DirPath)]
-        dataset: Option<PathBuf>,
-        /// Corpus tree to index. Defaults to <dataset>/corpus.
-        #[arg(long, value_hint = ValueHint::DirPath)]
-        corpus_root: Option<PathBuf>,
-        /// New JSON file for annotators; snippets and relative paths are included.
-        #[arg(long, value_hint = ValueHint::FilePath)]
-        output: PathBuf,
-        /// New JSON file containing the separate retrieval-rank reveal key.
-        #[arg(long, value_hint = ValueHint::FilePath)]
-        key_output: PathBuf,
-        /// Distinct files to retrieve per search channel before pooling.
-        #[arg(long, default_value = "20")]
-        depth: usize,
-        /// Stable shuffle seed for blinded IDs and candidate order.
-        #[arg(long, default_value = "20261021")]
-        seed: u64,
-    },
-    /// Import completed pool grades into the evaluator's JSONL qrels format.
-    ImportPool {
-        #[arg(long, value_hint = ValueHint::FilePath)]
-        pool: PathBuf,
-        #[arg(long, value_hint = ValueHint::FilePath)]
-        key: PathBuf,
-        #[arg(long, value_hint = ValueHint::DirPath)]
-        dataset: PathBuf,
-        #[arg(long, value_hint = ValueHint::DirPath)]
-        corpus_root: PathBuf,
-        /// New output qrels file. Existing files are never overwritten.
-        #[arg(long, value_hint = ValueHint::FilePath)]
-        output: PathBuf,
-    },
+    /// Generate or import a relevance-judgment pool.
+    ///
+    /// `create` writes a new blinded pool and a separate rank-reveal key. `import` writes
+    /// completed grades to a new qrels file. Both refuse to overwrite an existing output file.
+    /// `eval pool --output <FILE> --key-output <FILE>` is still accepted as `create`.
+    /// `eval import-pool` is still accepted as `import`.
+    Pool(PoolArgs),
+    /// Import completed pool grades. Prefer `eval pool import`.
+    #[command(hide = true, name = "import-pool")]
+    ImportPool(PoolImportArgs),
 }
+
+#[derive(Debug, Args)]
+#[command(args_conflicts_with_subcommands = true)]
+pub struct PoolArgs {
+    #[command(subcommand)]
+    action: Option<PoolAction>,
+    #[command(flatten)]
+    legacy: LegacyPoolCreate,
+}
+
+impl PoolArgs {
+    pub(crate) fn resolve(self) -> Result<PoolAction> {
+        if self.action.is_some() && self.legacy.specified() {
+            bail!(
+                "pool options belong on the subcommand. Run `bpx-rag eval pool create --output <FILE> --key-output <FILE>` or `bpx-rag eval pool import`"
+            );
+        }
+        if let Some(action) = self.action {
+            return Ok(action);
+        }
+        if self.legacy.specified() {
+            return Ok(PoolAction::Create(self.legacy.into_create()?));
+        }
+        bail!(
+            "choose a pool command: `bpx-rag eval pool create --output <FILE> --key-output <FILE>` generates a relevance-judgment pool, and `bpx-rag eval pool import` imports completed grades. `bpx-rag eval pool --output <FILE> --key-output <FILE>` and `bpx-rag eval import-pool` are still accepted"
+        )
+    }
+}
+
+#[derive(Debug, Subcommand)]
+pub enum PoolAction {
+    /// Generate a blinded pool of lexical, vector, and hybrid file candidates for human relevance grading.
+    ///
+    /// Writes a new annotator file and a separate rank-reveal key. Refuses to overwrite either
+    /// file, and the two paths must be different.
+    Create(PoolCreateArgs),
+    /// Import completed pool grades into a new qrels file.
+    ///
+    /// Refuses to overwrite an existing output file. Does not change the annotation pool or the
+    /// reveal key.
+    Import(PoolImportArgs),
+}
+
+#[derive(Debug, Args)]
+pub struct PoolCreateArgs {
+    /// Dataset directory containing queries.jsonl. Defaults to the bundled fixture.
+    #[arg(long, value_hint = ValueHint::DirPath)]
+    pub dataset: Option<PathBuf>,
+    /// Corpus tree to index. Defaults to <dataset>/corpus.
+    #[arg(long, value_hint = ValueHint::DirPath)]
+    pub corpus_root: Option<PathBuf>,
+    /// New JSON file for annotators. Refuses to overwrite an existing file.
+    #[arg(long, value_hint = ValueHint::FilePath)]
+    pub output: PathBuf,
+    /// New JSON file for the retrieval-rank reveal key. Refuses to overwrite an existing file.
+    #[arg(long, value_hint = ValueHint::FilePath)]
+    pub key_output: PathBuf,
+    /// Distinct files to retrieve per search channel before pooling.
+    #[arg(long, default_value_t = DEFAULT_POOL_DEPTH)]
+    pub depth: usize,
+    /// Stable shuffle seed for blinded IDs and candidate order.
+    #[arg(long, default_value_t = DEFAULT_POOL_SEED)]
+    pub seed: u64,
+}
+
+#[derive(Debug, Args)]
+pub struct PoolImportArgs {
+    #[arg(long, value_hint = ValueHint::FilePath)]
+    pub pool: PathBuf,
+    #[arg(long, value_hint = ValueHint::FilePath)]
+    pub key: PathBuf,
+    #[arg(long, value_hint = ValueHint::DirPath)]
+    pub dataset: PathBuf,
+    #[arg(long, value_hint = ValueHint::DirPath)]
+    pub corpus_root: PathBuf,
+    /// New qrels file. Refuses to overwrite an existing file.
+    #[arg(long, value_hint = ValueHint::FilePath)]
+    pub output: PathBuf,
+}
+
+#[derive(Debug, Args)]
+struct LegacyPoolCreate {
+    #[arg(long, hide = true, value_hint = ValueHint::DirPath)]
+    dataset: Option<PathBuf>,
+    #[arg(long, hide = true, value_hint = ValueHint::DirPath)]
+    corpus_root: Option<PathBuf>,
+    #[arg(long, hide = true, value_hint = ValueHint::FilePath)]
+    output: Option<PathBuf>,
+    #[arg(long, hide = true, value_hint = ValueHint::FilePath)]
+    key_output: Option<PathBuf>,
+    #[arg(long, hide = true)]
+    depth: Option<usize>,
+    #[arg(long, hide = true)]
+    seed: Option<u64>,
+}
+
+impl LegacyPoolCreate {
+    fn specified(&self) -> bool {
+        self.dataset.is_some()
+            || self.corpus_root.is_some()
+            || self.output.is_some()
+            || self.key_output.is_some()
+            || self.depth.is_some()
+            || self.seed.is_some()
+    }
+
+    fn into_create(self) -> Result<PoolCreateArgs> {
+        let mut missing = Vec::new();
+        if self.output.is_none() {
+            missing.push("--output <FILE>");
+        }
+        if self.key_output.is_none() {
+            missing.push("--key-output <FILE>");
+        }
+        if !missing.is_empty() {
+            bail!(
+                "generating a pool requires {}. Run `bpx-rag eval pool create --output <FILE> --key-output <FILE>`",
+                missing.join(" and ")
+            );
+        }
+        Ok(PoolCreateArgs {
+            dataset: self.dataset,
+            corpus_root: self.corpus_root,
+            output: self.output.expect("checked above"),
+            key_output: self.key_output.expect("checked above"),
+            depth: self.depth.unwrap_or(DEFAULT_POOL_DEPTH),
+            seed: self.seed.unwrap_or(DEFAULT_POOL_SEED),
+        })
+    }
+}
+
+#[cfg(test)]
+mod tests;

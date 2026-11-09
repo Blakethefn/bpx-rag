@@ -3,10 +3,8 @@
 //! Ignored by default. Set `BPX_BENCH_MODEL_DIR` to the jina model directory and run:
 //! `cargo test --release --bin bpx-rag bench::cache -- --ignored --nocapture`
 
-use super::latency::{
-    load_jina, percentile, store_with_corpus, unit_vector, MODEL_ID, QUERIES,
-};
 use super::super::*;
+use super::latency::{load_jina, percentile, store_with_corpus, unit_vector, MODEL_ID, QUERIES};
 use crate::embed::cache::QueryEmbeddingCache;
 use crate::embed::Embed;
 use std::sync::atomic::{AtomicUsize, Ordering};

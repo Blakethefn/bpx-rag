@@ -430,7 +430,7 @@ impl RagApp {
             ));
             if stale > 0 {
                 output.push_str(&format!(
-                    "  Warning: {stale} chunks have vectors from another model and are not searchable semantically; run `bpx-rag embed --label {}`\n",
+                    "  Warning: {stale} chunks have vectors from another model and are not searchable semantically; run `bpx-rag embed --source {}`\n",
                     source.label
                 ));
             }
@@ -916,7 +916,7 @@ fn format_symbol_report(name: &str, mode: MatchMode, report: &SymbolReport) -> S
     }
     for pending in &report.pending {
         lines.push(format!(
-            "Symbol index pending for source '{}': {} file(s) not yet symbol-indexed. Run `bpx-rag sync --label {}` or bpx_sync with that label to backfill.",
+            "Symbol index pending for source '{}': {} file(s) not yet symbol-indexed. Run `bpx-rag sync --source {}` or bpx_sync with that label to backfill.",
             pending.source_label, pending.files, pending.source_label
         ));
     }
