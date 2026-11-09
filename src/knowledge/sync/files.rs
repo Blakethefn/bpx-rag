@@ -1,6 +1,6 @@
 use crate::chunk::evidence::{EntryObservation, Reference};
 use crate::chunk::{chunk_content_for_path, chunker_version_for_path, Symbol};
-use crate::knowledge::evidence::REFERENCE_INDEX_VERSION;
+use crate::knowledge::references::REFERENCE_INDEX_VERSION;
 use crate::knowledge::symbols::SYMBOL_INDEX_VERSION;
 use anyhow::{Context, Result};
 use rusqlite::params;

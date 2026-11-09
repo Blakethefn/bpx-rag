@@ -3,6 +3,8 @@
 
 use super::super::*;
 use crate::knowledge::sync::sync_source;
+use std::fs;
+use std::path::Path;
 use tempfile::tempdir;
 
 const TABLES: &[&str] = &[
@@ -79,7 +81,7 @@ fn populated_store() -> (KnowledgeStore, tempfile::TempDir) {
     (store, dir)
 }
 
-fn count(store: &KnowledgeStore, table: &str) -> i64 {
+fn table_count(store: &KnowledgeStore, table: &str) -> i64 {
     store
         .conn()
         .query_row(&format!("SELECT COUNT(*) FROM {table}"), [], |row| {
@@ -91,9 +93,9 @@ fn count(store: &KnowledgeStore, table: &str) -> i64 {
 #[test]
 fn a_failure_at_any_step_leaves_the_source_intact() {
     let (store, _dir) = populated_store();
-    let chunks = count(&store, "knowledge_chunk_meta");
+    let chunks = table_count(&store, "knowledge_chunk_meta");
     assert!(chunks >= 2, "the fixture needs several chunks");
-    assert!(count(&store, "knowledge_symbols") >= 2);
+    assert!(table_count(&store, "knowledge_symbols") >= 2);
     let before = snapshot(&store);
     // One step per chunk, then the symbol, metadata, and source deletes.
     let steps = chunks as usize + 3;
@@ -126,7 +128,7 @@ fn a_failure_at_any_step_leaves_the_source_intact() {
 #[test]
 fn removal_after_failed_attempts_removes_everything() {
     let (store, _dir) = populated_store();
-    let chunks = count(&store, "knowledge_chunk_meta");
+    let chunks = table_count(&store, "knowledge_chunk_meta");
     REMOVE_FAILPOINT.with(|point| point.set(Some(1)));
     assert!(store.remove_source("gone").is_err());
     REMOVE_FAILPOINT.with(|point| point.set(None));
@@ -150,7 +152,7 @@ fn removal_after_failed_attempts_removes_everything() {
         "knowledge_analysis",
         "knowledge_findings",
     ] {
-        assert_eq!(count(&store, table), 0, "{table} still has rows");
+        assert_eq!(table_count(&store, table), 0, "{table} still has rows");
     }
     assert!(store.get_source("gone").unwrap().is_none());
 }
@@ -181,10 +183,63 @@ fn removing_a_source_leaves_other_sources_untouched() {
     store.remove_source("gone").unwrap();
 
     assert!(store.get_source("kept").unwrap().is_some());
-    assert_eq!(count(&store, "knowledge_chunk_meta"), kept_chunks);
-    assert_eq!(count(&store, "knowledge_chunks"), kept_chunks);
+    assert_eq!(table_count(&store, "knowledge_chunk_meta"), kept_chunks);
+    assert_eq!(table_count(&store, "knowledge_chunks"), kept_chunks);
     assert!(
-        count(&store, "knowledge_identifiers") <= kept_chunks,
+        table_count(&store, "knowledge_identifiers") <= kept_chunks,
         "the removed source's identifier rows must be gone"
     );
+}
+
+fn make_store() -> KnowledgeStore {
+    open_in_memory().expect("in-memory knowledge store")
+}
+
+fn register(store: &KnowledgeStore, label: &str, dir: &Path) {
+    store
+        .add_source(label, dir.to_str().unwrap(), &[], &[])
+        .unwrap();
+}
+
+fn sync(store: &KnowledgeStore, label: &str) {
+    let source = store.get_source(label).unwrap().unwrap();
+    sync_source(store, &source, None).unwrap();
+}
+
+fn count(store: &KnowledgeStore, sql: &str) -> i64 {
+    store.conn().query_row(sql, [], |row| row.get(0)).unwrap()
+}
+
+#[test]
+fn removing_a_source_drops_evidence_resolutions_analysis_and_findings() {
+    let store = make_store();
+    let dir = tempdir().unwrap();
+    fs::write(
+        dir.path().join("lib.rs"),
+        "pub fn alpha() { beta(); }\npub fn beta() {}\n",
+    )
+    .unwrap();
+    register(&store, "demo", dir.path());
+    sync(&store, "demo");
+    assert!(count(&store, "SELECT COUNT(*) FROM knowledge_references") > 0);
+    assert!(count(&store, "SELECT COUNT(*) FROM knowledge_resolutions") > 0);
+    assert_eq!(count(&store, "SELECT COUNT(*) FROM knowledge_analysis"), 1);
+    assert!(count(&store, "SELECT COUNT(*) FROM knowledge_findings") > 0);
+
+    store.remove_source("demo").unwrap();
+
+    for table in [
+        "knowledge_references",
+        "knowledge_entries",
+        "knowledge_resolutions",
+        "knowledge_analysis",
+        "knowledge_findings",
+        "knowledge_symbols",
+    ] {
+        assert_eq!(
+            count(&store, &format!("SELECT COUNT(*) FROM {table}")),
+            0,
+            "{table} still has rows"
+        );
+    }
 }

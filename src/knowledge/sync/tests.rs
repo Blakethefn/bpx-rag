@@ -2,6 +2,7 @@ use super::*;
 
 mod identifier;
 mod paths;
+mod stamp;
 mod unreadable;
 mod utf8;
 use std::collections::HashMap;

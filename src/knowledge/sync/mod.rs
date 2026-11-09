@@ -6,12 +6,11 @@
 use crate::chunk::evidence::{EntryObservation, Reference};
 use crate::chunk::{chunk_content_for_path, chunker_version_for_path, Symbol};
 use crate::embed::Embed;
-use crate::knowledge::evidence::replace_file_evidence;
-use crate::knowledge::findings::{self, ANALYSIS_VERSION};
+use crate::knowledge::analysis;
 use crate::knowledge::{scope, KnowledgeSourceInfo, KnowledgeStore};
 use anyhow::{Context, Result};
 use ignore::WalkBuilder;
-use rusqlite::{params, OptionalExtension};
+use rusqlite::params;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -570,25 +569,14 @@ fn commit_plan(
         }
 
         // Findings are derived from stored evidence. The `changed` flag is the wrong gate:
-        // a symbol or reference backfill rewrites evidence while that flag stays false, and a
-        // missing or outdated analysis row must be rebuilt even when no file changed.
+        // a symbol or reference backfill rewrites evidence while that flag stays false.
+        // A missing or outdated analysis row is rebuilt inside `rebuild_source` even when
+        // this flag is false.
         let structural = !plan.to_add.is_empty()
             || !plan.to_update.is_empty()
             || !plan.to_remove.is_empty()
             || !plan.backfill.is_empty();
-        let stored_version: Option<i64> = conn
-            .query_row(
-                "SELECT analysis_version FROM knowledge_analysis WHERE source_id = ?1",
-                params![source.id],
-                |row| row.get(0),
-            )
-            .optional()?;
-        let analysis_stale = stored_version
-            .map(|version| version < ANALYSIS_VERSION)
-            .unwrap_or(true);
-        if structural || analysis_stale {
-            findings::rebuild_source(conn, source.id)?;
-        }
+        analysis::rebuild_source(conn, source.id, structural)?;
 
         Ok(lc)
     })();

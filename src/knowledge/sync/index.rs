@@ -1,8 +1,9 @@
 use super::*;
 use crate::embed::{embedding_to_bytes, normalize_embedding};
-use crate::knowledge::evidence::{delete_file_references, replace_file_evidence};
+use crate::knowledge::entries::replace_file_entries;
 use crate::knowledge::identifiers::write_chunk_identifiers;
-use crate::knowledge::symbols::delete_file_symbols;
+use crate::knowledge::references::{delete_file_references, replace_file_references};
+use crate::knowledge::symbols::{delete_file_symbols, replace_file_symbols};
 use anyhow::{Context, Result};
 use rusqlite::params;
 use std::collections::HashMap;
@@ -116,6 +117,29 @@ pub(super) fn index_prepared_file(
     )?;
 
     Ok(file.chunks.len())
+}
+
+/// Write symbols, references, and entries for one file, then stamp both hashes from the
+/// content hash already stored on the file row.
+pub(super) fn replace_file_evidence(
+    conn: &rusqlite::Connection,
+    source_id: i64,
+    file_id: i64,
+    rel_path: &str,
+    status: &str,
+    symbols: &[Symbol],
+    references: &[Reference],
+    entries: &[EntryObservation],
+) -> Result<()> {
+    let evidence_hash: String = conn.query_row(
+        "SELECT content_hash FROM knowledge_files WHERE id = ?1",
+        params![file_id],
+        |row| row.get(0),
+    )?;
+    replace_file_symbols(conn, source_id, file_id, status, symbols)?;
+    replace_file_references(conn, source_id, file_id, status, references)?;
+    replace_file_entries(conn, source_id, file_id, rel_path, &evidence_hash, entries)?;
+    Ok(())
 }
 
 /// Delete all chunks (FTS5, trigram, embeddings, metadata) for a given file.

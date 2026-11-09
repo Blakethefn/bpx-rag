@@ -4,9 +4,10 @@
 //! SQLite database with FTS5 + vector search. Chunking and embedding are shared
 //! with the rest of the crate; the store lives in one global database.
 
+pub(crate) mod analysis;
 pub mod ann;
 pub mod enrichment;
-pub(crate) mod evidence;
+pub(crate) mod entries;
 pub mod filter;
 pub mod findings;
 pub mod freshness;
@@ -14,6 +15,7 @@ pub(crate) mod identifiers;
 pub mod links;
 pub(crate) mod lock;
 pub mod query;
+pub(crate) mod references;
 pub(crate) mod resolution;
 pub mod schema;
 pub mod scope;
