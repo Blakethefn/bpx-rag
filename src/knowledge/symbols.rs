@@ -169,35 +169,41 @@ fn pending_sources(conn: &Connection, source_id: Option<i64>) -> Result<Vec<Pend
 ///
 /// The file's `content_hash` must already hold the content the symbols came from. The rows
 /// are stamped with that hash, so a later content change by an older writer marks them stale.
+/// `status` is written in the same update. Only `complete` stores symbol rows: an empty list
+/// then means the walk finished and the file declared nothing.
 pub(crate) fn replace_file_symbols(
     conn: &Connection,
     source_id: i64,
     file_id: i64,
+    status: &str,
     symbols: &[Symbol],
 ) -> Result<()> {
     delete_file_symbols(conn, file_id)?;
-    let mut insert = conn.prepare_cached(
-        "INSERT INTO knowledge_symbols
-            (source_id, file_id, name, kind, container, line_start, line_end)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
-    )?;
-    for symbol in symbols {
-        insert.execute(params![
-            source_id,
-            file_id,
-            symbol.name,
-            symbol.kind,
-            symbol.container,
-            symbol.line_start,
-            symbol.line_end
-        ])?;
+    if status == crate::chunk::evidence::STATUS_COMPLETE {
+        let mut insert = conn.prepare_cached(
+            "INSERT INTO knowledge_symbols
+                (source_id, file_id, name, kind, container, line_start, line_end)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+        )?;
+        for symbol in symbols {
+            insert.execute(params![
+                source_id,
+                file_id,
+                symbol.name,
+                symbol.kind,
+                symbol.container,
+                symbol.line_start,
+                symbol.line_end
+            ])?;
+        }
     }
     conn.execute(
         "UPDATE knowledge_files
          SET symbol_version = ?1,
-             symbols_hash = (SELECT content_hash FROM knowledge_files WHERE id = ?2)
-         WHERE id = ?2",
-        params![SYMBOL_INDEX_VERSION, file_id],
+             symbol_status = ?2,
+             symbols_hash = (SELECT content_hash FROM knowledge_files WHERE id = ?3)
+         WHERE id = ?3",
+        params![SYMBOL_INDEX_VERSION, status, file_id],
     )?;
     Ok(())
 }

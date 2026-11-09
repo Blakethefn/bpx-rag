@@ -139,6 +139,8 @@ pub fn scrub_sensitive_indexed_files(
                  WHERE id = ?1",
                 params![file_source_id],
             )?;
+            // A removed file changes the evidence set. Rebuild from the rows still stored.
+            crate::knowledge::findings::rebuild_source(conn, file_source_id)?;
         }
 
         Ok(report)

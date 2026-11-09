@@ -226,6 +226,10 @@ impl RagApp {
         Ok(format_symbol_report(name, mode, &report))
     }
 
+    pub fn findings(&self, source: Option<&str>) -> Result<String> {
+        knowledge::findings::report(&self.knowledge, source)
+    }
+
     pub fn remove_source(&self, label: &str) -> Result<knowledge::RemoveResult> {
         validate_label(label)?;
         let _writer = self.writer_lock()?;

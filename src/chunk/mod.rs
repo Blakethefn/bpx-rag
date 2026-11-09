@@ -1,6 +1,7 @@
 use std::path::Path;
 
 mod code;
+pub(crate) mod evidence;
 mod lines;
 mod symbols;
 mod syntax;
@@ -10,7 +11,7 @@ use lines::*;
 use syntax::*;
 use text::*;
 
-pub(crate) use symbols::symbols_for_path;
+pub(crate) use evidence::{EntryObservation, Reference};
 pub use symbols::Symbol;
 
 /// Maximum chunk size in bytes
@@ -40,8 +41,15 @@ pub struct Chunk {
 pub struct ChunkingResult {
     pub chunks: Vec<Chunk>,
     pub used_tree_sitter: bool,
-    /// Named declarations from the same parse. Empty unless the tree had no parse error.
+    /// Named declarations from the same parse. Empty unless the walk completed and found none,
+    /// or the file was unsupported, a parse error, or over the Tree-sitter cap.
     pub symbols: Vec<Symbol>,
+    /// `complete`, `unsupported`, `parse_error`, or `too_large`.
+    pub(crate) symbol_status: &'static str,
+    /// Occurrences in this file. Empty for `parse_error` and `too_large`.
+    pub(crate) references: Vec<Reference>,
+    /// Program, test, and manifest observations made from this file's bytes.
+    pub(crate) entries: Vec<EntryObservation>,
 }
 
 /// Result of single-pass content classification
@@ -168,28 +176,66 @@ pub fn chunk_content(content: &str) -> Vec<Chunk> {
 /// Chunk a source file using its bundled grammar when parsing succeeds.
 /// Markdown, unknown languages, malformed source, and large files keep the
 /// existing content-based chunker as a fallback.
+///
+/// Symbol status distinguishes a finished walk that declared nothing from a file that was not
+/// analyzed. References and manifest entries come from the same bytes as the symbols.
 pub fn chunk_content_for_path(path: &Path, content: &str) -> ChunkingResult {
-    let mut symbols = Vec::new();
-    if content.len() <= MAX_TREE_SITTER_FILE_BYTES {
-        if let Some((grammar, tree)) = crate::relations::parse_tree_for_path(path, content) {
-            let root = tree.root_node();
-            if !root.has_error() {
-                symbols = symbols::symbols_from_tree(content, root, grammar);
-                if let Some(chunks) = chunk_syntax_tree(content, root, grammar) {
-                    return ChunkingResult {
-                        chunks,
-                        used_tree_sitter: true,
-                        symbols,
-                    };
-                }
-            }
-        }
+    let supported = crate::relations::supports_tree_sitter_chunking(path);
+    if supported && content.len() > MAX_TREE_SITTER_FILE_BYTES {
+        return fallback(content, evidence::STATUS_TOO_LARGE, Vec::new());
     }
+    if let Some((grammar, tree)) = crate::relations::parse_tree_for_path(path, content) {
+        let root = tree.root_node();
+        if !root.has_error() {
+            let symbols = symbols::symbols_from_tree(content, root, grammar);
+            let (references, entries) =
+                evidence::references_and_entries(path, content, root, grammar);
+            if let Some(chunks) = chunk_syntax_tree(content, root, grammar) {
+                return ChunkingResult {
+                    chunks,
+                    used_tree_sitter: true,
+                    symbols,
+                    symbol_status: evidence::STATUS_COMPLETE,
+                    references,
+                    entries,
+                };
+            }
+            return ChunkingResult {
+                chunks: chunk_content(content),
+                used_tree_sitter: false,
+                symbols,
+                symbol_status: evidence::STATUS_COMPLETE,
+                references,
+                entries,
+            };
+        }
+        return fallback(content, evidence::STATUS_PARSE_ERROR, Vec::new());
+    }
+    let status = if supported {
+        evidence::STATUS_PARSE_ERROR
+    } else {
+        evidence::STATUS_UNSUPPORTED
+    };
+    let entries = if status == evidence::STATUS_UNSUPPORTED {
+        evidence::manifest_entries(path, content)
+    } else {
+        Vec::new()
+    };
+    fallback(content, status, entries)
+}
 
+fn fallback(
+    content: &str,
+    symbol_status: &'static str,
+    entries: Vec<EntryObservation>,
+) -> ChunkingResult {
     ChunkingResult {
         chunks: chunk_content(content),
         used_tree_sitter: false,
-        symbols,
+        symbols: Vec::new(),
+        symbol_status,
+        references: Vec::new(),
+        entries,
     }
 }
 

@@ -1,7 +1,8 @@
 use super::*;
 use crate::embed::{embedding_to_bytes, normalize_embedding};
+use crate::knowledge::evidence::{delete_file_references, replace_file_evidence};
 use crate::knowledge::identifiers::write_chunk_identifiers;
-use crate::knowledge::symbols::{delete_file_symbols, replace_file_symbols};
+use crate::knowledge::symbols::delete_file_symbols;
 use anyhow::{Context, Result};
 use rusqlite::params;
 use std::collections::HashMap;
@@ -103,7 +104,16 @@ pub(super) fn index_prepared_file(
             file_id
         ],
     )?;
-    replace_file_symbols(conn, source_id, file_id, &file.symbols)?;
+    replace_file_evidence(
+        conn,
+        source_id,
+        file_id,
+        &file.rel_path,
+        file.symbol_status,
+        &file.symbols,
+        &file.references,
+        &file.entries,
+    )?;
 
     Ok(file.chunks.len())
 }
@@ -144,6 +154,7 @@ pub(super) fn delete_file_chunks(conn: &rusqlite::Connection, file_id: i64) -> R
         params![file_id],
     )?;
     delete_file_symbols(conn, file_id)?;
+    delete_file_references(conn, file_id)?;
 
     Ok(())
 }

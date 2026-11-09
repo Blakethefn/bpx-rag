@@ -6,12 +6,15 @@
 
 pub mod ann;
 pub mod enrichment;
+pub(crate) mod evidence;
 pub mod filter;
+pub mod findings;
 pub mod freshness;
 pub(crate) mod identifiers;
 pub mod links;
 pub(crate) mod lock;
 pub mod query;
+pub(crate) mod resolution;
 pub mod schema;
 pub mod scope;
 pub mod symbols;
@@ -210,6 +213,26 @@ impl KnowledgeStore {
             remove_failpoint(&mut step)?;
         }
 
+        transaction.execute(
+            "DELETE FROM knowledge_resolutions WHERE source_id = ?1",
+            rusqlite::params![source_id],
+        )?;
+        transaction.execute(
+            "DELETE FROM knowledge_findings WHERE source_id = ?1",
+            rusqlite::params![source_id],
+        )?;
+        transaction.execute(
+            "DELETE FROM knowledge_analysis WHERE source_id = ?1",
+            rusqlite::params![source_id],
+        )?;
+        transaction.execute(
+            "DELETE FROM knowledge_references WHERE source_id = ?1",
+            rusqlite::params![source_id],
+        )?;
+        transaction.execute(
+            "DELETE FROM knowledge_entries WHERE source_id = ?1",
+            rusqlite::params![source_id],
+        )?;
         transaction.execute(
             "DELETE FROM knowledge_symbols WHERE source_id = ?1",
             rusqlite::params![source_id],

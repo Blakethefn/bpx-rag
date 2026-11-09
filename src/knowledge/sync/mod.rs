@@ -3,13 +3,15 @@
 //! Walks registered source directories, compares content hashes against the
 //! database, and re-indexes only changed files.
 
-use crate::chunk::{chunker_version_for_path, symbols_for_path, Symbol};
+use crate::chunk::evidence::{EntryObservation, Reference};
+use crate::chunk::{chunk_content_for_path, chunker_version_for_path, Symbol};
 use crate::embed::Embed;
-use crate::knowledge::symbols::replace_file_symbols;
+use crate::knowledge::evidence::replace_file_evidence;
+use crate::knowledge::findings::{self, ANALYSIS_VERSION};
 use crate::knowledge::{scope, KnowledgeSourceInfo, KnowledgeStore};
 use anyhow::{Context, Result};
 use ignore::WalkBuilder;
-use rusqlite::params;
+use rusqlite::{params, OptionalExtension};
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -199,11 +201,21 @@ struct ChangePlan {
     /// (file id, absolute path, content hash, stat)
     to_update: Vec<(i64, PathBuf, String, StatRecord)>,
     to_remove: Vec<i64>,
-    /// Unchanged files indexed before symbols existed. Their symbols come from the content read here.
-    backfill_symbols: Vec<(i64, Vec<Symbol>)>,
+    /// Unchanged files whose symbol or reference stamp is stale. Evidence comes from the content
+    /// read during classification, not from a later disk read.
+    backfill: Vec<BackfillEvidence>,
     /// Unchanged files whose modification time was never recorded.
     backfill_stat: Vec<(i64, StatRecord)>,
     unchanged: usize,
+}
+
+struct BackfillEvidence {
+    file_id: i64,
+    rel_path: String,
+    status: &'static str,
+    symbols: Vec<Symbol>,
+    references: Vec<Reference>,
+    entries: Vec<EntryObservation>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -272,11 +284,18 @@ fn classify_file(
         }
         Some(db_file) => {
             plan.unchanged += 1;
-            // The content matches, but its symbol rows may come from an older writer's
-            // content. `symbols_current` compares them with the stored hash.
-            if !db_file.symbols_current {
-                plan.backfill_symbols
-                    .push((db_file.id, symbols_for_path(abs_path, &content)));
+            // The content matches, but its symbol or reference rows may come from an older
+            // writer. `evidence_current` compares both stamps with the stored hash.
+            if !db_file.evidence_current {
+                let evidence = chunk_content_for_path(Path::new(rel_path), &content);
+                plan.backfill.push(BackfillEvidence {
+                    file_id: db_file.id,
+                    rel_path: rel_path.to_string(),
+                    status: evidence.symbol_status,
+                    symbols: evidence.symbols,
+                    references: evidence.references,
+                    entries: evidence.entries,
+                });
             }
             if !db_file.stat_recorded {
                 plan.backfill_stat.push((db_file.id, stat));
@@ -479,10 +498,20 @@ fn commit_plan(
             )?;
         }
 
-        // 4b. Backfill symbols and modification times for unchanged files. Chunks,
-        // hashes, and vectors are not touched.
-        for (file_id, symbols) in &plan.backfill_symbols {
-            replace_file_symbols(conn, source.id, *file_id, symbols)?;
+        // 4b. Backfill symbols, references, and entries for unchanged files. Chunks,
+        // hashes, and vectors are not touched. The content hash is already current, so the
+        // stamp records that same hash.
+        for file in &plan.backfill {
+            replace_file_evidence(
+                conn,
+                source.id,
+                file.file_id,
+                &file.rel_path,
+                file.status,
+                &file.symbols,
+                &file.references,
+                &file.entries,
+            )?;
         }
         for (file_id, stat) in &plan.backfill_stat {
             conn.execute(
@@ -538,6 +567,27 @@ fn commit_plan(
         if changed || !has_code_edges {
             let root = Path::new(&source.path).canonicalize()?;
             resolve_code_edges(conn, source.id, &root)?;
+        }
+
+        // Findings are derived from stored evidence. The `changed` flag is the wrong gate:
+        // a symbol or reference backfill rewrites evidence while that flag stays false, and a
+        // missing or outdated analysis row must be rebuilt even when no file changed.
+        let structural = !plan.to_add.is_empty()
+            || !plan.to_update.is_empty()
+            || !plan.to_remove.is_empty()
+            || !plan.backfill.is_empty();
+        let stored_version: Option<i64> = conn
+            .query_row(
+                "SELECT analysis_version FROM knowledge_analysis WHERE source_id = ?1",
+                params![source.id],
+                |row| row.get(0),
+            )
+            .optional()?;
+        let analysis_stale = stored_version
+            .map(|version| version < ANALYSIS_VERSION)
+            .unwrap_or(true);
+        if structural || analysis_stale {
+            findings::rebuild_source(conn, source.id)?;
         }
 
         Ok(lc)

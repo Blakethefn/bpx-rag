@@ -6,6 +6,7 @@
 
 use super::syntax::{declaration_nodes, is_declaration_wrapper, is_named_container};
 use crate::relations::Grammar;
+#[cfg(test)]
 use std::path::Path;
 use tree_sitter::Node;
 
@@ -21,20 +22,12 @@ pub struct Symbol {
     pub line_end: u32,
 }
 
-/// Symbols for one file, parsing it when the path has a supported grammar. Returns none for an
-/// unsupported language, a file with a parse error, or a file above the Tree-sitter size cap.
+/// Symbols for one file. Empty for an unsupported language, a parse error, a file above the
+/// Tree-sitter cap, or a finished walk that declared nothing. The status on
+/// [`super::chunk_content_for_path`] distinguishes those cases.
+#[cfg(test)]
 pub(crate) fn symbols_for_path(path: &Path, content: &str) -> Vec<Symbol> {
-    if content.len() > super::MAX_TREE_SITTER_FILE_BYTES {
-        return Vec::new();
-    }
-    let Some((grammar, tree)) = crate::relations::parse_tree_for_path(path, content) else {
-        return Vec::new();
-    };
-    let root = tree.root_node();
-    if root.has_error() {
-        return Vec::new();
-    }
-    symbols_from_tree(content, root, grammar)
+    super::chunk_content_for_path(path, content).symbols
 }
 
 /// Symbols from an already-parsed tree. The caller decides whether the tree is usable.

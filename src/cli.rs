@@ -137,6 +137,15 @@ pub enum Commands {
         #[arg(short, long, default_value = "20")]
         limit: usize,
     },
+    /// Read stored unused-symbol and unreachable-file conclusions for one source.
+    ///
+    /// Prints the analysis row first. Finding rows are included only when that analysis is
+    /// complete. Omit `--source` only when exactly one source is registered.
+    Findings {
+        /// Registered source name. Omit only when one source is registered.
+        #[arg(long = "source", alias = "label", value_name = "SOURCE")]
+        source: Option<String>,
+    },
     /// Show direct imports, includes, and links for one file. Does not use the index.
     Relate {
         #[arg(value_hint = ValueHint::FilePath)]

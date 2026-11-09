@@ -113,6 +113,17 @@ pub fn tool_definitions() -> Value {
                 }
             },
             {
+                "name": "bpx_findings",
+                "description": "Read stored unused-symbol and unreachable-file conclusions for one source. Returns the analysis row first. Finding rows are included only when the analysis is complete and each row's version, generation, and fingerprint match it. Pass source when more than one source is registered.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "source": { "type": "string", "description": "Registered source label. Omit only when exactly one source is registered." }
+                    },
+                    "required": []
+                }
+            },
+            {
                 "name": "bpx_watch",
                 "description": "Control watch mode, which keeps sources synchronized as files change. action `on` or `off` sets it for one source (label required). action `status` reports the watcher and each source's state. A watcher runs inside one MCP server or `bpx-rag watch run` at a time.",
                 "inputSchema": {

@@ -1,4 +1,6 @@
+use crate::chunk::evidence::{EntryObservation, Reference};
 use crate::chunk::{chunk_content_for_path, chunker_version_for_path, Symbol};
+use crate::knowledge::evidence::REFERENCE_INDEX_VERSION;
 use crate::knowledge::symbols::SYMBOL_INDEX_VERSION;
 use anyhow::{Context, Result};
 use rusqlite::params;
@@ -42,6 +44,9 @@ pub(super) struct PreparedFile {
     pub(super) chunker_version: i64,
     pub(super) used_tree_sitter: bool,
     pub(super) symbols: Vec<Symbol>,
+    pub(super) symbol_status: &'static str,
+    pub(super) references: Vec<Reference>,
+    pub(super) entries: Vec<EntryObservation>,
     pub(super) stat: StatRecord,
     pub(super) vectors: Vec<Vec<f32>>,
 }
@@ -59,8 +64,8 @@ pub(super) struct DbFile {
     pub(super) id: i64,
     pub(super) hash: String,
     pub(super) chunker_version: i64,
-    /// Whether the file's symbol rows are current for its content hash (see `symbols`).
-    pub(super) symbols_current: bool,
+    /// Whether the file's symbol and reference rows are current for its content hash.
+    pub(super) evidence_current: bool,
     /// Whether the file's modification time has been recorded.
     pub(super) stat_recorded: bool,
 }
@@ -72,7 +77,12 @@ pub(super) fn load_db_files(
 ) -> Result<HashMap<String, DbFile>> {
     let mut stmt = conn.prepare(&format!(
         "SELECT id, rel_path, content_hash, chunker_version,
-                symbol_version >= {SYMBOL_INDEX_VERSION} AND symbols_hash IS content_hash,
+                symbol_version >= {SYMBOL_INDEX_VERSION}
+                    AND symbols_hash IS content_hash
+                    AND symbol_status IS NOT NULL
+                    AND reference_version >= {REFERENCE_INDEX_VERSION}
+                    AND references_hash IS content_hash
+                    AND reference_status IS NOT NULL,
                 mtime_ns IS NOT NULL
          FROM knowledge_files WHERE source_id = ?1"
     ))?;
@@ -88,14 +98,14 @@ pub(super) fn load_db_files(
         ))
     })?;
     for row in rows {
-        let (id, rel_path, hash, chunker_version, symbols_current, stat_recorded) = row?;
+        let (id, rel_path, hash, chunker_version, evidence_current, stat_recorded) = row?;
         files.insert(
             rel_path,
             DbFile {
                 id,
                 hash,
                 chunker_version,
-                symbols_current,
+                evidence_current,
                 stat_recorded,
             },
         );
@@ -117,7 +127,8 @@ pub(super) fn prepare_file(
         Some(f) => f(&content, &abs_path),
         None => serde_json::json!({}),
     };
-    let chunking = chunk_content_for_path(&abs_path, &content);
+    // The relative path keeps manifest targets inside the source. The extension selects the grammar.
+    let chunking = chunk_content_for_path(Path::new(&rel_path), &content);
     let chunker_version = chunker_version_for_path(Path::new(&rel_path));
     PreparedFile {
         rel_path,
@@ -130,6 +141,9 @@ pub(super) fn prepare_file(
         chunker_version,
         used_tree_sitter: chunking.used_tree_sitter,
         symbols: chunking.symbols,
+        symbol_status: chunking.symbol_status,
+        references: chunking.references,
+        entries: chunking.entries,
         stat,
         vectors: Vec::new(),
     }

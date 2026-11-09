@@ -55,6 +55,10 @@ fn main() -> Result<()> {
             );
             Ok(())
         }
+        Commands::Findings { source } => {
+            println!("{}", RagApp::open()?.findings(source.as_deref())?);
+            Ok(())
+        }
         Commands::Watch { action } => run_watch(action),
         Commands::Relate { path, root } => {
             let analysis = relations::analyze_file(&path, root.as_deref())?;

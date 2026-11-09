@@ -91,6 +91,7 @@ fn dispatch_tool(
     let result = match name {
         "bpx_relate" => handle_file_relationships(args, project_dir),
         "bpx_symbol" => with_app(app_slot, |app| handle_symbol(args, app)),
+        "bpx_findings" => with_app(app_slot, |app| handle_findings(args, app)),
         "bpx_watch" => with_app(app_slot, |app| handle_watch(args, app)),
         "bpx_search" => with_app(app_slot, |app| handle_search(args, app)),
         "bpx_add" => with_app(app_slot, |app| handle_knowledge_add(args, app)),
@@ -286,6 +287,15 @@ fn handle_symbol(args: &Value, app: &mut RagApp) -> Result<String> {
     };
     let limit = bounded_usize(args, "limit", 20, 1, crate::app::MAX_SYMBOL_LIMIT)?;
     app.find_symbols(name, mode, args["source"].as_str(), limit)
+}
+
+fn handle_findings(args: &Value, app: &mut RagApp) -> Result<String> {
+    let source = match args.get("source") {
+        None | Some(Value::Null) => None,
+        Some(Value::String(source)) => Some(source.as_str()),
+        Some(_) => return Err(anyhow!("'source' must be a string")),
+    };
+    app.findings(source)
 }
 
 fn handle_file_relationships(args: &Value, project_dir: &Path) -> Result<String> {

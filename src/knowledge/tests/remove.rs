@@ -15,6 +15,11 @@ const TABLES: &[&str] = &[
     "knowledge_embeddings",
     "knowledge_embedding_changes",
     "knowledge_symbols",
+    "knowledge_references",
+    "knowledge_entries",
+    "knowledge_resolutions",
+    "knowledge_analysis",
+    "knowledge_findings",
     "knowledge_identifier_pending",
 ];
 
@@ -139,6 +144,11 @@ fn removal_after_failed_attempts_removes_everything() {
         "knowledge_chunk_meta",
         "knowledge_embeddings",
         "knowledge_symbols",
+        "knowledge_references",
+        "knowledge_entries",
+        "knowledge_resolutions",
+        "knowledge_analysis",
+        "knowledge_findings",
     ] {
         assert_eq!(count(&store, table), 0, "{table} still has rows");
     }

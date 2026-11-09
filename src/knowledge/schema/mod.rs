@@ -133,6 +133,67 @@ fn ensure_schema(conn: &Connection) -> Result<()> {
         CREATE INDEX IF NOT EXISTS idx_symbols_file ON knowledge_symbols(file_id);
         CREATE INDEX IF NOT EXISTS idx_symbols_source ON knowledge_symbols(source_id);
 
+        CREATE TABLE IF NOT EXISTS knowledge_references (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            source_id   INTEGER NOT NULL REFERENCES knowledge_sources(id) ON DELETE CASCADE,
+            file_id     INTEGER NOT NULL REFERENCES knowledge_files(id) ON DELETE CASCADE,
+            line_start  INTEGER NOT NULL,
+            line_end    INTEGER NOT NULL,
+            kind        TEXT NOT NULL CHECK (kind IN ('name', 'import', 'module', 'path', 'type')),
+            specifier   TEXT NOT NULL,
+            qualifier   TEXT
+        );
+
+        CREATE TABLE IF NOT EXISTS knowledge_entries (
+            id               INTEGER PRIMARY KEY AUTOINCREMENT,
+            source_id        INTEGER NOT NULL REFERENCES knowledge_sources(id) ON DELETE CASCADE,
+            evidence_file_id INTEGER NOT NULL REFERENCES knowledge_files(id) ON DELETE CASCADE,
+            target_file_id   INTEGER REFERENCES knowledge_files(id) ON DELETE SET NULL,
+            target_rel_path  TEXT NOT NULL,
+            kind             TEXT NOT NULL CHECK (kind IN ('program', 'test', 'library_root')),
+            reason           TEXT NOT NULL,
+            evidence_hash    TEXT NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS knowledge_resolutions (
+            id               INTEGER PRIMARY KEY AUTOINCREMENT,
+            source_id        INTEGER NOT NULL REFERENCES knowledge_sources(id) ON DELETE CASCADE,
+            reference_id     INTEGER NOT NULL REFERENCES knowledge_references(id) ON DELETE CASCADE,
+            status           TEXT NOT NULL CHECK (status IN ('resolved', 'ambiguous', 'unresolved')),
+            target_symbol_id INTEGER REFERENCES knowledge_symbols(id) ON DELETE CASCADE,
+            target_file_id   INTEGER REFERENCES knowledge_files(id) ON DELETE CASCADE
+        );
+
+        CREATE TABLE IF NOT EXISTS knowledge_analysis (
+            source_id           INTEGER PRIMARY KEY REFERENCES knowledge_sources(id) ON DELETE CASCADE,
+            analysis_version    INTEGER NOT NULL,
+            evidence_generation INTEGER NOT NULL,
+            fingerprint         TEXT NOT NULL,
+            status              TEXT NOT NULL CHECK (status IN ('complete', 'incomplete')),
+            gaps                TEXT NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS knowledge_findings (
+            id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+            source_id           INTEGER NOT NULL REFERENCES knowledge_sources(id) ON DELETE CASCADE,
+            kind                TEXT NOT NULL CHECK (kind IN ('possibly_unused_symbol', 'unreachable_file')),
+            file_id             INTEGER NOT NULL REFERENCES knowledge_files(id) ON DELETE CASCADE,
+            symbol_id           INTEGER REFERENCES knowledge_symbols(id) ON DELETE CASCADE,
+            reason              TEXT NOT NULL,
+            analysis_version    INTEGER NOT NULL,
+            evidence_generation INTEGER NOT NULL,
+            fingerprint         TEXT NOT NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_references_file ON knowledge_references(file_id);
+        CREATE INDEX IF NOT EXISTS idx_references_source ON knowledge_references(source_id);
+        CREATE INDEX IF NOT EXISTS idx_entries_source ON knowledge_entries(source_id);
+        CREATE INDEX IF NOT EXISTS idx_entries_evidence ON knowledge_entries(evidence_file_id);
+        CREATE INDEX IF NOT EXISTS idx_entries_target ON knowledge_entries(target_file_id);
+        CREATE INDEX IF NOT EXISTS idx_resolutions_reference ON knowledge_resolutions(reference_id);
+        CREATE INDEX IF NOT EXISTS idx_resolutions_symbol ON knowledge_resolutions(target_symbol_id);
+        CREATE INDEX IF NOT EXISTS idx_findings_source ON knowledge_findings(source_id);
+
         -- Vocabulary for fuzzy correction. Created here, not on the search path, so searching
         -- never writes to the database.
         CREATE VIRTUAL TABLE IF NOT EXISTS knowledge_chunks_vocab USING fts5vocab(knowledge_chunks, instance);
@@ -158,6 +219,7 @@ fn ensure_schema(conn: &Connection) -> Result<()> {
     ensure_embedding_state_row(conn)?;
     ensure_chunker_version(conn)?;
     ensure_symbol_version(conn)?;
+    ensure_reference_columns(conn)?;
     ensure_freshness_and_watch_columns(conn)?;
     ensure_embedding_model_id(conn)?;
     ensure_database_instance_id(conn)?;
@@ -265,7 +327,21 @@ fn ensure_symbol_version(conn: &Connection) -> Result<()> {
         "symbol_version",
         "INTEGER NOT NULL DEFAULT 0",
     )?;
-    add_column_if_missing(conn, "knowledge_files", "symbols_hash", "TEXT")
+    add_column_if_missing(conn, "knowledge_files", "symbols_hash", "TEXT")?;
+    add_column_if_missing(conn, "knowledge_files", "symbol_status", "TEXT")
+}
+
+/// Reference rows use the same stamp as symbols: a version and the content hash they were read
+/// from. Files indexed before references existed have version 0.
+fn ensure_reference_columns(conn: &Connection) -> Result<()> {
+    add_column_if_missing(
+        conn,
+        "knowledge_files",
+        "reference_version",
+        "INTEGER NOT NULL DEFAULT 0",
+    )?;
+    add_column_if_missing(conn, "knowledge_files", "references_hash", "TEXT")?;
+    add_column_if_missing(conn, "knowledge_files", "reference_status", "TEXT")
 }
 
 fn ensure_database_instance_id(conn: &Connection) -> Result<()> {
