@@ -6,7 +6,7 @@
 use crate::chunk::evidence::{EntryObservation, Reference};
 use crate::chunk::{chunk_content_for_path, chunker_version_for_path, Symbol};
 use crate::embed::Embed;
-use crate::knowledge::analysis;
+use crate::knowledge::rebuild;
 use crate::knowledge::{scope, KnowledgeSourceInfo, KnowledgeStore};
 use anyhow::{Context, Result};
 use ignore::WalkBuilder;
@@ -576,7 +576,7 @@ fn commit_plan(
             || !plan.to_update.is_empty()
             || !plan.to_remove.is_empty()
             || !plan.backfill.is_empty();
-        analysis::rebuild_source(conn, source.id, structural)?;
+        rebuild::rebuild_source(conn, source.id, structural)?;
 
         Ok(lc)
     })();

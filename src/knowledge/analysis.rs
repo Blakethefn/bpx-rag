@@ -31,33 +31,8 @@ pub(crate) struct EntryRow {
     pub(crate) evidence_file_id: i64,
 }
 
-/// Rewrite resolutions and the analysis row from the evidence already stored for the source.
-///
-/// `structural` is set when the change plan added, updated, removed, or backfilled a file.
-/// A missing analysis row or an older [`ANALYSIS_VERSION`] still rebuilds when `structural`
-/// is false.
-pub(crate) fn rebuild_source(conn: &Connection, source_id: i64, structural: bool) -> Result<()> {
-    if !structural {
-        let stored_version: Option<i64> = conn
-            .query_row(
-                "SELECT analysis_version FROM knowledge_analysis WHERE source_id = ?1",
-                params![source_id],
-                |row| row.get(0),
-            )
-            .optional()?;
-        let analysis_stale = stored_version
-            .map(|version| version < ANALYSIS_VERSION)
-            .unwrap_or(true);
-        if !analysis_stale {
-            return Ok(());
-        }
-    }
-    crate::knowledge::entries::relink_entries(conn, source_id)?;
-    crate::knowledge::resolution::rebuild(conn, source_id)?;
-    rebuild_analysis(conn, source_id)
-}
-
-fn rebuild_analysis(conn: &Connection, source_id: i64) -> Result<()> {
+/// Replace the analysis row. Finding rows are written only when that row is complete.
+pub(crate) fn rebuild_analysis(conn: &Connection, source_id: i64) -> Result<()> {
     let files = load_files(conn, source_id)?;
     let entries = load_entries(conn, source_id)?;
     let symbols = crate::knowledge::findings::unused::load_symbols(conn, source_id)?;

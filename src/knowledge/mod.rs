@@ -15,6 +15,7 @@ pub(crate) mod identifiers;
 pub mod links;
 pub(crate) mod lock;
 pub mod query;
+pub(crate) mod rebuild;
 pub(crate) mod references;
 pub(crate) mod resolution;
 pub mod schema;
