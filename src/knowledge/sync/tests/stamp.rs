@@ -261,8 +261,20 @@ fn an_unchanged_tree_backfills_visibility_and_references_once() {
         .unwrap();
     sync(&store, "demo");
 
-    assert_eq!(versions(&store, "lib.rs"), (2, 2));
-    assert_eq!(versions(&store, "app.py"), (2, 2));
+    assert_eq!(
+        versions(&store, "lib.rs"),
+        (
+            crate::knowledge::symbols::SYMBOL_INDEX_VERSION,
+            crate::knowledge::references::REFERENCE_INDEX_VERSION,
+        )
+    );
+    assert_eq!(
+        versions(&store, "app.py"),
+        (
+            crate::knowledge::symbols::SYMBOL_INDEX_VERSION,
+            crate::knowledge::references::REFERENCE_INDEX_VERSION,
+        )
+    );
     assert_eq!(
         visibilities(&store, "lib.rs"),
         vec![

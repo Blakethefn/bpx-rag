@@ -63,6 +63,31 @@ fn python_main_guard_is_a_program_entry() {
 }
 
 #[test]
+fn a_test_attribute_names_each_function() {
+    let content = "#[test]\nfn checks_a() {}\n#[test]\nfn checks_b() {}\n";
+    let result = chunk_content_for_path(Path::new("src/lib.rs"), content);
+    let mut reasons: Vec<&str> = result
+        .entries
+        .iter()
+        .filter(|entry| entry.kind == ENTRY_TEST)
+        .map(|entry| entry.reason.as_str())
+        .collect();
+    reasons.sort();
+    assert_eq!(reasons, vec!["#[test] checks_a", "#[test] checks_b"]);
+}
+
+#[test]
+fn a_cfg_test_attribute_is_not_a_test_entry() {
+    let content = "#[cfg(test)]\nfn helper() {}\n";
+    let result = chunk_content_for_path(Path::new("src/lib.rs"), content);
+    assert!(
+        result.entries.iter().all(|entry| entry.kind != ENTRY_TEST),
+        "{:?}",
+        result.entries
+    );
+}
+
+#[test]
 fn rust_module_import_and_main_are_separate_from_the_declaration() {
     let content = "mod util;\nfn main() {\n    helper();\n}\n";
     let result = chunk_content_for_path(Path::new("src/main.rs"), content);

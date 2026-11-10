@@ -29,7 +29,7 @@ pub(super) fn visit(
                 EntryObservation {
                     target_rel_path: None,
                     kind: ENTRY_PROGRAM,
-                    reason: "func main",
+                    reason: "func main".to_string(),
                 },
             ),
             Some(name)
@@ -44,7 +44,7 @@ pub(super) fn visit(
                     EntryObservation {
                         target_rel_path: None,
                         kind: ENTRY_TEST,
-                        reason: "func Test",
+                        reason: "func Test".to_string(),
                     },
                 );
             }

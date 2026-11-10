@@ -105,7 +105,7 @@ fn manifest_entry(
     EntryObservation {
         target_rel_path: Some(normalize_rel(&parent.join(target))),
         kind,
-        reason,
+        reason: reason.to_string(),
     }
 }
 

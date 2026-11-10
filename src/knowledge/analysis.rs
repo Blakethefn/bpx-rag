@@ -10,7 +10,7 @@ use sha2::{Digest, Sha256};
 use crate::chunk::evidence::{STATUS_COMPLETE, STATUS_UNSUPPORTED};
 use crate::knowledge::references::REFERENCE_INDEX_VERSION;
 
-pub(crate) const ANALYSIS_VERSION: i64 = 1;
+pub(crate) const ANALYSIS_VERSION: i64 = 2;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct FileRow {
@@ -35,7 +35,7 @@ pub(crate) struct EntryRow {
 pub(crate) fn rebuild_analysis(conn: &Connection, source_id: i64) -> Result<()> {
     let files = load_files(conn, source_id)?;
     let entries = load_entries(conn, source_id)?;
-    let symbols = crate::knowledge::findings::unused::load_symbols(conn, source_id)?;
+    let tree = crate::knowledge::resolution::Tree::load(conn, source_id)?;
     let previous: i64 = conn
         .query_row(
             "SELECT evidence_generation FROM knowledge_analysis WHERE source_id = ?1",
@@ -46,7 +46,7 @@ pub(crate) fn rebuild_analysis(conn: &Connection, source_id: i64) -> Result<()> 
         .unwrap_or(0);
     let generation = previous + 1;
     let fingerprint = fingerprint(&files, &entries);
-    let gaps = gaps(&files, &entries);
+    let gaps = gaps(&files, &entries, &tree);
     let status = if incomplete(&files) {
         "incomplete"
     } else {
@@ -81,7 +81,7 @@ pub(crate) fn rebuild_analysis(conn: &Connection, source_id: i64) -> Result<()> 
             generation,
             &fingerprint,
             &files,
-            &symbols,
+            &tree,
         )?;
         crate::knowledge::findings::reachability::write(
             conn,
@@ -107,18 +107,25 @@ fn blocks_conclusion(status: &str) -> bool {
     status != STATUS_COMPLETE && status != STATUS_UNSUPPORTED
 }
 
-fn gaps(files: &[FileRow], entries: &[EntryRow]) -> String {
+fn gaps(
+    files: &[FileRow],
+    entries: &[EntryRow],
+    tree: &crate::knowledge::resolution::Tree,
+) -> String {
     let mut lines = Vec::new();
     for file in files {
         if file.symbol_status != STATUS_COMPLETE {
             lines.push(format!("{}:{}", file.rel_path, file.symbol_status));
         } else if file.reference_status != STATUS_COMPLETE {
             lines.push(format!("{}:{}", file.rel_path, file.reference_status));
+        } else if !crate::knowledge::resolution::is_rust_path(&file.rel_path) {
+            lines.push(format!("{}:resolution_unsupported", file.rel_path));
         }
         if file.reference_version < REFERENCE_INDEX_VERSION {
             lines.push(format!("{}:reference_version", file.rel_path));
         }
     }
+    lines.extend(tree.limitation_lines());
     for entry in entries {
         if entry.target_file_id.is_none() {
             lines.push(format!("{}:missing", entry.target_rel_path));

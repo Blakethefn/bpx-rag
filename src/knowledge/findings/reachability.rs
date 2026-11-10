@@ -1,10 +1,14 @@
 //! Unreachable files from a complete analysis.
+//!
+//! Rust `unreachable_file` still follows this pre-stage-4 walk, including a source with no
+//! roots. Stage 4 replaces that classification. Non-Rust files are not file findings.
 
 use anyhow::Result;
 use rusqlite::{params, Connection};
 use std::collections::{HashMap, HashSet, VecDeque};
 
 use crate::knowledge::analysis::{EntryRow, FileRow, ANALYSIS_VERSION};
+use crate::knowledge::resolution::is_rust_path;
 
 pub(crate) fn write(
     conn: &Connection,
@@ -35,7 +39,7 @@ pub(crate) fn write(
     );
     let test_reason = root_reason("reachable only from test entries", &test_roots, files);
     for file in file_ids {
-        if reached.contains(&file.id) {
+        if !is_rust_path(&file.rel_path) || reached.contains(&file.id) {
             continue;
         }
         let reason = if test_reached.contains(&file.id) {

@@ -27,7 +27,7 @@ pub(super) fn visit(
             EntryObservation {
                 target_rel_path: None,
                 kind: ENTRY_PROGRAM,
-                reason: "if __name__ == \"__main__\"",
+                reason: "if __name__ == \"__main__\"".to_string(),
             },
         );
     }
@@ -40,7 +40,7 @@ pub(super) fn visit(
             EntryObservation {
                 target_rel_path: None,
                 kind: ENTRY_TEST,
-                reason: "test function",
+                reason: "test function".to_string(),
             },
         );
     }

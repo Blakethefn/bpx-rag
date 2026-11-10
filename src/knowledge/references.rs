@@ -7,8 +7,11 @@ use rusqlite::{params, Connection};
 
 use crate::chunk::evidence::{Reference, STATUS_COMPLETE};
 
-/// Version of the reference index. A bump backfills references on the next sync.
-pub(crate) const REFERENCE_INDEX_VERSION: i64 = 2;
+/// Version of the reference index. A bump backfills references and entries on the next sync.
+///
+/// Version 3 puts the function name in a `#[test]` entry reason so two tests in one file stay
+/// distinct, and so unused-symbol analysis can see which function the attribute names.
+pub(crate) const REFERENCE_INDEX_VERSION: i64 = 3;
 
 /// Replace one file's reference rows and stamp the file in the same way as symbols.
 ///

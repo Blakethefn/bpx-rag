@@ -49,7 +49,7 @@ pub(crate) struct Reference {
 pub(crate) struct EntryObservation {
     pub target_rel_path: Option<String>,
     pub kind: &'static str,
-    pub reason: &'static str,
+    pub reason: String,
 }
 
 /// `Stop` means the language claimed the node and its children are not walked again.

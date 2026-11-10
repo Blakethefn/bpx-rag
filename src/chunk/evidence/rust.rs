@@ -35,18 +35,20 @@ pub(super) fn visit(
                 EntryObservation {
                     target_rel_path: None,
                     kind: ENTRY_PROGRAM,
-                    reason: "fn main",
+                    reason: "fn main".to_string(),
                 },
             );
         } else if has_test_attribute(node, content) {
-            push_entry(
-                entries,
-                EntryObservation {
-                    target_rel_path: None,
-                    kind: ENTRY_TEST,
-                    reason: "#[test]",
-                },
-            );
+            if let Some(name) = field_text(node, "name", content) {
+                push_entry(
+                    entries,
+                    EntryObservation {
+                        target_rel_path: None,
+                        kind: ENTRY_TEST,
+                        reason: format!("#[test] {name}"),
+                    },
+                );
+            }
         }
     }
     Walk::Skip
@@ -395,17 +397,26 @@ fn decode_numeric_escape(text: &str) -> Option<String> {
     Some(char::from_u32(code)?.to_string())
 }
 
+fn attribute_is_test(item: Node<'_>, content: &str) -> bool {
+    let Some(attribute) = item.named_child(0) else {
+        return false;
+    };
+    if attribute.kind() != "attribute" {
+        return false;
+    }
+    let Some(name) = attribute_name(attribute, content) else {
+        return false;
+    };
+    name == "test" || name.ends_with("::test")
+}
+
 fn has_test_attribute(node: Node<'_>, content: &str) -> bool {
     let mut sibling = node.prev_named_sibling();
     while let Some(current) = sibling {
         if current.kind() != "attribute_item" {
             break;
         }
-        if current
-            .utf8_text(content.as_bytes())
-            .ok()
-            .is_some_and(|text| text.contains("test"))
-        {
+        if attribute_is_test(current, content) {
             return true;
         }
         sibling = current.prev_named_sibling();
