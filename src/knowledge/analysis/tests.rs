@@ -139,11 +139,12 @@ fn a_parse_error_publishes_an_incomplete_analysis_and_no_conclusions() {
     assert!(reference_specifiers(&store, "broken.rs").is_empty());
     let (status, _, _, gaps) = analysis(&store, "demo");
     assert_eq!(status, "incomplete");
-    assert!(gaps.contains("broken.rs"), "{gaps}");
-    assert!(gaps.contains("parse_error"), "{gaps}");
+    assert!(gaps.contains("broken.rs:parse_error"), "{gaps}");
+    assert!(gaps.contains("broken.rs:unsealed"), "{gaps}");
     assert_eq!(count(&store, "SELECT COUNT(*) FROM knowledge_findings"), 0);
     let text = report(&store, Some("demo")).unwrap();
     assert!(text.contains("status: incomplete"), "{text}");
+    assert!(!text.contains("findings:"), "{text}");
     assert!(!text.contains("possibly_unused_symbol"), "{text}");
     assert!(!text.contains("unreachable_file"), "{text}");
 }

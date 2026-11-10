@@ -1,13 +1,13 @@
-//! Possibly-unused Rust symbols from a complete analysis.
+//! Possibly-unused Rust symbols from a complete or partial analysis.
 //!
-//! A symbol is unused when sealed-scope resolution never targets it. `pub` on a library tree,
-//! or on no program tree, is withheld. Null visibility is withheld. Non-Rust files are omitted.
+//! A symbol is unused when sealed-scope resolution never targets it. The declaring file has to
+//! be sealed. `pub(crate)` also needs every Rust file in that package sealed. `pub` on a library
+//! tree, or on no program tree, is withheld. Null visibility is withheld. Non-Rust files are omitted.
 
 use anyhow::Result;
 use rusqlite::{params, Connection};
 use std::collections::{HashMap, HashSet};
 
-use crate::chunk::evidence::STATUS_COMPLETE;
 use crate::knowledge::analysis::{FileRow, ANALYSIS_VERSION};
 use crate::knowledge::resolution::{Symbol, Tree};
 
@@ -20,13 +20,9 @@ pub(crate) fn write(
     fingerprint: &str,
     files: &[FileRow],
     tree: &Tree,
+    unsealed: &HashSet<i64>,
 ) -> Result<()> {
     let used = used_symbols(conn, source_id)?;
-    let complete_files: HashSet<i64> = files
-        .iter()
-        .filter(|file| file.symbol_status == STATUS_COMPLETE)
-        .map(|file| file.id)
-        .collect();
     let paths: HashMap<i64, &str> = files
         .iter()
         .map(|file| (file.id, file.rel_path.as_str()))
@@ -41,7 +37,7 @@ pub(crate) fn write(
     let mut unused: Vec<&Symbol> = tree
         .symbols()
         .iter()
-        .filter(|symbol| reportable(tree, symbol, &used, &complete_files))
+        .filter(|symbol| reportable(tree, symbol, &used, unsealed))
         .collect();
     unused.sort_by(|left, right| {
         let left_path = paths.get(&left.file_id).copied().unwrap_or("");
@@ -63,13 +59,8 @@ pub(crate) fn write(
     Ok(())
 }
 
-fn reportable(
-    tree: &Tree,
-    symbol: &Symbol,
-    used: &HashSet<i64>,
-    complete_files: &HashSet<i64>,
-) -> bool {
-    if !complete_files.contains(&symbol.file_id) || !tree.is_rust_file(symbol.file_id) {
+fn reportable(tree: &Tree, symbol: &Symbol, used: &HashSet<i64>, unsealed: &HashSet<i64>) -> bool {
+    if !tree.is_rust_file(symbol.file_id) || unsealed.contains(&symbol.file_id) {
         return false;
     }
     if symbol.kind == "mod" || used.contains(&symbol.id) {
@@ -79,11 +70,20 @@ fn reportable(
         return false;
     }
     match symbol.visibility.as_deref() {
-        Some("private" | "pub(self)" | "pub(super)" | "pub(crate)") => true,
+        Some("private" | "pub(self)" | "pub(super)") => true,
+        Some(visibility) if crate_visibility(visibility) => {
+            tree.package_is_sealed(symbol.file_id, unsealed)
+        }
         Some(visibility) if visibility.starts_with("pub(in ") => true,
         Some("pub") => tree.on_program_only(symbol.file_id),
         _ => false,
     }
+}
+
+fn crate_visibility(visibility: &str) -> bool {
+    visibility == "pub(crate)"
+        || visibility == "pub(in crate)"
+        || visibility.starts_with("pub(in crate::")
 }
 
 fn used_symbols(conn: &Connection, source_id: i64) -> Result<HashSet<i64>> {

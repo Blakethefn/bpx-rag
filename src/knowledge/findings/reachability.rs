@@ -1,7 +1,8 @@
-//! Unreachable files from a complete analysis.
+//! Unreachable files from a complete or partial analysis.
 //!
 //! Rust `unreachable_file` still follows this pre-stage-4 walk, including a source with no
-//! roots. Stage 4 replaces that classification. Non-Rust files are not file findings.
+//! roots. Stage 4 replaces that classification. This stage only skips a file that is not Rust
+//! or is unsealed. A sealed Rust file may still be unreachable under the old walk.
 
 use anyhow::Result;
 use rusqlite::{params, Connection};
@@ -17,6 +18,7 @@ pub(crate) fn write(
     fingerprint: &str,
     files: &[FileRow],
     entries: &[EntryRow],
+    unsealed: &HashSet<i64>,
 ) -> Result<()> {
     let (reached, test_reached, program_roots, test_roots) =
         reachability(conn, source_id, entries)?;
@@ -39,7 +41,10 @@ pub(crate) fn write(
     );
     let test_reason = root_reason("reachable only from test entries", &test_roots, files);
     for file in file_ids {
-        if !is_rust_path(&file.rel_path) || reached.contains(&file.id) {
+        if !is_rust_path(&file.rel_path)
+            || unsealed.contains(&file.id)
+            || reached.contains(&file.id)
+        {
             continue;
         }
         let reason = if test_reached.contains(&file.id) {

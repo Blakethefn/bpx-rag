@@ -1,11 +1,11 @@
-//! Read the analysis row, and finding rows only when it is complete and they match it.
+//! Read the analysis row. Finding rows are printed for `complete` and `partial` when they match it.
 
 use anyhow::{anyhow, bail, Result};
 use rusqlite::{params, OptionalExtension};
 
 use crate::knowledge::{KnowledgeSourceInfo, KnowledgeStore};
 
-/// Read the analysis row, and finding rows only when it is complete and they match it.
+/// Read the analysis row. Finding lines are included for `complete` and `partial`.
 pub fn report(store: &KnowledgeStore, source: Option<&str>) -> Result<String> {
     let selected = resolve_source(store, source)?;
     let conn = store.conn();
@@ -42,7 +42,7 @@ pub fn report(store: &KnowledgeStore, source: Option<&str>) -> Result<String> {
     } else {
         lines.extend(gaps.lines().map(str::to_string));
     }
-    if status != "complete" {
+    if !matches!(status.as_str(), "complete" | "partial") {
         return Ok(lines.join("\n"));
     }
 
@@ -54,7 +54,7 @@ pub fn report(store: &KnowledgeStore, source: Option<&str>) -> Result<String> {
          JOIN knowledge_files kf ON kf.id = f.file_id
          LEFT JOIN knowledge_symbols ks ON ks.id = f.symbol_id
          WHERE f.source_id = ?1
-           AND a.status = 'complete'
+           AND a.status IN ('complete', 'partial')
            AND f.analysis_version = a.analysis_version
            AND f.evidence_generation = a.evidence_generation
            AND f.fingerprint = a.fingerprint

@@ -170,7 +170,7 @@ fn ensure_schema(conn: &Connection) -> Result<()> {
             analysis_version    INTEGER NOT NULL,
             evidence_generation INTEGER NOT NULL,
             fingerprint         TEXT NOT NULL,
-            status              TEXT NOT NULL CHECK (status IN ('complete', 'incomplete')),
+            status              TEXT NOT NULL CHECK (status IN ('complete', 'partial', 'incomplete')),
             gaps                TEXT NOT NULL
         );
 
@@ -217,6 +217,7 @@ fn ensure_schema(conn: &Connection) -> Result<()> {
         END;
         ",
     )?;
+    ensure_analysis_status(conn)?;
     ensure_embedding_state_row(conn)?;
     ensure_chunker_version(conn)?;
     ensure_symbol_version(conn)?;
@@ -246,6 +247,49 @@ fn ensure_schema(conn: &Connection) -> Result<()> {
             UPDATE knowledge_embedding_state SET generation = last_insert_rowid() WHERE state_id = 1;
          END;",
     )?;
+    Ok(())
+}
+
+/// `CREATE TABLE IF NOT EXISTS` does not widen a check on a database that already exists.
+/// Rebuild the table when its status check predates `partial`.
+fn ensure_analysis_status(conn: &Connection) -> Result<()> {
+    let sql: String = conn.query_row(
+        "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'knowledge_analysis'",
+        [],
+        |row| row.get(0),
+    )?;
+    if sql.contains("'partial'") {
+        return Ok(());
+    }
+    let foreign_keys: i64 = conn.query_row("PRAGMA foreign_keys", [], |row| row.get(0))?;
+    conn.execute_batch("PRAGMA foreign_keys = OFF")?;
+    let migrated = conn.execute_batch(
+        "
+        BEGIN IMMEDIATE;
+        CREATE TABLE knowledge_analysis_next (
+            source_id           INTEGER PRIMARY KEY REFERENCES knowledge_sources(id) ON DELETE CASCADE,
+            analysis_version    INTEGER NOT NULL,
+            evidence_generation INTEGER NOT NULL,
+            fingerprint         TEXT NOT NULL,
+            status              TEXT NOT NULL CHECK (status IN ('complete', 'partial', 'incomplete')),
+            gaps                TEXT NOT NULL
+        );
+        INSERT INTO knowledge_analysis_next
+            (source_id, analysis_version, evidence_generation, fingerprint, status, gaps)
+        SELECT source_id, analysis_version, evidence_generation, fingerprint, status, gaps
+        FROM knowledge_analysis;
+        DROP TABLE knowledge_analysis;
+        ALTER TABLE knowledge_analysis_next RENAME TO knowledge_analysis;
+        COMMIT;
+        ",
+    );
+    if migrated.is_err() {
+        let _ = conn.execute_batch("ROLLBACK");
+    }
+    if foreign_keys != 0 {
+        conn.execute_batch("PRAGMA foreign_keys = ON")?;
+    }
+    migrated?;
     Ok(())
 }
 

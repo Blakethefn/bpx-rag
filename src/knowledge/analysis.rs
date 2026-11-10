@@ -1,16 +1,21 @@
 //! Derived analysis for one source.
 //!
-//! `knowledge_analysis` is one row per source. Findings are written only when that row is
-//! complete.
+//! `knowledge_analysis` is one row per source. Finding rows are written for `complete` and
+//! `partial`. `incomplete` stores the header gaps and no findings.
+//!
+//! Rust `unreachable_file` stays on the pre-stage-4 walk. This stage only stops that walk from
+//! naming an unsealed file. Stage 4 replaces the classification.
 
 use anyhow::Result;
 use rusqlite::{params, Connection, OptionalExtension};
 use sha2::{Digest, Sha256};
+use std::collections::HashSet;
 
-use crate::chunk::evidence::{STATUS_COMPLETE, STATUS_UNSUPPORTED};
-use crate::knowledge::references::REFERENCE_INDEX_VERSION;
+use crate::chunk::evidence::STATUS_COMPLETE;
 
-pub(crate) const ANALYSIS_VERSION: i64 = 2;
+mod seal;
+
+pub(crate) const ANALYSIS_VERSION: i64 = 3;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct FileRow {
@@ -31,7 +36,7 @@ pub(crate) struct EntryRow {
     pub(crate) evidence_file_id: i64,
 }
 
-/// Replace the analysis row. Finding rows are written only when that row is complete.
+/// Replace the analysis row. Finding rows are written for `complete` and `partial`.
 pub(crate) fn rebuild_analysis(conn: &Connection, source_id: i64) -> Result<()> {
     let files = load_files(conn, source_id)?;
     let entries = load_entries(conn, source_id)?;
@@ -46,12 +51,9 @@ pub(crate) fn rebuild_analysis(conn: &Connection, source_id: i64) -> Result<()> 
         .unwrap_or(0);
     let generation = previous + 1;
     let fingerprint = fingerprint(&files, &entries);
-    let gaps = gaps(&files, &entries, &tree);
-    let status = if incomplete(&files) {
-        "incomplete"
-    } else {
-        "complete"
-    };
+    let unsealed = seal::unsealed_rust_files(&files, &tree);
+    let gaps = gaps(&files, &entries, &tree, &unsealed);
+    let status = seal::analysis_status(&files, &unsealed);
 
     conn.execute(
         "DELETE FROM knowledge_findings WHERE source_id = ?1",
@@ -74,7 +76,7 @@ pub(crate) fn rebuild_analysis(conn: &Connection, source_id: i64) -> Result<()> 
             gaps
         ],
     )?;
-    if status == "complete" {
+    if status != "incomplete" {
         crate::knowledge::findings::unused::write(
             conn,
             source_id,
@@ -82,6 +84,7 @@ pub(crate) fn rebuild_analysis(conn: &Connection, source_id: i64) -> Result<()> 
             &fingerprint,
             &files,
             &tree,
+            &unsealed,
         )?;
         crate::knowledge::findings::reachability::write(
             conn,
@@ -90,27 +93,17 @@ pub(crate) fn rebuild_analysis(conn: &Connection, source_id: i64) -> Result<()> 
             &fingerprint,
             &files,
             &entries,
+            &unsealed,
         )?;
     }
     Ok(())
-}
-
-fn incomplete(files: &[FileRow]) -> bool {
-    files.iter().any(|file| {
-        file.reference_version < REFERENCE_INDEX_VERSION
-            || blocks_conclusion(&file.symbol_status)
-            || blocks_conclusion(&file.reference_status)
-    })
-}
-
-fn blocks_conclusion(status: &str) -> bool {
-    status != STATUS_COMPLETE && status != STATUS_UNSUPPORTED
 }
 
 fn gaps(
     files: &[FileRow],
     entries: &[EntryRow],
     tree: &crate::knowledge::resolution::Tree,
+    unsealed: &HashSet<i64>,
 ) -> String {
     let mut lines = Vec::new();
     for file in files {
@@ -121,8 +114,11 @@ fn gaps(
         } else if !crate::knowledge::resolution::is_rust_path(&file.rel_path) {
             lines.push(format!("{}:resolution_unsupported", file.rel_path));
         }
-        if file.reference_version < REFERENCE_INDEX_VERSION {
+        if file.reference_version < crate::knowledge::references::REFERENCE_INDEX_VERSION {
             lines.push(format!("{}:reference_version", file.rel_path));
+        }
+        if unsealed.contains(&file.id) {
+            lines.push(format!("{}:unsealed", file.rel_path));
         }
     }
     lines.extend(tree.limitation_lines());

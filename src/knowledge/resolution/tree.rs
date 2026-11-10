@@ -40,6 +40,9 @@ pub(crate) struct Tree {
     inline_names: HashMap<i64, HashSet<String>>,
     has_macro: bool,
     has_inline_module: bool,
+    paths: HashMap<i64, String>,
+    /// `None` is the one group of files that sit under no `Cargo.toml`.
+    packages: HashMap<i64, Option<String>>,
 }
 
 pub(crate) fn is_rust_path(path: &str) -> bool {
@@ -121,6 +124,8 @@ impl Tree {
             inline_names,
             has_macro,
             has_inline_module,
+            paths: files_by_id,
+            packages,
         }
     }
 
@@ -163,8 +168,47 @@ impl Tree {
         self.crate_of.get(&file_id).copied()
     }
 
-    pub(super) fn parents_of(&self, file_id: i64) -> &[i64] {
+    pub(crate) fn parents_of(&self, file_id: i64) -> &[i64] {
         self.parents.get(&file_id).map(Vec::as_slice).unwrap_or(&[])
+    }
+
+    pub(crate) fn rust_file_ids(&self) -> impl Iterator<Item = i64> + '_ {
+        self.rust_files.iter().copied()
+    }
+
+    /// Every Rust file in this file's package is outside `unsealed`.
+    pub(crate) fn package_is_sealed(&self, file_id: i64, unsealed: &HashSet<i64>) -> bool {
+        let package = self.packages.get(&file_id);
+        self.rust_files
+            .iter()
+            .all(|other| self.packages.get(other) != package || !unsealed.contains(other))
+    }
+
+    /// The parent path would still name this child after the parent's `mod` edges are gone.
+    ///
+    /// `lib.rs`, `main.rs`, and `mod.rs` name the direct module files beside them.
+    /// Any other Rust file names the tree under its module directory.
+    pub(crate) fn path_declares_child(&self, parent_id: i64, child_id: i64) -> bool {
+        if parent_id == child_id {
+            return false;
+        }
+        if !self.rust_files.contains(&parent_id) || !self.rust_files.contains(&child_id) {
+            return false;
+        }
+        if self.packages.get(&parent_id) != self.packages.get(&child_id) {
+            return false;
+        }
+        let (Some(parent_rel), Some(child_rel)) =
+            (self.paths.get(&parent_id), self.paths.get(&child_id))
+        else {
+            return false;
+        };
+        let base = module_base(parent_rel);
+        if matches!(file_stem(parent_rel), "lib" | "main" | "mod") {
+            direct_module_file(&base, child_rel)
+        } else {
+            descendant_module_file(&base, child_rel)
+        }
     }
 
     pub(super) fn child_name(&self, parent: i64, child: i64) -> Option<&str> {
@@ -595,6 +639,35 @@ fn module_base(rel_path: &str) -> String {
     } else {
         join_rel(&parent, stem)
     }
+}
+
+/// `{base}/{name}.rs` or `{base}/{name}/mod.rs`. `mod.rs` beside the parent is the parent
+/// directory's own file, not one of its child modules.
+fn direct_module_file(base: &str, child_rel: &str) -> bool {
+    let Some(rest) = strip_base(base, child_rel) else {
+        return false;
+    };
+    if let Some(name) = rest.strip_suffix("/mod.rs") {
+        return !name.is_empty() && !name.contains('/');
+    }
+    if let Some(name) = rest.strip_suffix(".rs") {
+        return !name.is_empty() && !name.contains('/') && name != "mod";
+    }
+    false
+}
+
+fn descendant_module_file(base: &str, child_rel: &str) -> bool {
+    if base.is_empty() {
+        return false;
+    }
+    child_rel.starts_with(&format!("{base}/"))
+}
+
+fn strip_base<'a>(base: &str, child_rel: &'a str) -> Option<&'a str> {
+    if base.is_empty() {
+        return Some(child_rel);
+    }
+    child_rel.strip_prefix(&format!("{base}/"))
 }
 
 pub(super) enum Walk {
