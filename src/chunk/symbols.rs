@@ -20,6 +20,9 @@ pub struct Symbol {
     pub container: Option<String>,
     pub line_start: u32,
     pub line_end: u32,
+    /// Rust visibility: `private`, `pub`, `pub(crate)`, `pub(super)`, `pub(self)`, or
+    /// `pub(in <path>)`. `None` for other languages, and for a Rust modifier that could not be read.
+    pub visibility: Option<String>,
 }
 
 /// Symbols for one file. Empty for an unsupported language, a parse error, a file above the
@@ -34,31 +37,31 @@ pub(crate) fn symbols_for_path(path: &Path, content: &str) -> Vec<Symbol> {
 pub(super) fn symbols_from_tree(content: &str, root: Node<'_>, grammar: Grammar) -> Vec<Symbol> {
     let mut symbols = Vec::new();
     for node in declaration_nodes(root, content, grammar) {
-        collect(node, content, &mut symbols);
+        collect(node, content, grammar, &mut symbols);
     }
     symbols
 }
 
-fn collect(node: Node<'_>, content: &str, out: &mut Vec<Symbol>) {
+fn collect(node: Node<'_>, content: &str, grammar: Grammar, out: &mut Vec<Symbol>) {
     if let Some(inner) = wrapped_declaration(node) {
-        return collect(inner, content, out);
+        return collect(inner, content, grammar, out);
     }
     match node.kind() {
         "type_declaration" => {
             for spec in named_children(node) {
                 if matches!(spec.kind(), "type_spec" | "type_alias") {
-                    push_named(spec, go_type_kind(spec), content, out);
+                    push_named(spec, go_type_kind(spec), content, grammar, out);
                 }
             }
         }
         "lexical_declaration" | "variable_declaration" => {
             for declarator in named_children(node) {
                 if declarator.kind() == "variable_declarator" {
-                    push_named(declarator, "variable".to_string(), content, out);
+                    push_named(declarator, "variable".to_string(), content, grammar, out);
                 }
             }
         }
-        kind => push_named(node, declaration_kind(kind), content, out),
+        kind => push_named(node, declaration_kind(kind), content, grammar, out),
     }
 }
 
@@ -71,7 +74,13 @@ fn wrapped_declaration(node: Node<'_>) -> Option<Node<'_>> {
         .or_else(|| node.child_by_field_name("definition"))
 }
 
-fn push_named(node: Node<'_>, kind: String, content: &str, out: &mut Vec<Symbol>) {
+fn push_named(
+    node: Node<'_>,
+    kind: String,
+    content: &str,
+    grammar: Grammar,
+    out: &mut Vec<Symbol>,
+) {
     let Some(name) = field_text(node, "name", content) else {
         return;
     };
@@ -81,6 +90,9 @@ fn push_named(node: Node<'_>, kind: String, content: &str, out: &mut Vec<Symbol>
         container: container_name(node, content),
         line_start: node.start_position().row as u32 + 1,
         line_end: node.end_position().row as u32 + 1,
+        visibility: (grammar == Grammar::Rust)
+            .then(|| super::evidence::rust_item_visibility(node, content))
+            .flatten(),
     });
 }
 

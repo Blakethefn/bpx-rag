@@ -118,7 +118,9 @@ fn visit(
             | "selector_expression"
             | "member_expression"
     ) {
-        if let Some(reference) = qualified_reference(node, content) {
+        if let Some(reference) = qualified_reference(node, content)
+            .and_then(|reference| normalize_rust(grammar, reference))
+        {
             push_reference(references, reference);
         }
         return false;
@@ -128,12 +130,51 @@ fn visit(
         node.kind(),
         "identifier" | "type_identifier" | "field_identifier" | "property_identifier"
     ) {
-        if let Some(reference) = plain_reference(node, content) {
+        if let Some(reference) =
+            plain_reference(node, content).and_then(|reference| normalize_rust(grammar, reference))
+        {
             push_reference(references, reference);
         }
         return false;
     }
     true
+}
+
+/// Rust raw identifiers keep the `r#` prefix in the tree. Stored names omit it.
+fn normalize_rust(grammar: Grammar, mut reference: Reference) -> Option<Reference> {
+    if grammar != Grammar::Rust {
+        return Some(reference);
+    }
+    let specifier = reference
+        .specifier
+        .strip_prefix("r#")
+        .unwrap_or(&reference.specifier)
+        .to_string();
+    if specifier.is_empty() || is_noise(&specifier) {
+        return None;
+    }
+    reference.specifier = specifier;
+    reference.qualifier = reference.qualifier.and_then(|qualifier| {
+        let stripped = strip_raw_path(&qualifier);
+        (!stripped.is_empty()).then_some(stripped)
+    });
+    Some(reference)
+}
+
+fn strip_raw_path(text: &str) -> String {
+    let leading = text.trim_start().starts_with("::");
+    let joined = text
+        .split("::")
+        .map(str::trim)
+        .filter(|segment| !segment.is_empty())
+        .map(|segment| segment.strip_prefix("r#").unwrap_or(segment))
+        .collect::<Vec<_>>()
+        .join("::");
+    if leading && !joined.is_empty() {
+        format!("::{joined}")
+    } else {
+        joined
+    }
 }
 
 fn plain_reference(node: Node<'_>, content: &str) -> Option<Reference> {
@@ -302,6 +343,10 @@ fn is_noise(specifier: &str) -> bool {
 
 pub(super) fn field_text<'a>(node: Node<'_>, field: &str, content: &'a str) -> Option<&'a str> {
     node_text(node.child_by_field_name(field)?, content)
+}
+
+pub(super) fn rust_item_visibility(node: Node<'_>, content: &str) -> Option<String> {
+    rust::item_visibility(node, content)
 }
 
 pub(super) fn node_text<'a>(node: Node<'_>, content: &'a str) -> Option<&'a str> {

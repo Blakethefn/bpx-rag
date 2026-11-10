@@ -121,7 +121,8 @@ fn ensure_schema(conn: &Connection) -> Result<()> {
             kind        TEXT NOT NULL,
             container   TEXT,
             line_start  INTEGER NOT NULL,
-            line_end    INTEGER NOT NULL
+            line_end    INTEGER NOT NULL,
+            visibility  TEXT
         );
 
         CREATE INDEX IF NOT EXISTS idx_chunk_meta_source ON knowledge_chunk_meta(source_id);
@@ -328,7 +329,8 @@ fn ensure_symbol_version(conn: &Connection) -> Result<()> {
         "INTEGER NOT NULL DEFAULT 0",
     )?;
     add_column_if_missing(conn, "knowledge_files", "symbols_hash", "TEXT")?;
-    add_column_if_missing(conn, "knowledge_files", "symbol_status", "TEXT")
+    add_column_if_missing(conn, "knowledge_files", "symbol_status", "TEXT")?;
+    add_column_if_missing(conn, "knowledge_symbols", "visibility", "TEXT")
 }
 
 /// Reference rows use the same stamp as symbols: a version and the content hash they were read

@@ -50,6 +50,54 @@ const LIMIT: u32 = 4;
 }
 
 #[test]
+fn rust_visibility_distinguishes_private_from_pub_crate() {
+    let content = "\
+fn hidden() {}
+pub(crate) fn shared() {}
+pub fn open() {}
+pub(super) fn parent_visible() {}
+pub(self) fn local() {}
+pub(in crate::util) fn scoped() {}
+pub(in super::child) fn child_scoped() {}
+pub(in crate) fn crate_in() {}
+pub(in self) fn self_in() {}
+pub(in super) fn super_in() {}
+";
+    let symbols = symbols_for_path(Path::new("src/lib.rs"), content);
+    let visibility = |name: &str| {
+        symbols
+            .iter()
+            .find(|symbol| symbol.name == name)
+            .and_then(|symbol| symbol.visibility.clone())
+    };
+    assert_eq!(visibility("hidden").as_deref(), Some("private"));
+    assert_eq!(visibility("shared").as_deref(), Some("pub(crate)"));
+    assert_ne!(visibility("hidden"), visibility("shared"));
+    assert_eq!(visibility("open").as_deref(), Some("pub"));
+    assert_eq!(visibility("parent_visible").as_deref(), Some("pub(super)"));
+    assert_eq!(visibility("local").as_deref(), Some("pub(self)"));
+    assert_eq!(visibility("scoped").as_deref(), Some("pub(in crate::util)"));
+    assert_eq!(
+        visibility("child_scoped").as_deref(),
+        Some("pub(in super::child)")
+    );
+    assert_eq!(visibility("crate_in").as_deref(), Some("pub(in crate)"));
+    assert_eq!(visibility("self_in").as_deref(), Some("pub(in self)"));
+    assert_eq!(visibility("super_in").as_deref(), Some("pub(in super)"));
+}
+
+#[test]
+fn non_rust_declarations_store_null_visibility() {
+    let python = symbols_for_path(Path::new("app.py"), "def load():\n    return 1\n");
+    assert!(python.iter().any(|symbol| symbol.name == "load"));
+    assert!(python.iter().all(|symbol| symbol.visibility.is_none()));
+
+    let go = symbols_for_path(Path::new("store.go"), "package store\n\nfunc Open() {}\n");
+    assert!(go.iter().any(|symbol| symbol.name == "Open"));
+    assert!(go.iter().all(|symbol| symbol.visibility.is_none()));
+}
+
+#[test]
 fn python_symbols_resolve_decorators_and_methods() {
     let content = "\
 import os

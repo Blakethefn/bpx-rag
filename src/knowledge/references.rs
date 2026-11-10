@@ -8,7 +8,7 @@ use rusqlite::{params, Connection};
 use crate::chunk::evidence::{Reference, STATUS_COMPLETE};
 
 /// Version of the reference index. A bump backfills references on the next sync.
-pub(crate) const REFERENCE_INDEX_VERSION: i64 = 1;
+pub(crate) const REFERENCE_INDEX_VERSION: i64 = 2;
 
 /// Replace one file's reference rows and stamp the file in the same way as symbols.
 ///

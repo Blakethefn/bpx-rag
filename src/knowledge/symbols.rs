@@ -13,7 +13,7 @@ use crate::chunk::Symbol;
 
 /// Version of the symbol index. Bump it when extraction changes what it writes. A bump
 /// backfills symbols on the next sync without re-chunking or re-embedding.
-pub(crate) const SYMBOL_INDEX_VERSION: i64 = 1;
+pub(crate) const SYMBOL_INDEX_VERSION: i64 = 2;
 
 /// Longest accepted name. Identifiers are far shorter, so a longer query is an error.
 const MAX_NAME_BYTES: usize = 256;
@@ -182,8 +182,8 @@ pub(crate) fn replace_file_symbols(
     if status == crate::chunk::evidence::STATUS_COMPLETE {
         let mut insert = conn.prepare_cached(
             "INSERT INTO knowledge_symbols
-                (source_id, file_id, name, kind, container, line_start, line_end)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+                (source_id, file_id, name, kind, container, line_start, line_end, visibility)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
         )?;
         for symbol in symbols {
             insert.execute(params![
@@ -193,7 +193,8 @@ pub(crate) fn replace_file_symbols(
                 symbol.kind,
                 symbol.container,
                 symbol.line_start,
-                symbol.line_end
+                symbol.line_end,
+                symbol.visibility,
             ])?;
         }
     }
