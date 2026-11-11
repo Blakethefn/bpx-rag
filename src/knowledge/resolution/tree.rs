@@ -380,7 +380,7 @@ impl Tree {
         self.symbols.iter().any(|symbol| {
             self.is_rust_file(symbol.file_id)
                 && symbol.visibility.as_deref() == Some("pub")
-                && !self.on_program_only(symbol.file_id)
+                && self.library_files.contains(&symbol.file_id)
         })
     }
 

@@ -15,7 +15,7 @@ use crate::chunk::evidence::STATUS_COMPLETE;
 
 mod seal;
 
-pub(crate) const ANALYSIS_VERSION: i64 = 4;
+pub(crate) const ANALYSIS_VERSION: i64 = 5;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct FileRow {

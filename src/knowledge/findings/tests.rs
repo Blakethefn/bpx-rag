@@ -1577,8 +1577,7 @@ fn an_example_and_a_bench_are_program_roots_and_a_test_child_keeps_pub() {
 
     let (status, _, _, gaps) = analysis(&store, "demo");
     assert_eq!(status, "complete");
-    assert!(gaps.contains("Cargo.toml:unsupported"), "{gaps}");
-    assert!(!gaps.contains("no_entry_points"), "{gaps}");
+    assert_eq!(gaps, "Cargo.toml:unsupported");
     let roots = entries(&store);
     assert!(
         has_entry(
