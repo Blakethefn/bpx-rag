@@ -1371,3 +1371,592 @@ fn a_parse_error_publishes_no_unreachable_file_for_an_undeclared_sibling() {
     );
     assert!(unused(&findings, "src/legacy.rs", "old"), "{findings:?}");
 }
+
+fn entries(store: &KnowledgeStore) -> Vec<(String, String, String)> {
+    let mut statement = store
+        .conn()
+        .prepare(
+            "SELECT kind, reason, COALESCE(target_rel_path, '')
+             FROM knowledge_entries
+             ORDER BY target_rel_path, kind, reason",
+        )
+        .unwrap();
+    statement
+        .query_map([], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))
+        .unwrap()
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap()
+}
+
+fn has_entry(entries: &[(String, String, String)], kind: &str, reason: &str, path: &str) -> bool {
+    entries
+        .iter()
+        .any(|(found_kind, found_reason, found_path)| {
+            found_kind == kind && found_reason == reason && found_path == path
+        })
+}
+
+#[test]
+fn an_implicit_lib_and_bin_split_pub_items_and_keep_a_library_child() {
+    let store = make_store();
+    let dir = tempdir().unwrap();
+    fs::create_dir(dir.path().join("src")).unwrap();
+    fs::write(
+        dir.path().join("Cargo.toml"),
+        "[package]\nname = \"demo\"\nversion = \"0.1.0\"\n",
+    )
+    .unwrap();
+    fs::write(
+        dir.path().join("src/lib.rs"),
+        "mod util;\npub fn library_item() {}\n",
+    )
+    .unwrap();
+    fs::write(
+        dir.path().join("src/util.rs"),
+        "// reached from the library\n",
+    )
+    .unwrap();
+    fs::write(
+        dir.path().join("src/main.rs"),
+        "pub fn bin_item() {}\nfn main() {}\n",
+    )
+    .unwrap();
+    register(&store, "demo", dir.path());
+    sync(&store, "demo");
+
+    let (status, _, _, gaps) = analysis(&store, "demo");
+    assert_eq!(status, "complete");
+    assert_eq!(gaps, "Cargo.toml:unsupported\nlimitation:public_api");
+    let roots = entries(&store);
+    assert!(
+        has_entry(
+            &roots,
+            "library_root",
+            "Cargo.toml implicit lib",
+            "src/lib.rs"
+        ),
+        "{roots:?}"
+    );
+    assert!(
+        has_entry(&roots, "program", "Cargo.toml implicit bin", "src/main.rs"),
+        "{roots:?}"
+    );
+    let findings = finding_rows(&store);
+    assert_eq!(findings.len(), 1, "{findings:?}");
+    assert!(
+        !unused(&findings, "src/lib.rs", "library_item"),
+        "{findings:?}"
+    );
+    assert!(unused(&findings, "src/main.rs", "bin_item"), "{findings:?}");
+    assert_eq!(file_reason(&findings, "src/util.rs"), None, "{findings:?}");
+    assert_eq!(file_reason(&findings, "src/lib.rs"), None, "{findings:?}");
+    assert_eq!(file_reason(&findings, "src/main.rs"), None, "{findings:?}");
+}
+
+#[test]
+fn a_parse_error_keeps_binary_pub_and_a_sealed_private_item_and_withholds_pub_crate() {
+    let store = make_store();
+    let dir = tempdir().unwrap();
+    fs::create_dir(dir.path().join("src")).unwrap();
+    fs::write(
+        dir.path().join("Cargo.toml"),
+        "[package]\nname = \"demo\"\nversion = \"0.1.0\"\n",
+    )
+    .unwrap();
+    fs::write(
+        dir.path().join("src/lib.rs"),
+        "mod util;\npub fn library_item() {}\n",
+    )
+    .unwrap();
+    fs::write(dir.path().join("src/util.rs"), "fn hidden() {}\n").unwrap();
+    fs::write(
+        dir.path().join("src/main.rs"),
+        "pub fn bin_item() {}\npub(crate) fn bin_crate() {}\nfn main() {}\n",
+    )
+    .unwrap();
+    fs::write(dir.path().join("src/other.rs"), "fn broken( {\n").unwrap();
+    register(&store, "demo", dir.path());
+    sync(&store, "demo");
+
+    let (status, _, _, gaps) = analysis(&store, "demo");
+    assert_eq!(status, "partial");
+    assert_eq!(
+        gaps,
+        "Cargo.toml:unsupported\nlimitation:public_api\nsrc/other.rs:parse_error\nsrc/other.rs:unsealed"
+    );
+    let findings = finding_rows(&store);
+    assert_eq!(findings.len(), 2, "{findings:?}");
+    assert!(unused(&findings, "src/util.rs", "hidden"), "{findings:?}");
+    assert!(unused(&findings, "src/main.rs", "bin_item"), "{findings:?}");
+    assert!(
+        !unused(&findings, "src/main.rs", "bin_crate"),
+        "{findings:?}"
+    );
+    assert!(
+        !unused(&findings, "src/lib.rs", "library_item"),
+        "{findings:?}"
+    );
+    assert!(
+        findings
+            .iter()
+            .all(|(_, kind, path, _, _)| kind != "unreachable_file" && path != "src/other.rs"),
+        "{findings:?}"
+    );
+}
+
+#[test]
+fn pub_super_is_reported_and_pub_in_paths_follow_their_scope() {
+    let store = make_store();
+    let dir = tempdir().unwrap();
+    fs::create_dir(dir.path().join("src")).unwrap();
+    fs::write(
+        dir.path().join("Cargo.toml"),
+        "[package]\nname = \"demo\"\nversion = \"0.1.0\"\n",
+    )
+    .unwrap();
+    fs::write(dir.path().join("src/lib.rs"), "mod util;\nmod other;\n").unwrap();
+    fs::write(
+        dir.path().join("src/util.rs"),
+        "pub(super) fn parent_scoped() {}\npub(in super::other) fn sibling_scoped() {}\npub(in crate::util) fn crate_scoped() {}\n",
+    )
+    .unwrap();
+    fs::write(dir.path().join("src/other.rs"), "// sealed scope\n").unwrap();
+    fs::write(dir.path().join("src/broken.rs"), "fn broken( {\n").unwrap();
+    register(&store, "demo", dir.path());
+    sync(&store, "demo");
+
+    let (status, _, _, gaps) = analysis(&store, "demo");
+    assert_eq!(status, "partial");
+    assert_eq!(
+        gaps,
+        "Cargo.toml:unsupported\nsrc/broken.rs:parse_error\nsrc/broken.rs:unsealed"
+    );
+    let findings = finding_rows(&store);
+    assert_eq!(findings.len(), 2, "{findings:?}");
+    assert!(
+        unused(&findings, "src/util.rs", "parent_scoped"),
+        "{findings:?}"
+    );
+    assert!(
+        unused(&findings, "src/util.rs", "sibling_scoped"),
+        "{findings:?}"
+    );
+    assert!(
+        !unused(&findings, "src/util.rs", "crate_scoped"),
+        "{findings:?}"
+    );
+}
+
+#[test]
+fn an_example_and_a_bench_are_program_roots_and_a_test_child_keeps_pub() {
+    let store = make_store();
+    let dir = tempdir().unwrap();
+    fs::create_dir_all(dir.path().join("examples/demo")).unwrap();
+    fs::create_dir_all(dir.path().join("benches")).unwrap();
+    fs::create_dir_all(dir.path().join("tests")).unwrap();
+    fs::write(
+        dir.path().join("Cargo.toml"),
+        "[package]\nname = \"demo\"\nversion = \"0.1.0\"\n",
+    )
+    .unwrap();
+    fs::write(
+        dir.path().join("examples/demo.rs"),
+        "mod helper;\n#[test]\nfn checks() {}\nfn idle() {}\n",
+    )
+    .unwrap();
+    fs::write(
+        dir.path().join("examples/demo/helper.rs"),
+        "// reached from the example\n",
+    )
+    .unwrap();
+    fs::write(dir.path().join("benches/work.rs"), "fn bench_idle() {}\n").unwrap();
+    fs::write(dir.path().join("tests/check.rs"), "mod util;\n").unwrap();
+    fs::write(dir.path().join("tests/util.rs"), "pub fn exported() {}\n").unwrap();
+    register(&store, "demo", dir.path());
+    sync(&store, "demo");
+
+    let (status, _, _, gaps) = analysis(&store, "demo");
+    assert_eq!(status, "complete");
+    assert!(gaps.contains("Cargo.toml:unsupported"), "{gaps}");
+    assert!(!gaps.contains("no_entry_points"), "{gaps}");
+    let roots = entries(&store);
+    assert!(
+        has_entry(
+            &roots,
+            "program",
+            "Cargo.toml implicit example",
+            "examples/demo.rs"
+        ),
+        "{roots:?}"
+    );
+    assert!(
+        has_entry(
+            &roots,
+            "program",
+            "Cargo.toml implicit bench",
+            "benches/work.rs"
+        ),
+        "{roots:?}"
+    );
+    assert!(
+        has_entry(&roots, "test", "Cargo.toml implicit test", "tests/check.rs"),
+        "{roots:?}"
+    );
+    assert!(
+        has_entry(&roots, "test", "Cargo.toml implicit test", "tests/util.rs"),
+        "{roots:?}"
+    );
+    assert!(
+        !has_entry(
+            &roots,
+            "program",
+            "Cargo.toml implicit example",
+            "examples/demo/helper.rs"
+        ),
+        "{roots:?}"
+    );
+    let findings = finding_rows(&store);
+    assert_eq!(findings.len(), 2, "{findings:?}");
+    assert!(
+        unused(&findings, "examples/demo.rs", "idle"),
+        "{findings:?}"
+    );
+    assert!(
+        !unused(&findings, "examples/demo.rs", "checks"),
+        "{findings:?}"
+    );
+    assert!(
+        unused(&findings, "benches/work.rs", "bench_idle"),
+        "{findings:?}"
+    );
+    assert!(
+        !unused(&findings, "tests/util.rs", "exported"),
+        "{findings:?}"
+    );
+    for path in [
+        "examples/demo.rs",
+        "examples/demo/helper.rs",
+        "benches/work.rs",
+        "tests/check.rs",
+        "tests/util.rs",
+    ] {
+        assert_eq!(file_reason(&findings, path), None, "{path}: {findings:?}");
+    }
+}
+
+#[test]
+fn a_test_root_alone_names_an_undeclared_file_and_skips_no_entry_points() {
+    let store = make_store();
+    let dir = tempdir().unwrap();
+    fs::create_dir_all(dir.path().join("tests")).unwrap();
+    fs::create_dir(dir.path().join("src")).unwrap();
+    fs::write(
+        dir.path().join("Cargo.toml"),
+        "[package]\nname = \"demo\"\nversion = \"0.1.0\"\n",
+    )
+    .unwrap();
+    fs::write(dir.path().join("tests/check.rs"), "// integration test\n").unwrap();
+    fs::write(dir.path().join("src/legacy.rs"), "fn old() {}\n").unwrap();
+    register(&store, "demo", dir.path());
+    sync(&store, "demo");
+
+    let (status, _, _, gaps) = analysis(&store, "demo");
+    assert_eq!(status, "complete");
+    assert_eq!(gaps, "Cargo.toml:unsupported");
+    let roots = entries(&store);
+    assert!(
+        has_entry(&roots, "test", "Cargo.toml implicit test", "tests/check.rs"),
+        "{roots:?}"
+    );
+    let findings = finding_rows(&store);
+    assert_eq!(findings.len(), 2, "{findings:?}");
+    assert_eq!(
+        file_reason(&findings, "src/legacy.rs"),
+        Some("not declared by a module"),
+        "{findings:?}"
+    );
+    assert_eq!(
+        file_reason(&findings, "tests/check.rs"),
+        None,
+        "{findings:?}"
+    );
+    assert!(unused(&findings, "src/legacy.rs", "old"), "{findings:?}");
+}
+
+#[test]
+fn an_explicit_lib_path_roots_that_file_and_leaves_src_lib_rs_undeclared() {
+    let store = make_store();
+    let dir = tempdir().unwrap();
+    fs::create_dir(dir.path().join("src")).unwrap();
+    fs::write(
+        dir.path().join("Cargo.toml"),
+        "[package]\nname = \"demo\"\nversion = \"0.1.0\"\n\n[lib]\npath = \"src/internal.rs\"\n",
+    )
+    .unwrap();
+    fs::write(dir.path().join("src/internal.rs"), "pub fn exported() {}\n").unwrap();
+    fs::write(dir.path().join("src/lib.rs"), "fn leftover() {}\n").unwrap();
+    register(&store, "demo", dir.path());
+    sync(&store, "demo");
+
+    let (status, _, _, gaps) = analysis(&store, "demo");
+    assert_eq!(status, "complete");
+    assert_eq!(gaps, "Cargo.toml:unsupported\nlimitation:public_api");
+    let roots = entries(&store);
+    assert!(
+        has_entry(&roots, "library_root", "Cargo.toml lib", "src/internal.rs"),
+        "{roots:?}"
+    );
+    assert!(
+        !roots.iter().any(|(_, _, path)| path == "src/lib.rs"),
+        "{roots:?}"
+    );
+    let findings = finding_rows(&store);
+    assert_eq!(findings.len(), 2, "{findings:?}");
+    assert_eq!(
+        file_reason(&findings, "src/internal.rs"),
+        None,
+        "{findings:?}"
+    );
+    assert_eq!(
+        file_reason(&findings, "src/lib.rs"),
+        Some("not declared by a module"),
+        "{findings:?}"
+    );
+    assert!(
+        !unused(&findings, "src/internal.rs", "exported"),
+        "{findings:?}"
+    );
+    assert!(unused(&findings, "src/lib.rs", "leftover"), "{findings:?}");
+}
+
+#[test]
+fn autotests_false_does_not_root_a_test_file_added_on_the_next_sync() {
+    let store = make_store();
+    let dir = tempdir().unwrap();
+    fs::create_dir(dir.path().join("src")).unwrap();
+    fs::write(
+        dir.path().join("Cargo.toml"),
+        "[package]\nname = \"demo\"\nversion = \"0.1.0\"\nautotests = false\n",
+    )
+    .unwrap();
+    fs::write(dir.path().join("src/lib.rs"), "// crate root\n").unwrap();
+    register(&store, "demo", dir.path());
+    sync(&store, "demo");
+
+    fs::create_dir(dir.path().join("tests")).unwrap();
+    fs::write(dir.path().join("tests/probe.rs"), "fn orphan() {}\n").unwrap();
+    sync(&store, "demo");
+
+    let (status, _, _, gaps) = analysis(&store, "demo");
+    assert_eq!(status, "complete");
+    assert_eq!(gaps, "Cargo.toml:unsupported");
+    let roots = entries(&store);
+    assert!(
+        !roots.iter().any(|(_, reason, path)| {
+            reason == "Cargo.toml implicit test" && path == "tests/probe.rs"
+        }),
+        "{roots:?}"
+    );
+    let findings = finding_rows(&store);
+    assert_eq!(findings.len(), 2, "{findings:?}");
+    assert_eq!(
+        file_reason(&findings, "tests/probe.rs"),
+        Some("not declared by a module"),
+        "{findings:?}"
+    );
+    assert!(
+        unused(&findings, "tests/probe.rs", "orphan"),
+        "{findings:?}"
+    );
+}
+
+#[test]
+fn deleting_an_implicit_bin_drops_its_entry_and_names_no_finding() {
+    let store = make_store();
+    let dir = tempdir().unwrap();
+    fs::create_dir_all(dir.path().join("src/bin")).unwrap();
+    fs::write(
+        dir.path().join("Cargo.toml"),
+        "[package]\nname = \"demo\"\nversion = \"0.1.0\"\n",
+    )
+    .unwrap();
+    fs::write(dir.path().join("src/lib.rs"), "// crate root\n").unwrap();
+    fs::write(dir.path().join("src/bin/tool.rs"), "fn orphan() {}\n").unwrap();
+    register(&store, "demo", dir.path());
+    sync(&store, "demo");
+
+    let before = entries(&store);
+    assert!(
+        has_entry(
+            &before,
+            "program",
+            "Cargo.toml implicit bin",
+            "src/bin/tool.rs"
+        ),
+        "{before:?}"
+    );
+
+    fs::remove_file(dir.path().join("src/bin/tool.rs")).unwrap();
+    sync(&store, "demo");
+
+    let (status, _, _, gaps) = analysis(&store, "demo");
+    assert_eq!(status, "complete");
+    assert_eq!(gaps, "Cargo.toml:unsupported");
+    let after = entries(&store);
+    assert!(
+        !after.iter().any(|(_, _, path)| path == "src/bin/tool.rs"),
+        "{after:?}"
+    );
+    let findings = finding_rows(&store);
+    assert!(findings.is_empty(), "{findings:?}");
+}
+
+#[test]
+fn a_file_on_both_the_library_and_the_bin_withholds_pub_and_reports_private() {
+    let store = make_store();
+    let dir = tempdir().unwrap();
+    fs::create_dir(dir.path().join("src")).unwrap();
+    fs::write(
+        dir.path().join("Cargo.toml"),
+        "[package]\nname = \"demo\"\nversion = \"0.1.0\"\n",
+    )
+    .unwrap();
+    fs::write(dir.path().join("src/lib.rs"), "mod shared;\n").unwrap();
+    fs::write(
+        dir.path().join("src/main.rs"),
+        "mod shared;\nfn main() {}\n",
+    )
+    .unwrap();
+    fs::write(
+        dir.path().join("src/shared.rs"),
+        "pub fn exported() {}\nfn hidden() {}\n",
+    )
+    .unwrap();
+    register(&store, "demo", dir.path());
+    sync(&store, "demo");
+
+    let (status, _, _, gaps) = analysis(&store, "demo");
+    assert_eq!(status, "complete");
+    assert_eq!(gaps, "Cargo.toml:unsupported\nlimitation:public_api");
+    let findings = finding_rows(&store);
+    assert_eq!(findings.len(), 1, "{findings:?}");
+    assert_eq!(
+        file_reason(&findings, "src/shared.rs"),
+        None,
+        "{findings:?}"
+    );
+    assert!(
+        !unused(&findings, "src/shared.rs", "exported"),
+        "{findings:?}"
+    );
+    assert!(unused(&findings, "src/shared.rs", "hidden"), "{findings:?}");
+}
+
+#[test]
+fn a_cfg_gated_mod_still_reaches_the_file() {
+    let store = make_store();
+    let dir = tempdir().unwrap();
+    fs::create_dir(dir.path().join("src")).unwrap();
+    fs::write(
+        dir.path().join("Cargo.toml"),
+        "[package]\nname = \"demo\"\nversion = \"0.1.0\"\n",
+    )
+    .unwrap();
+    fs::write(
+        dir.path().join("src/lib.rs"),
+        "#[cfg(feature = \"missing\")]\nmod util;\n",
+    )
+    .unwrap();
+    fs::write(dir.path().join("src/util.rs"), "fn hidden() {}\n").unwrap();
+    register(&store, "demo", dir.path());
+    sync(&store, "demo");
+
+    let (status, _, _, gaps) = analysis(&store, "demo");
+    assert_eq!(status, "complete");
+    assert_eq!(gaps, "Cargo.toml:unsupported");
+    let findings = finding_rows(&store);
+    assert_eq!(findings.len(), 1, "{findings:?}");
+    assert_eq!(file_reason(&findings, "src/util.rs"), None, "{findings:?}");
+    assert!(unused(&findings, "src/util.rs", "hidden"), "{findings:?}");
+}
+
+#[test]
+fn a_module_alias_leaves_the_called_function_unused() {
+    let store = make_store();
+    let dir = tempdir().unwrap();
+    fs::create_dir(dir.path().join("src")).unwrap();
+    fs::write(
+        dir.path().join("src/main.rs"),
+        "mod a;\nuse crate::a as other;\nfn main() { other::helper(); }\n",
+    )
+    .unwrap();
+    fs::write(dir.path().join("src/a.rs"), "pub(crate) fn helper() {}\n").unwrap();
+    register(&store, "demo", dir.path());
+    sync(&store, "demo");
+
+    let (status, _, _, gaps) = analysis(&store, "demo");
+    assert_eq!(status, "complete");
+    assert_eq!(gaps, "");
+    let helper = resolutions(&store, "helper");
+    assert!(
+        helper
+            .iter()
+            .all(|(found, symbol, _)| found == "unresolved" && symbol.is_none()),
+        "{helper:?}"
+    );
+    assert!(!helper.is_empty(), "{helper:?}");
+    let findings = finding_rows(&store);
+    assert_eq!(findings.len(), 1, "{findings:?}");
+    assert!(unused(&findings, "src/a.rs", "helper"), "{findings:?}");
+}
+
+#[test]
+fn a_doc_comment_between_the_test_attribute_and_the_function_reports_it() {
+    let store = make_store();
+    let dir = tempdir().unwrap();
+    fs::create_dir(dir.path().join("src")).unwrap();
+    fs::write(
+        dir.path().join("src/main.rs"),
+        "fn main() {}\n#[test]\n/// documents the check\nfn checks() {}\n",
+    )
+    .unwrap();
+    register(&store, "demo", dir.path());
+    sync(&store, "demo");
+
+    let (status, _, _, gaps) = analysis(&store, "demo");
+    assert_eq!(status, "complete");
+    assert_eq!(gaps, "");
+    let test_entries = entries(&store)
+        .into_iter()
+        .filter(|(kind, reason, path)| {
+            kind == "test" && path == "src/main.rs" && reason.contains("checks")
+        })
+        .count();
+    assert_eq!(test_entries, 0);
+    let findings = finding_rows(&store);
+    assert_eq!(findings.len(), 1, "{findings:?}");
+    assert!(unused(&findings, "src/main.rs", "checks"), "{findings:?}");
+}
+
+#[test]
+fn a_markdown_only_source_stays_complete_and_has_no_findings() {
+    let store = make_store();
+    let dir = tempdir().unwrap();
+    fs::create_dir(dir.path().join("docs")).unwrap();
+    fs::write(dir.path().join("README.md"), "# Notes\n").unwrap();
+    fs::write(dir.path().join("docs/guide.md"), "A guide.\n").unwrap();
+    register(&store, "demo", dir.path());
+    sync(&store, "demo");
+
+    let (status, _, _, gaps) = analysis(&store, "demo");
+    assert_eq!(status, "complete");
+    assert_eq!(
+        gaps,
+        "README.md:unsupported\ndocs/guide.md:unsupported\nno_entry_points"
+    );
+    assert!(
+        finding_rows(&store).is_empty(),
+        "{:?}",
+        finding_rows(&store)
+    );
+}
