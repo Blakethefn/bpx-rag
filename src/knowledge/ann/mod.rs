@@ -3,32 +3,25 @@
 //! SQLite remains the source of truth. This index is a derived candidate
 //! generator; every returned row ID is rechecked and exactly re-ranked in SQL.
 
-use anyhow::{anyhow, Context, Result};
-use rusqlite::{params, Connection, OptionalExtension};
-use serde::{Deserialize, Serialize};
-use sha2::{Digest, Sha256};
-use std::collections::HashSet;
-use std::fs;
-use std::path::{Path, PathBuf};
-use usearch::{Index, IndexOptions, MetricKind, ScalarKind};
-
+#[cfg(test)]
 use crate::embed;
 
-const SIDECAR_VERSION: u32 = 1;
+use anyhow::{anyhow, Result};
+use rusqlite::{params, Connection};
+use std::collections::HashSet;
+use std::path::Path;
+use usearch::Index;
+
+mod build;
+mod sidecar;
+
+use build::{apply_incremental_changes, build_index};
+use sidecar::{load_sidecar, save_sidecar};
+
 const ANN_MIN_VECTORS: usize = 4_096;
 const ANN_MAX_CANDIDATES: usize = 8_192;
 const ANN_CANDIDATE_MULTIPLIER: usize = 512;
 const SMALL_FILTER_EXACT_LIMIT: usize = 512;
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-struct Manifest {
-    version: u32,
-    database_id: String,
-    model_id: String,
-    dimensions: usize,
-    generation: i64,
-    tombstones: usize,
-}
 
 pub struct VectorIndex {
     index: Index,
@@ -168,263 +161,6 @@ pub fn active_vector_count(conn: &Connection, model_id: &str) -> Result<usize> {
         |row| row.get(0),
     )?;
     Ok(count.max(0) as usize)
-}
-
-fn build_index(
-    conn: &Connection,
-    model_id: &str,
-    dimensions: usize,
-    capacity: usize,
-) -> Result<Index> {
-    let options = IndexOptions {
-        dimensions,
-        metric: MetricKind::Cos,
-        quantization: ScalarKind::F32,
-        connectivity: 16,
-        expansion_add: 128,
-        expansion_search: 1_024,
-        multi: false,
-    };
-    let index =
-        Index::new(&options).map_err(|error| anyhow!("failed to create HNSW index: {error}"))?;
-    index
-        .reserve(capacity)
-        .map_err(|error| anyhow!("failed to reserve HNSW index capacity: {error}"))?;
-
-    let mut statement = conn.prepare(
-        "SELECT chunk_rowid, embedding, dim
-         FROM knowledge_embeddings
-         WHERE model_id = ?1
-         ORDER BY chunk_rowid",
-    )?;
-    let rows = statement.query_map(params![model_id], |row| {
-        Ok((
-            row.get::<_, i64>(0)?,
-            row.get::<_, Vec<u8>>(1)?,
-            row.get::<_, i64>(2)?,
-        ))
-    })?;
-    for row in rows {
-        let (rowid, bytes, stored_dimensions) = row?;
-        if rowid <= 0 || stored_dimensions as usize != dimensions || bytes.len() != dimensions * 4 {
-            anyhow::bail!("invalid embedding row {rowid} in model {model_id}");
-        }
-        let vector = embed::bytes_to_embedding(&bytes);
-        if vector.len() != dimensions || vector.iter().any(|value| !value.is_finite()) {
-            anyhow::bail!("invalid vector contents for embedding row {rowid}");
-        }
-        index
-            .add(rowid as u64, &vector)
-            .map_err(|error| anyhow!("failed to add row {rowid} to HNSW index: {error}"))?;
-    }
-    Ok(index)
-}
-
-fn apply_incremental_changes(
-    conn: &Connection,
-    index: &Index,
-    model_id: &str,
-    dimensions: usize,
-    from_generation: i64,
-    to_generation: i64,
-    previous_tombstones: usize,
-    expected_size: usize,
-) -> Result<Option<usize>> {
-    let (first_change, change_count): (Option<i64>, i64) = conn.query_row(
-        "SELECT MIN(change_id), COUNT(*) FROM knowledge_embedding_changes
-         WHERE change_id > ?1 AND change_id <= ?2",
-        params![from_generation, to_generation],
-        |row| Ok((row.get(0)?, row.get(1)?)),
-    )?;
-    if change_count == 0 || first_change != Some(from_generation + 1) {
-        return Ok(None);
-    }
-    let full_rebuild_threshold = (expected_size / 4).max(2_048);
-    if change_count as usize > full_rebuild_threshold {
-        return Ok(None);
-    }
-
-    if index.capacity() < expected_size {
-        index
-            .reserve(expected_size)
-            .map_err(|error| anyhow!("failed to grow HNSW capacity to {expected_size}: {error}"))?;
-    }
-
-    let rowids = {
-        let mut statement = conn.prepare(
-            "SELECT DISTINCT chunk_rowid FROM knowledge_embedding_changes
-             WHERE change_id > ?1 AND change_id <= ?2",
-        )?;
-        let rows = statement
-            .query_map(params![from_generation, to_generation], |row| {
-                row.get::<_, i64>(0)
-            })?
-            .collect::<rusqlite::Result<Vec<_>>>()?;
-        rows
-    };
-    let mut tombstones = previous_tombstones;
-    for rowid in rowids {
-        if rowid <= 0 {
-            return Ok(None);
-        }
-        tombstones += index
-            .remove(rowid as u64)
-            .map_err(|error| anyhow!("failed to remove row {rowid} from HNSW: {error}"))?;
-        let current: Option<(Vec<u8>, i64)> = conn
-            .query_row(
-                "SELECT embedding, dim FROM knowledge_embeddings
-                 WHERE chunk_rowid = ?1 AND model_id = ?2",
-                params![rowid, model_id],
-                |row| Ok((row.get(0)?, row.get(1)?)),
-            )
-            .optional()?;
-        if let Some((bytes, stored_dimension)) = current {
-            if stored_dimension as usize != dimensions || bytes.len() != dimensions * 4 {
-                return Ok(None);
-            }
-            let vector = embed::bytes_to_embedding(&bytes);
-            if vector.len() != dimensions || vector.iter().any(|value| !value.is_finite()) {
-                return Ok(None);
-            }
-            index
-                .add(rowid as u64, &vector)
-                .map_err(|error| anyhow!("failed to update row {rowid} in HNSW: {error}"))?;
-        }
-    }
-    if index.size() != expected_size {
-        return Ok(None);
-    }
-    Ok(Some(tombstones))
-}
-
-fn load_sidecar(
-    dir: &Path,
-    model_id: &str,
-    dimensions: usize,
-    generation: i64,
-    database_id: &str,
-) -> Result<Option<(Index, Manifest)>> {
-    let manifest_path = manifest_path(dir, model_id)?;
-    let Ok(manifest_bytes) = fs::read(&manifest_path) else {
-        return Ok(None);
-    };
-    let Ok(manifest) = serde_json::from_slice::<Manifest>(&manifest_bytes) else {
-        return Ok(None);
-    };
-    if manifest.version != SIDECAR_VERSION
-        || manifest.model_id != model_id
-        || manifest.dimensions != dimensions
-        || manifest.generation > generation
-        || manifest.database_id != database_id
-    {
-        return Ok(None);
-    }
-    let index_path = index_path(dir, model_id, database_id, manifest.generation)?;
-    if !index_path.is_file() {
-        return Ok(None);
-    }
-    match Index::restore(&index_path.to_string_lossy()) {
-        Ok(index)
-            if index.dimensions() == dimensions
-                && index.metric_kind() == MetricKind::Cos
-                && index.scalar_kind() == ScalarKind::F32 =>
-        {
-            Ok(Some((index, manifest)))
-        }
-        Ok(_) => Ok(None),
-        Err(error) => {
-            eprintln!("[bpx-rag] ignoring invalid HNSW sidecar: {error}");
-            Ok(None)
-        }
-    }
-}
-
-fn save_sidecar(
-    dir: &Path,
-    index: &Index,
-    model_id: &str,
-    dimensions: usize,
-    generation: i64,
-    database_id: &str,
-    tombstones: usize,
-) -> Result<()> {
-    fs::create_dir_all(dir)
-        .with_context(|| format!("failed to create ANN sidecar directory {}", dir.display()))?;
-    let path = index_path(dir, model_id, database_id, generation)?;
-    let temporary_path = sidecar_temp_path(&path);
-    index
-        .save(&temporary_path.to_string_lossy())
-        .map_err(|error| anyhow!("failed to save HNSW sidecar: {error}"))?;
-    fs::rename(&temporary_path, &path)
-        .with_context(|| format!("failed to install ANN sidecar {}", path.display()))?;
-
-    let manifest = Manifest {
-        version: SIDECAR_VERSION,
-        database_id: database_id.to_string(),
-        model_id: model_id.to_string(),
-        dimensions,
-        generation,
-        tombstones,
-    };
-    let manifest_path = manifest_path(dir, model_id)?;
-    let temporary_manifest_path = sidecar_temp_path(&manifest_path);
-    fs::write(&temporary_manifest_path, serde_json::to_vec(&manifest)?)?;
-    fs::rename(&temporary_manifest_path, &manifest_path).with_context(|| {
-        format!(
-            "failed to install ANN sidecar manifest {}",
-            manifest_path.display()
-        )
-    })?;
-    remove_old_sidecars(dir, model_id, &path)?;
-    Ok(())
-}
-
-fn model_hash(model_id: &str) -> String {
-    format!("{:x}", Sha256::digest(model_id.as_bytes()))
-}
-
-fn manifest_path(dir: &Path, model_id: &str) -> Result<PathBuf> {
-    Ok(dir.join(format!("{}.manifest.json", model_hash(model_id))))
-}
-
-fn index_path(dir: &Path, model_id: &str, database_id: &str, generation: i64) -> Result<PathBuf> {
-    Ok(dir.join(format!(
-        "{}-{}-{}.usearch",
-        model_hash(model_id),
-        &database_id[..database_id.len().min(12)],
-        generation
-    )))
-}
-
-fn sidecar_temp_path(path: &Path) -> PathBuf {
-    let name = path
-        .file_name()
-        .and_then(|name| name.to_str())
-        .unwrap_or("index");
-    path.with_file_name(format!("{name}.tmp-{}", std::process::id()))
-}
-
-fn remove_old_sidecars(dir: &Path, model_id: &str, current: &Path) -> Result<()> {
-    let prefix = model_hash(model_id);
-    for entry in fs::read_dir(dir)? {
-        let entry = entry?;
-        let path = entry.path();
-        if path == current {
-            continue;
-        }
-        let Some(name) = path.file_name().and_then(|name| name.to_str()) else {
-            continue;
-        };
-        if name.starts_with(&prefix) && name.ends_with(".usearch") {
-            if let Err(error) = fs::remove_file(&path) {
-                eprintln!(
-                    "[bpx-rag] could not remove stale ANN sidecar {}: {error}",
-                    path.display()
-                );
-            }
-        }
-    }
-    Ok(())
 }
 
 #[cfg(test)]

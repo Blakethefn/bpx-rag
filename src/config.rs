@@ -3,22 +3,13 @@ use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum EmbeddingDevice {
-    #[default]
-    Cpu,
-    Cuda,
-}
+mod search;
+mod embeddings;
+mod knowledge;
 
-impl EmbeddingDevice {
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::Cpu => "cpu",
-            Self::Cuda => "cuda",
-        }
-    }
-}
+pub use search::SearchConfig;
+pub use embeddings::{EmbeddingDevice, EmbeddingsConfig};
+pub use knowledge::{ContextConfig, KnowledgeConfig};
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Config {
@@ -46,57 +37,8 @@ pub struct GeneralConfig {
     pub preview_threshold_bytes: usize,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
-pub struct SearchConfig {
-    /// Max results per query (default 15)
-    pub default_limit: u32,
-    /// Max searches per throttle window (default 8)
-    pub throttle_max: u32,
-    /// Throttle window in seconds (default 60)
-    pub throttle_window_secs: u64,
-    /// Max bytes per snippet for top results (default 2000)
-    #[serde(default = "default_snippet_bytes")]
-    pub snippet_bytes: usize,
-    /// Max bytes per snippet for lower-ranked results (default 800)
-    #[serde(default = "default_secondary_snippet_bytes")]
-    pub secondary_snippet_bytes: usize,
-    /// Number of top-ranked results that get the larger snippet size (default 3)
-    #[serde(default = "default_top_result_count")]
-    pub top_result_count: usize,
-    /// Linked files from the top hit's relations to merge into default results;
-    /// 0 turns relation neighbors off (default 2)
-    #[serde(default = "default_relation_neighbors")]
-    pub relation_neighbors: usize,
-    /// Multiplier for vector (semantic) RRF scores (default 1.0)
-    #[serde(default = "default_weight")]
-    pub vector_weight: f64,
-    /// Multiplier for keyword (BM25/trigram/fuzzy) RRF scores (default 1.0)
-    #[serde(default = "default_weight")]
-    pub keyword_weight: f64,
-}
-
 fn default_preview_threshold_bytes() -> usize {
     8192
-}
-
-fn default_snippet_bytes() -> usize {
-    2000
-}
-
-fn default_secondary_snippet_bytes() -> usize {
-    800
-}
-
-fn default_top_result_count() -> usize {
-    3
-}
-
-fn default_relation_neighbors() -> usize {
-    crate::knowledge::links::RELATION_NEIGHBOR_LIMIT
-}
-
-fn default_weight() -> f64 {
-    1.0
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -119,143 +61,6 @@ pub struct CleanupConfig {
     pub stale_db_days: u64,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
-#[serde(default)]
-pub struct EmbeddingsConfig {
-    /// Model alias: all-MiniLM-L6-v2 or jina-embeddings-v2-base-code.
-    pub model: String,
-    /// Directory for storing downloaded models
-    pub model_dir: String,
-    /// Batch size for embedding generation (default 16)
-    pub batch_size: usize,
-    /// ONNX Runtime intra-op CPU threads (default: available logical CPUs).
-    #[serde(default = "default_embedding_threads")]
-    pub intra_threads: usize,
-    /// Inference provider. CUDA requires a `gpu-cuda` build and compatible runtime libraries.
-    pub device: EmbeddingDevice,
-    /// Enable/disable embedding generation (default true)
-    pub enabled: bool,
-    /// Query embeddings kept in memory for repeated searches. 0 disables the cache (default 256).
-    #[serde(default = "default_query_cache_entries")]
-    pub query_cache_entries: usize,
-}
-
-fn default_query_cache_entries() -> usize {
-    crate::embed::cache::DEFAULT_CAPACITY
-}
-
-fn default_embedding_threads() -> usize {
-    std::thread::available_parallelism()
-        .map(usize::from)
-        .unwrap_or(1)
-        .clamp(1, 256)
-}
-
-impl Default for EmbeddingsConfig {
-    fn default() -> Self {
-        let model_dir = dirs::data_local_dir()
-            .map(|d| {
-                d.join(crate::db::APP_NAME)
-                    .join("models")
-                    .to_string_lossy()
-                    .to_string()
-            })
-            .unwrap_or_else(|| "~/.local/share/bpx-rag/models".to_string());
-
-        Self {
-            model: "jina-embeddings-v2-base-code".to_string(),
-            model_dir,
-            batch_size: 16,
-            intra_threads: default_embedding_threads(),
-            device: EmbeddingDevice::Cpu,
-            enabled: true,
-            query_cache_entries: default_query_cache_entries(),
-        }
-    }
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct ContextConfig {
-    /// Estimated context window budget in tokens (default 200,000)
-    pub budget_tokens: u64,
-    /// Minutes before a returned chunk is considered stale (default 30)
-    pub stale_threshold_minutes: u64,
-    /// Relevance weight for recency (default 0.4)
-    #[serde(default = "default_recency_weight")]
-    pub recency_weight: f64,
-    /// Relevance weight for access frequency (default 0.3)
-    #[serde(default = "default_frequency_weight")]
-    pub frequency_weight: f64,
-    /// Relevance weight for staleness penalty (default 0.3)
-    #[serde(default = "default_staleness_weight")]
-    pub staleness_weight: f64,
-}
-
-fn default_recency_weight() -> f64 {
-    0.4
-}
-fn default_frequency_weight() -> f64 {
-    0.3
-}
-fn default_staleness_weight() -> f64 {
-    0.3
-}
-
-impl Default for ContextConfig {
-    fn default() -> Self {
-        Self {
-            budget_tokens: 200_000,
-            stale_threshold_minutes: 30,
-            recency_weight: 0.4,
-            frequency_weight: 0.3,
-            staleness_weight: 0.3,
-        }
-    }
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct KnowledgeConfig {
-    #[serde(default = "default_knowledge_enabled")]
-    pub enabled: bool,
-    /// Override the default knowledge DB location.
-    #[serde(default)]
-    pub db_path: Option<String>,
-    /// Minutes before a source is considered stale and re-synced (default 60).
-    #[serde(default = "default_sync_stale_minutes")]
-    pub sync_stale_minutes: u64,
-    /// Sources defined in config (synced automatically on first knowledge tool call).
-    #[serde(default)]
-    pub sources: Vec<KnowledgeSourceConfig>,
-}
-
-fn default_knowledge_enabled() -> bool {
-    true
-}
-
-fn default_sync_stale_minutes() -> u64 {
-    60
-}
-
-impl Default for KnowledgeConfig {
-    fn default() -> Self {
-        Self {
-            enabled: true,
-            db_path: None,
-            sync_stale_minutes: 60,
-            sources: Vec::new(),
-        }
-    }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct KnowledgeSourceConfig {
-    pub label: String,
-    pub path: String,
-    pub glob: Option<String>,
-    #[serde(default)]
-    pub enrichments: Vec<String>,
-}
-
 impl Default for Config {
     fn default() -> Self {
         Self {
@@ -268,10 +73,10 @@ impl Default for Config {
                 default_limit: 15,
                 throttle_max: 8,
                 throttle_window_secs: 60,
-                snippet_bytes: default_snippet_bytes(),
-                secondary_snippet_bytes: default_secondary_snippet_bytes(),
-                top_result_count: default_top_result_count(),
-                relation_neighbors: default_relation_neighbors(),
+                snippet_bytes: search::default_snippet_bytes(),
+                secondary_snippet_bytes: search::default_secondary_snippet_bytes(),
+                top_result_count: search::default_top_result_count(),
+                relation_neighbors: search::default_relation_neighbors(),
                 vector_weight: 1.0,
                 keyword_weight: 1.0,
             },

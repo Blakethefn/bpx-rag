@@ -1,6 +1,7 @@
 mod app;
 mod chunk;
 mod cli;
+mod commands;
 mod config;
 mod db;
 mod embed;
@@ -17,11 +18,7 @@ use clap::Parser;
 use std::path::PathBuf;
 
 use app::{RagApp, SearchOptions};
-use cli::{
-    Cli, Commands, EvalAction, ModelsAction, PoolAction, PoolCreateArgs, PoolImportArgs,
-    WatchAction,
-};
-use knowledge::query::SearchWeights;
+use cli::{Cli, Commands, ModelsAction, WatchAction};
 
 fn main() -> Result<()> {
     let cli = Cli::parse();
@@ -97,9 +94,9 @@ fn main() -> Result<()> {
         | Commands::Remove { .. }
         | Commands::Read { .. }
         | Commands::Embed { .. }
-        | Commands::Scrub { .. } => run_sources(command),
+        | Commands::Scrub { .. } => commands::run_sources(command),
         Commands::Models { action } => run_models(action),
-        Commands::Eval { action } => run_evaluation(action),
+        Commands::Eval { action } => commands::run_evaluation(action),
     }
 }
 
@@ -128,159 +125,6 @@ fn run_watch(action: WatchAction) -> Result<()> {
             Ok(())
         }
     }
-}
-
-fn run_evaluation(action: EvalAction) -> Result<()> {
-    match action {
-        EvalAction::Retrieval {
-            repetitions,
-            keyword_weight,
-            vector_weight,
-            dataset,
-            corpus_root,
-            layer_policy,
-        } => {
-            let report = eval::run_retrieval_evaluation(
-                repetitions,
-                dataset.as_deref(),
-                corpus_root.as_deref(),
-                SearchWeights {
-                    keyword_weight,
-                    vector_weight,
-                },
-                layer_policy,
-            )?;
-            println!("{}", serde_json::to_string_pretty(&report)?);
-            if report.filter_leaks > 0
-                || report.citation_validity < 1.0
-                || !report.citation_content_mismatches.is_empty()
-            {
-                return Err(anyhow!(
-                    "retrieval evaluation found {} filter leaks, citation validity {:.3}, and {} snippet/source mismatches",
-                    report.filter_leaks,
-                    report.citation_validity,
-                    report.citation_content_mismatches.len()
-                ));
-            }
-        }
-        EvalAction::Scaling { repetitions } => {
-            let report = eval::run_scaling_evaluation(repetitions)?;
-            println!("{}", serde_json::to_string_pretty(&report)?);
-        }
-        EvalAction::Embeddings {
-            corpus_root,
-            glob,
-            threads,
-            batch_sizes,
-            repetitions,
-            max_chunks,
-        } => {
-            let report = eval::run_embedding_benchmark(
-                &corpus_root,
-                glob.as_deref(),
-                threads.as_deref().unwrap_or(&[]),
-                &batch_sizes,
-                repetitions,
-                max_chunks,
-            )?;
-            println!("{}", serde_json::to_string_pretty(&report)?);
-        }
-        EvalAction::Pool(pool) => match pool.resolve()? {
-            PoolAction::Create(args) => generate_pool(args)?,
-            PoolAction::Import(args) => import_pool(args)?,
-        },
-        EvalAction::ImportPool(args) => import_pool(args)?,
-    }
-    Ok(())
-}
-
-fn run_sources(command: Commands) -> Result<()> {
-    let mut app = RagApp::open()?;
-    match command {
-        Commands::Add {
-            path,
-            label,
-            include,
-            exclude,
-            enrich,
-        } => println!(
-            "{}",
-            app.add_source(&path, &label, &include, &exclude, &enrich)?
-        ),
-        Commands::Sync { label } => {
-            let results = app.sync_sources(label.as_deref())?;
-            if results.is_empty() {
-                println!("No knowledge sources are registered.");
-            } else {
-                for result in &results {
-                    println!("{}", app::format_sync_result(result));
-                }
-            }
-        }
-        Commands::Status => println!("{}", app.source_status()?),
-        Commands::Remove { label } => {
-            let result = app.remove_source(&label)?;
-            println!(
-                "Removed source '{label}' ({} files, {} chunks).",
-                result.files_removed, result.chunks_removed
-            );
-        }
-        Commands::Embed { label } => {
-            let report = app.backfill_embeddings(label.as_deref())?;
-            println!("{}", report.summary());
-        }
-        Commands::Scrub { label } => {
-            let report = app.scrub_sensitive_index(label.as_deref())?;
-            println!("{}", report.summary());
-        }
-        Commands::Read {
-            label,
-            max_chunks,
-            path,
-            line_start,
-            line_end,
-        } => {
-            println!(
-                "{}",
-                app.read_chunks(&label, max_chunks, path.as_deref(), line_start, line_end,)?
-            );
-        }
-        _ => {
-            return Err(anyhow!(
-                "internal error: non-source command routed to run_sources"
-            ))
-        }
-    }
-    Ok(())
-}
-
-fn generate_pool(args: PoolCreateArgs) -> Result<()> {
-    let report = eval::generate_judgment_pool(
-        args.dataset.as_deref(),
-        args.corpus_root.as_deref(),
-        &args.output,
-        &args.key_output,
-        args.depth,
-        args.seed,
-    )?;
-    println!("{}", serde_json::to_string_pretty(&report)?);
-    Ok(())
-}
-
-fn import_pool(args: PoolImportArgs) -> Result<()> {
-    let imported = eval::import_judgment_pool(
-        &args.pool,
-        &args.key,
-        &args.dataset,
-        &args.corpus_root,
-        &args.output,
-    )?;
-    println!(
-        "Imported {} explicit relevance grades into {}.",
-        imported,
-        args.output.display()
-    );
-    Ok(())
 }
 
 fn run_models(action: ModelsAction) -> Result<()> {
