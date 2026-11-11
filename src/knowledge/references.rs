@@ -11,7 +11,8 @@ use crate::chunk::evidence::{Reference, STATUS_COMPLETE};
 ///
 /// Version 3 puts the function name in a `#[test]` entry reason so two tests in one file stay
 /// distinct, and so unused-symbol analysis can see which function the attribute names.
-pub(crate) const REFERENCE_INDEX_VERSION: i64 = 3;
+/// Version 4 adds implicit Cargo layout roots as entry rows on the manifest.
+pub(crate) const REFERENCE_INDEX_VERSION: i64 = 4;
 
 /// Replace one file's reference rows and stamp the file in the same way as symbols.
 ///

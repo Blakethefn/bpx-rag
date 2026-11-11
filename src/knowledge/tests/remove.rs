@@ -216,7 +216,7 @@ fn removing_a_source_drops_evidence_resolutions_analysis_and_findings() {
     let dir = tempdir().unwrap();
     fs::write(
         dir.path().join("lib.rs"),
-        "pub fn alpha() { beta(); }\npub fn beta() {}\n",
+        "pub fn alpha() { beta(); }\npub fn beta() {}\nfn unused() {}\n",
     )
     .unwrap();
     register(&store, "demo", dir.path());

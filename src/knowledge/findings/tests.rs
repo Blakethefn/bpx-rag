@@ -87,7 +87,7 @@ fn resolutions(
 }
 
 #[test]
-fn mutual_imports_are_unreachable_and_a_module_import_does_not_use_functions() {
+fn mutual_imports_without_a_package_record_no_entry_points() {
     let store = make_store();
     let dir = tempdir().unwrap();
     fs::write(dir.path().join("a.rs"), "mod b;\npub fn only_a() {}\n").unwrap();
@@ -95,24 +95,17 @@ fn mutual_imports_are_unreachable_and_a_module_import_does_not_use_functions() {
     register(&store, "demo", dir.path());
     sync(&store, "demo");
 
-    let (status, _, _, _) = analysis(&store, "demo");
+    let (status, _, _, gaps) = analysis(&store, "demo");
     assert_eq!(status, "complete");
+    assert!(
+        gaps.split('\n').any(|line| line == "no_entry_points"),
+        "{gaps}"
+    );
     let findings = finding_rows(&store);
     assert!(
-        findings.iter().any(|(_, kind, path, symbol, reason)| {
-            kind == "unreachable_file"
-                && path == "a.rs"
-                && symbol.is_none()
-                && reason == "not reached from program or library_root"
-        }),
-        "{findings:?}"
-    );
-    assert!(
-        findings.iter().any(|(_, kind, path, _, reason)| {
-            kind == "unreachable_file"
-                && path == "b.rs"
-                && reason == "not reached from program or library_root"
-        }),
+        !findings
+            .iter()
+            .any(|(_, kind, _, _, _)| kind == "unreachable_file"),
         "{findings:?}"
     );
     assert!(
@@ -217,32 +210,32 @@ fn an_unimported_call_resolves_to_neither_private_helper_and_a_called_function_s
 }
 
 #[test]
-fn a_file_reached_only_from_a_test_entry_says_so() {
+fn a_file_reached_only_from_a_test_root_is_not_an_unused_file() {
     let store = make_store();
     let dir = tempdir().unwrap();
+    fs::create_dir_all(dir.path().join("src")).unwrap();
+    fs::create_dir_all(dir.path().join("tests")).unwrap();
     fs::write(
-        dir.path().join("lib.rs"),
-        "#[test]\nfn checks_helper() { helper(); }\n",
+        dir.path().join("Cargo.toml"),
+        "[package]\nname = \"demo\"\nversion = \"0.1.0\"\n",
     )
     .unwrap();
-    fs::write(dir.path().join("util.rs"), "pub fn helper() {}\n").unwrap();
-    // The test file does not import util.rs, so give the test a module reference.
+    // The library root is a membership root elsewhere. It does not declare util.rs.
+    fs::write(dir.path().join("src/lib.rs"), "// crate root\n").unwrap();
     fs::write(
-        dir.path().join("lib.rs"),
-        "mod util;\n#[test]\nfn checks_helper() { helper(); }\n",
+        dir.path().join("tests/checks.rs"),
+        "#[path = \"util.rs\"]\nmod util;\n#[test]\nfn checks_helper() {}\n",
     )
     .unwrap();
+    fs::write(dir.path().join("tests/util.rs"), "pub fn helper() {}\n").unwrap();
     register(&store, "demo", dir.path());
     sync(&store, "demo");
 
     let findings = finding_rows(&store);
     assert!(
-        findings.iter().any(|(_, kind, path, _, reason)| {
-            kind == "unreachable_file"
-                && path == "util.rs"
-                && reason.starts_with("reachable only from test entries")
-                && reason.contains("lib.rs")
-        }),
+        !findings
+            .iter()
+            .any(|(_, kind, path, _, _)| kind == "unreachable_file" && path == "tests/util.rs"),
         "{findings:?}"
     );
     assert!(
@@ -1058,4 +1051,323 @@ fn a_stored_too_large_status_unseals_like_a_parse_error() {
             .all(|(_, _, path, _, _)| path != "src/other.rs"),
         "{findings:?}"
     );
+}
+
+fn file_reason<'a>(
+    findings: &'a [(i64, String, String, Option<String>, String)],
+    path: &str,
+) -> Option<&'a str> {
+    findings.iter().find_map(|(_, kind, found, _, reason)| {
+        (kind == "unreachable_file" && found == path).then_some(reason.as_str())
+    })
+}
+
+#[test]
+fn an_implicit_library_reaches_its_child_and_an_undeclared_file_is_unused() {
+    let store = make_store();
+    let dir = tempdir().unwrap();
+    fs::create_dir(dir.path().join("src")).unwrap();
+    fs::write(
+        dir.path().join("Cargo.toml"),
+        "[package]\nname = \"demo\"\nversion = \"0.1.0\"\n",
+    )
+    .unwrap();
+    fs::write(
+        dir.path().join("src/lib.rs"),
+        "mod util;\npub fn exported() {}\n",
+    )
+    .unwrap();
+    fs::write(dir.path().join("src/util.rs"), "fn helper() {}\n").unwrap();
+    fs::write(dir.path().join("src/legacy.rs"), "fn old() {}\n").unwrap();
+    register(&store, "demo", dir.path());
+    sync(&store, "demo");
+
+    let (status, _, _, gaps) = analysis(&store, "demo");
+    assert_eq!(status, "complete");
+    assert!(gaps.contains("limitation:public_api"), "{gaps}");
+    assert!(!gaps.contains("no_entry_points"), "{gaps}");
+    let findings = finding_rows(&store);
+    assert_eq!(file_reason(&findings, "src/lib.rs"), None, "{findings:?}");
+    assert_eq!(file_reason(&findings, "src/util.rs"), None, "{findings:?}");
+    assert_eq!(
+        file_reason(&findings, "src/legacy.rs"),
+        Some("not declared by a module"),
+        "{findings:?}"
+    );
+    assert!(!unused(&findings, "src/lib.rs", "exported"), "{findings:?}");
+}
+
+#[test]
+fn modules_that_only_reach_each_other_are_detached() {
+    let store = make_store();
+    let dir = tempdir().unwrap();
+    fs::create_dir_all(dir.path().join("src/legacy")).unwrap();
+    fs::write(
+        dir.path().join("Cargo.toml"),
+        "[package]\nname = \"demo\"\nversion = \"0.1.0\"\n",
+    )
+    .unwrap();
+    fs::write(dir.path().join("src/lib.rs"), "// crate root\n").unwrap();
+    fs::write(dir.path().join("src/legacy/mod.rs"), "mod old;\n").unwrap();
+    fs::write(
+        dir.path().join("src/legacy/old.rs"),
+        "#[path = \"mod.rs\"]\nmod legacy;\n",
+    )
+    .unwrap();
+    register(&store, "demo", dir.path());
+    sync(&store, "demo");
+
+    let findings = finding_rows(&store);
+    assert_eq!(
+        file_reason(&findings, "src/legacy/mod.rs"),
+        Some("detached module"),
+        "{findings:?}"
+    );
+    assert_eq!(
+        file_reason(&findings, "src/legacy/old.rs"),
+        Some("detached module"),
+        "{findings:?}"
+    );
+    assert_eq!(file_reason(&findings, "src/lib.rs"), None, "{findings:?}");
+}
+
+#[test]
+fn a_markdown_file_beside_a_sealed_rust_package_is_not_unreachable() {
+    let store = make_store();
+    let dir = tempdir().unwrap();
+    fs::create_dir(dir.path().join("src")).unwrap();
+    fs::write(
+        dir.path().join("Cargo.toml"),
+        "[package]\nname = \"demo\"\nversion = \"0.1.0\"\n",
+    )
+    .unwrap();
+    fs::write(dir.path().join("src/lib.rs"), "// crate root\n").unwrap();
+    fs::write(dir.path().join("src/legacy.rs"), "fn old() {}\n").unwrap();
+    fs::write(dir.path().join("README.md"), "# Title\n").unwrap();
+    register(&store, "demo", dir.path());
+    sync(&store, "demo");
+
+    let (status, _, _, gaps) = analysis(&store, "demo");
+    assert_eq!(status, "complete");
+    assert!(gaps.contains("README.md:unsupported"), "{gaps}");
+    let findings = finding_rows(&store);
+    assert_eq!(
+        file_reason(&findings, "src/legacy.rs"),
+        Some("not declared by a module"),
+        "{findings:?}"
+    );
+    assert!(
+        findings
+            .iter()
+            .all(|(_, _, path, _, _)| path != "README.md"),
+        "{findings:?}"
+    );
+}
+
+#[test]
+fn a_path_attribute_reaches_its_file_and_a_missing_target_withholds_the_default() {
+    let store = make_store();
+    let dir = tempdir().unwrap();
+    fs::create_dir(dir.path().join("src")).unwrap();
+    fs::write(
+        dir.path().join("Cargo.toml"),
+        "[package]\nname = \"demo\"\nversion = \"0.1.0\"\n",
+    )
+    .unwrap();
+    fs::write(
+        dir.path().join("src/lib.rs"),
+        "#[path = \"other.rs\"]\nmod renamed;\n#[path = \"missing.rs\"]\nmod util;\n",
+    )
+    .unwrap();
+    fs::write(dir.path().join("src/other.rs"), "fn reached() {}\n").unwrap();
+    fs::write(dir.path().join("src/util.rs"), "fn orphan() {}\n").unwrap();
+    register(&store, "demo", dir.path());
+    sync(&store, "demo");
+
+    let (status, _, _, gaps) = analysis(&store, "demo");
+    assert_eq!(status, "complete");
+    assert!(gaps.contains("src/util.rs:unsealed"), "{gaps}");
+    assert!(!gaps.contains("src/other.rs:unsealed"), "{gaps}");
+    assert!(!gaps.contains("src/lib.rs:unsealed"), "{gaps}");
+    let findings = finding_rows(&store);
+    assert_eq!(file_reason(&findings, "src/other.rs"), None, "{findings:?}");
+    assert_eq!(file_reason(&findings, "src/util.rs"), None, "{findings:?}");
+    assert!(unused(&findings, "src/util.rs", "orphan"), "{findings:?}");
+}
+
+#[test]
+fn autobins_false_omits_an_unrooted_bin_and_keeps_an_explicit_bin() {
+    let store = make_store();
+    let dir = tempdir().unwrap();
+    fs::create_dir_all(dir.path().join("src/bin")).unwrap();
+    fs::write(
+        dir.path().join("Cargo.toml"),
+        "[package]\nname = \"demo\"\nversion = \"0.1.0\"\nautobins = false\n\n[[bin]]\nname = \"kept\"\npath = \"src/kept.rs\"\n",
+    )
+    .unwrap();
+    fs::write(dir.path().join("src/kept.rs"), "fn main() {}\n").unwrap();
+    fs::write(dir.path().join("src/bin/tool.rs"), "fn orphan() {}\n").unwrap();
+    register(&store, "demo", dir.path());
+    sync(&store, "demo");
+
+    let (status, _, _, gaps) = analysis(&store, "demo");
+    assert_eq!(status, "complete");
+    assert!(!gaps.contains("no_entry_points"), "{gaps}");
+    let findings = finding_rows(&store);
+    assert_eq!(file_reason(&findings, "src/kept.rs"), None, "{findings:?}");
+    assert_eq!(
+        file_reason(&findings, "src/bin/tool.rs"),
+        Some("not declared by a module"),
+        "{findings:?}"
+    );
+    let implicit: i64 = store
+        .conn()
+        .query_row(
+            "SELECT COUNT(*) FROM knowledge_entries
+             WHERE reason = 'Cargo.toml implicit bin' AND target_rel_path = 'src/bin/tool.rs'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(implicit, 0);
+}
+
+#[test]
+fn a_workspace_member_does_not_inherit_a_virtual_manifest() {
+    let store = make_store();
+    let dir = tempdir().unwrap();
+    fs::create_dir_all(dir.path().join("src")).unwrap();
+    fs::create_dir_all(dir.path().join("member/src")).unwrap();
+    fs::write(
+        dir.path().join("Cargo.toml"),
+        "[workspace]\nmembers = [\"member\"]\n",
+    )
+    .unwrap();
+    fs::write(dir.path().join("src/lib.rs"), "pub fn not_a_root() {}\n").unwrap();
+    fs::write(
+        dir.path().join("member/Cargo.toml"),
+        "[package]\nname = \"member\"\nversion = \"0.1.0\"\n",
+    )
+    .unwrap();
+    fs::write(
+        dir.path().join("member/src/lib.rs"),
+        "pub fn exported() {}\n",
+    )
+    .unwrap();
+    fs::write(dir.path().join("member/src/legacy.rs"), "fn old() {}\n").unwrap();
+    register(&store, "demo", dir.path());
+    sync(&store, "demo");
+
+    let (status, _, _, gaps) = analysis(&store, "demo");
+    assert_eq!(status, "complete");
+    assert!(!gaps.contains("no_entry_points"), "{gaps}");
+    let findings = finding_rows(&store);
+    assert_eq!(file_reason(&findings, "src/lib.rs"), None, "{findings:?}");
+    assert_eq!(
+        file_reason(&findings, "member/src/lib.rs"),
+        None,
+        "{findings:?}"
+    );
+    assert_eq!(
+        file_reason(&findings, "member/src/legacy.rs"),
+        Some("not declared by a module"),
+        "{findings:?}"
+    );
+    assert!(
+        !unused(&findings, "member/src/lib.rs", "exported"),
+        "{findings:?}"
+    );
+    let workspace_root: i64 = store
+        .conn()
+        .query_row(
+            "SELECT COUNT(*) FROM knowledge_entries
+             WHERE target_rel_path = 'src/lib.rs'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(workspace_root, 0);
+    let member_root: i64 = store
+        .conn()
+        .query_row(
+            "SELECT COUNT(*) FROM knowledge_entries
+             WHERE reason = 'Cargo.toml implicit lib' AND target_rel_path = 'member/src/lib.rs'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(member_root, 1);
+}
+
+#[test]
+fn a_bin_added_after_the_manifest_becomes_an_implicit_root() {
+    let store = make_store();
+    let dir = tempdir().unwrap();
+    fs::create_dir(dir.path().join("src")).unwrap();
+    fs::write(
+        dir.path().join("Cargo.toml"),
+        "[package]\nname = \"demo\"\nversion = \"0.1.0\"\n",
+    )
+    .unwrap();
+    fs::write(dir.path().join("src/lib.rs"), "// crate root\n").unwrap();
+    register(&store, "demo", dir.path());
+    sync(&store, "demo");
+
+    fs::create_dir(dir.path().join("src/bin")).unwrap();
+    fs::write(dir.path().join("src/bin/tool.rs"), "fn orphan() {}\n").unwrap();
+    sync(&store, "demo");
+
+    let implicit: i64 = store
+        .conn()
+        .query_row(
+            "SELECT COUNT(*) FROM knowledge_entries
+             WHERE reason = 'Cargo.toml implicit bin'
+               AND target_rel_path = 'src/bin/tool.rs'
+               AND target_file_id IS NOT NULL",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(implicit, 1);
+    assert_eq!(
+        file_reason(&finding_rows(&store), "src/bin/tool.rs"),
+        None,
+        "{:?}",
+        finding_rows(&store)
+    );
+}
+
+#[test]
+fn a_parse_error_publishes_no_unreachable_file_for_an_undeclared_sibling() {
+    let store = make_store();
+    let dir = tempdir().unwrap();
+    fs::create_dir(dir.path().join("src")).unwrap();
+    fs::write(
+        dir.path().join("Cargo.toml"),
+        "[package]\nname = \"demo\"\nversion = \"0.1.0\"\n",
+    )
+    .unwrap();
+    fs::write(dir.path().join("src/lib.rs"), "// crate root\n").unwrap();
+    fs::write(dir.path().join("src/legacy.rs"), "fn old() {}\n").unwrap();
+    fs::write(dir.path().join("src/broken.rs"), "fn broken( {\n").unwrap();
+    register(&store, "demo", dir.path());
+    sync(&store, "demo");
+
+    let (status, _, _, gaps) = analysis(&store, "demo");
+    assert_eq!(status, "partial");
+    assert!(gaps.contains("src/broken.rs:unsealed"), "{gaps}");
+    assert!(!gaps.contains("src/legacy.rs:unsealed"), "{gaps}");
+    let findings = finding_rows(&store);
+    assert_eq!(
+        file_reason(&findings, "src/legacy.rs"),
+        None,
+        "{findings:?}"
+    );
+    assert!(
+        findings
+            .iter()
+            .all(|(_, kind, _, _, _)| kind != "unreachable_file"),
+        "{findings:?}"
+    );
+    assert!(unused(&findings, "src/legacy.rs", "old"), "{findings:?}");
 }

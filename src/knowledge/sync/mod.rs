@@ -576,6 +576,11 @@ fn commit_plan(
             || !plan.to_update.is_empty()
             || !plan.to_remove.is_empty()
             || !plan.backfill.is_empty();
+        // Implicit Cargo roots follow the indexed paths, including a file this sync just added.
+        // Cargo.toml itself is not re-chunked when only that file changed.
+        if structural {
+            crate::knowledge::entries::refresh_implicit(conn, source.id, Path::new(&source.path))?;
+        }
         rebuild::rebuild_source(conn, source.id, structural)?;
 
         Ok(lc)

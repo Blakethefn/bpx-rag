@@ -155,7 +155,7 @@ fn an_unchanged_sync_keeps_the_fingerprint_and_the_finding_rows() {
     let dir = tempdir().unwrap();
     fs::write(
         dir.path().join("lib.rs"),
-        "pub fn alpha() { beta(); }\npub fn beta() {}\n",
+        "pub fn alpha() { beta(); }\npub fn beta() {}\nfn unused() {}\n",
     )
     .unwrap();
     register(&store, "demo", dir.path());

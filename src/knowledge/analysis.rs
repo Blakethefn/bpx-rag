@@ -3,8 +3,8 @@
 //! `knowledge_analysis` is one row per source. Finding rows are written for `complete` and
 //! `partial`. `incomplete` stores the header gaps and no findings.
 //!
-//! Rust `unreachable_file` stays on the pre-stage-4 walk. This stage only stops that walk from
-//! naming an unsealed file. Stage 4 replaces the classification.
+//! Rust `unreachable_file` is package membership. A source with no membership root records
+//! `no_entry_points` and publishes no file findings.
 
 use anyhow::Result;
 use rusqlite::{params, Connection, OptionalExtension};
@@ -15,7 +15,7 @@ use crate::chunk::evidence::STATUS_COMPLETE;
 
 mod seal;
 
-pub(crate) const ANALYSIS_VERSION: i64 = 3;
+pub(crate) const ANALYSIS_VERSION: i64 = 4;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct FileRow {
@@ -92,7 +92,7 @@ pub(crate) fn rebuild_analysis(conn: &Connection, source_id: i64) -> Result<()> 
             generation,
             &fingerprint,
             &files,
-            &entries,
+            &tree,
             &unsealed,
         )?;
     }
@@ -117,9 +117,12 @@ fn gaps(
         if file.reference_version < crate::knowledge::references::REFERENCE_INDEX_VERSION {
             lines.push(format!("{}:reference_version", file.rel_path));
         }
-        if unsealed.contains(&file.id) {
+        if unsealed.contains(&file.id) || tree.unresolved_mod_candidates().contains(&file.id) {
             lines.push(format!("{}:unsealed", file.rel_path));
         }
+    }
+    if tree.membership_roots().is_empty() {
+        lines.push("no_entry_points".to_string());
     }
     lines.extend(tree.limitation_lines());
     for entry in entries {

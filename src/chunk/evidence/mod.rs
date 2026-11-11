@@ -85,6 +85,8 @@ pub(super) fn manifest_entries(path: &Path, content: &str) -> Vec<EntryObservati
     manifest::manifest_entries(path, content)
 }
 
+pub(crate) use manifest::implicit_cargo_entries;
+
 /// Returns whether the walk should enter the node's children.
 fn visit(
     grammar: Grammar,

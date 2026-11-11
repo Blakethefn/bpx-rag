@@ -1,15 +1,20 @@
-//! Unreachable files from a complete or partial analysis.
+//! Unreachable Rust files in a package that has a membership root.
 //!
-//! Rust `unreachable_file` still follows this pre-stage-4 walk, including a source with no
-//! roots. Stage 4 replaces that classification. This stage only skips a file that is not Rust
-//! or is unsealed. A sealed Rust file may still be unreachable under the old walk.
+//! A membership root is a program, library, or test entry, including an implicit Cargo target.
+//! The walk follows in-memory module children, so a `#[path]` edge counts. A file reached from
+//! a test, example, or bench root is not an unused file. A package with an unsealed Rust file
+//! publishes no file findings. An unresolved `mod` candidate is withheld here and named
+//! `{path}:unsealed` by analysis; it stays out of the symbol seal.
 
 use anyhow::Result;
 use rusqlite::{params, Connection};
 use std::collections::{HashMap, HashSet, VecDeque};
 
-use crate::knowledge::analysis::{EntryRow, FileRow, ANALYSIS_VERSION};
-use crate::knowledge::resolution::is_rust_path;
+use crate::knowledge::analysis::{FileRow, ANALYSIS_VERSION};
+use crate::knowledge::resolution::{is_rust_path, Tree};
+
+const DETACHED: &str = "detached module";
+const UNDECLARED: &str = "not declared by a module";
 
 pub(crate) fn write(
     conn: &Connection,
@@ -17,11 +22,18 @@ pub(crate) fn write(
     generation: i64,
     fingerprint: &str,
     files: &[FileRow],
-    entries: &[EntryRow],
+    tree: &Tree,
     unsealed: &HashSet<i64>,
 ) -> Result<()> {
-    let (reached, test_reached, program_roots, test_roots) =
-        reachability(conn, source_id, entries)?;
+    let reached = reached_from(tree);
+    let rooted_packages: HashSet<&str> = tree
+        .membership_roots()
+        .iter()
+        .filter_map(|id| tree.package_dir(*id))
+        .collect();
+    let component_of = components(tree);
+    let candidates = tree.unresolved_mod_candidates();
+
     let mut insert = conn.prepare_cached(
         "INSERT INTO knowledge_findings
             (source_id, kind, file_id, symbol_id, reason, analysis_version, evidence_generation, fingerprint)
@@ -34,23 +46,26 @@ pub(crate) fn write(
             .cmp(&right.rel_path)
             .then(left.id.cmp(&right.id))
     });
-    let program_reason = root_reason(
-        "not reached from program or library_root",
-        &program_roots,
-        files,
-    );
-    let test_reason = root_reason("reachable only from test entries", &test_roots, files);
     for file in file_ids {
-        if !is_rust_path(&file.rel_path)
-            || unsealed.contains(&file.id)
+        if !is_rust_path(&file.rel_path) {
+            continue;
+        }
+        let Some(package) = tree.package_dir(file.id) else {
+            continue;
+        };
+        if !rooted_packages.contains(package)
+            || !tree.package_is_sealed(file.id, unsealed)
+            || candidates.contains(&file.id)
             || reached.contains(&file.id)
         {
             continue;
         }
-        let reason = if test_reached.contains(&file.id) {
-            test_reason.clone()
+        let reason = if !tree.has_module_edge(file.id) {
+            UNDECLARED
+        } else if component_has_root(&component_of, tree, file.id) {
+            continue;
         } else {
-            program_reason.clone()
+            DETACHED
         };
         insert.execute(params![
             source_id,
@@ -66,84 +81,54 @@ pub(crate) fn write(
     Ok(())
 }
 
-fn reachability(
-    conn: &Connection,
-    source_id: i64,
-    entries: &[EntryRow],
-) -> Result<(HashSet<i64>, HashSet<i64>, Vec<i64>, Vec<i64>)> {
-    let mut edges: HashMap<i64, Vec<i64>> = HashMap::new();
-    let mut statement = conn.prepare(
-        "SELECT kr.file_id, res.target_file_id
-         FROM knowledge_resolutions res
-         JOIN knowledge_references kr ON kr.id = res.reference_id
-         WHERE res.source_id = ?1
-           AND res.status = 'resolved'
-           AND res.target_file_id IS NOT NULL",
-    )?;
-    let rows = statement.query_map(params![source_id], |row| {
-        Ok((row.get::<_, i64>(0)?, row.get::<_, i64>(1)?))
-    })?;
-    for row in rows {
-        let (from, to) = row?;
-        edges.entry(from).or_default().push(to);
-    }
-
-    let mut program_roots = Vec::new();
-    let mut test_roots = Vec::new();
-    for entry in entries {
-        let Some(target) = entry.target_file_id else {
-            continue;
-        };
-        match entry.kind.as_str() {
-            "program" | "library_root" => program_roots.push(target),
-            "test" => test_roots.push(target),
-            _ => {}
-        }
-    }
-    program_roots.sort_unstable();
-    program_roots.dedup();
-    test_roots.sort_unstable();
-    test_roots.dedup();
-    Ok((
-        walk(&program_roots, &edges),
-        walk(&test_roots, &edges),
-        program_roots,
-        test_roots,
-    ))
-}
-
-fn walk(roots: &[i64], edges: &HashMap<i64, Vec<i64>>) -> HashSet<i64> {
-    let mut reached = HashSet::new();
-    let mut queue: VecDeque<i64> = roots.iter().copied().collect();
-    while let Some(file_id) = queue.pop_front() {
-        if !reached.insert(file_id) {
+fn reached_from(tree: &Tree) -> HashSet<i64> {
+    let mut seen = HashSet::new();
+    let mut queue: VecDeque<i64> = tree.membership_roots().iter().copied().collect();
+    while let Some(file) = queue.pop_front() {
+        if !seen.insert(file) {
             continue;
         }
-        if let Some(targets) = edges.get(&file_id) {
-            queue.extend(targets.iter().copied());
-        }
+        queue.extend(tree.module_child_ids(file));
     }
-    reached
+    seen
 }
 
-fn root_reason(prefix: &str, roots: &[i64], files: &[FileRow]) -> String {
-    if roots.is_empty() {
-        return prefix.to_string();
+fn components(tree: &Tree) -> HashMap<i64, usize> {
+    let mut component_of = HashMap::new();
+    let mut next = 0usize;
+    for file in tree.rust_file_ids() {
+        if component_of.contains_key(&file) {
+            continue;
+        }
+        let id = next;
+        next += 1;
+        let mut queue = VecDeque::from([file]);
+        while let Some(current) = queue.pop_front() {
+            if component_of.insert(current, id).is_some() {
+                continue;
+            }
+            for neighbor in module_neighbors(tree, current) {
+                if !component_of.contains_key(&neighbor) {
+                    queue.push_back(neighbor);
+                }
+            }
+        }
     }
-    let mut paths: Vec<&str> = roots
+    component_of
+}
+
+fn module_neighbors(tree: &Tree, file: i64) -> Vec<i64> {
+    let mut neighbors = Vec::new();
+    neighbors.extend(tree.module_child_ids(file));
+    neighbors.extend(tree.parents_of(file).iter().copied());
+    neighbors
+}
+
+fn component_has_root(component_of: &HashMap<i64, usize>, tree: &Tree, file: i64) -> bool {
+    let Some(id) = component_of.get(&file) else {
+        return false;
+    };
+    tree.membership_roots()
         .iter()
-        .filter_map(|id| {
-            files
-                .iter()
-                .find(|file| file.id == *id)
-                .map(|file| file.rel_path.as_str())
-        })
-        .collect();
-    paths.sort_unstable();
-    paths.dedup();
-    if paths.is_empty() {
-        prefix.to_string()
-    } else {
-        format!("{prefix}: {}", paths.join(", "))
-    }
+        .any(|root| component_of.get(root) == Some(id))
 }
