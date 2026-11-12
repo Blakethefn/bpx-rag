@@ -4,14 +4,16 @@ use serde::Serialize;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, clap::ValueEnum)]
 #[serde(rename_all = "snake_case")]
 pub enum LayerPolicy {
-    /// Trigram runs while BM25 is below the pool limit. Fuzzy runs while the BM25 and trigram
-    /// pool is below the limit.
+    #[value(
+        help = "Trigram runs while BM25 is below the pool limit. Fuzzy runs while the BM25 and trigram pool is below the limit"
+    )]
     #[default]
     CurrentGating,
-    /// Trigram and fuzzy each run while BM25 is below the pool limit. Fuzzy ignores trigram's
-    /// additions.
+    #[value(
+        help = "Trigram and fuzzy each run while BM25 is below the pool limit. Fuzzy ignores trigram's additions"
+    )]
     OwnPoolGating,
-    /// Trigram and fuzzy always run, subject only to their own input checks.
+    #[value(help = "Trigram and fuzzy always run, subject only to their own input checks")]
     Unconditional,
 }
 
