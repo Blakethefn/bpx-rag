@@ -8,7 +8,11 @@ pub(in crate::knowledge::resolution) enum Walk {
     Failed,
 }
 
-pub(in crate::knowledge::resolution) fn walk_modules(tree: &Tree, from: i64, segments: &[&str]) -> Walk {
+pub(in crate::knowledge::resolution) fn walk_modules(
+    tree: &Tree,
+    from: i64,
+    segments: &[&str],
+) -> Walk {
     if segments.is_empty() {
         return Walk::Failed;
     }

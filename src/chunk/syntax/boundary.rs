@@ -272,4 +272,3 @@ pub(super) fn contains_function_value(node: Node<'_>) -> bool {
     }
     false
 }
-

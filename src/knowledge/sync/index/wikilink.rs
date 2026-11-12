@@ -9,7 +9,10 @@ use rusqlite::params;
 /// 1. Exact match on rel_path
 /// 2. Exact match with `.md` appended
 /// 3. Basename match (target matches the filename portion of any rel_path)
-pub(in crate::knowledge::sync) fn resolve_wikilink(target: &str, files: &HashMap<String, i64>) -> Option<i64> {
+pub(in crate::knowledge::sync) fn resolve_wikilink(
+    target: &str,
+    files: &HashMap<String, i64>,
+) -> Option<i64> {
     // Exact match
     if let Some(&id) = files.get(target) {
         return Some(id);

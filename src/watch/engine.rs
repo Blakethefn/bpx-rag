@@ -20,7 +20,7 @@ mod events;
 mod sources;
 
 #[cfg(test)]
-pub(crate) use events::{REGISTER_PROBE, RegisterProbe};
+pub(crate) use events::{RegisterProbe, REGISTER_PROBE};
 
 type Event = (String, notify::Result<notify::Event>);
 

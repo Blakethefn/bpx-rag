@@ -1,7 +1,7 @@
 use super::super::super::layers::{LayerOutcome, LayerPolicy, SkipReason};
 use super::super::super::*;
 use super::super::{make_store, seed_chunk};
-use super::{BrokenQueryEmbedder, lexical_only, layer, skipped};
+use super::{layer, lexical_only, skipped, BrokenQueryEmbedder};
 use std::sync::Arc;
 
 #[test]

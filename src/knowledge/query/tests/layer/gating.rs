@@ -1,7 +1,7 @@
 use super::super::super::layers::{LayerOutcome, LayerPolicy, SkipReason};
 use super::super::super::*;
 use super::super::{make_store, seed_chunk};
-use super::{ALL_POLICIES, lexical_only, layer, seed_repeated_word, skipped};
+use super::{layer, lexical_only, seed_repeated_word, skipped, ALL_POLICIES};
 
 #[test]
 fn full_pool_skips_trigram_under_current_gating_with_pool_reason() {

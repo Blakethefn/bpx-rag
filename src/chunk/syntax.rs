@@ -106,13 +106,12 @@ pub(super) fn chunk_syntax_tree(
     (!chunks.is_empty()).then_some(chunks)
 }
 
-
 mod boundary;
 mod title;
 
+use boundary::is_declaration_boundary;
 pub(super) use boundary::is_declaration_wrapper;
 pub(super) use title::is_named_container;
-use boundary::is_declaration_boundary;
 use title::syntax_title;
 
 pub(super) fn include_leading_trivia(node: Node<'_>, content: &str) -> usize {
@@ -152,4 +151,3 @@ pub(super) fn is_leading_trivia(kind: &str) -> bool {
         || kind.contains("attribute")
         || matches!(kind, "decorator" | "shebang")
 }
-

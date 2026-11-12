@@ -4,9 +4,9 @@ pub mod truncate;
 mod format;
 mod rerank;
 
-use format::{count_summary, format_results, FormatInput, SnippetBudget};
 #[cfg(test)]
 use format::layer_summary;
+use format::{count_summary, format_results, FormatInput, SnippetBudget};
 use rerank::{apply_graph_rerank, apply_knowledge_bias};
 
 pub(crate) use rerank::attach_relation_neighbors;

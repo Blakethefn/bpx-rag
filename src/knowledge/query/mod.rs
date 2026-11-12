@@ -14,9 +14,9 @@ mod rank;
 mod vector;
 pub(crate) use fuse::search_with_pool;
 pub(crate) use fuzzy::VocabularyCache;
-pub use layers::{LayerOutcome, LayerPolicy, LayerReport};
 #[cfg(test)]
 pub use layers::SkipReason;
+pub use layers::{LayerOutcome, LayerPolicy, LayerReport};
 
 /// Identifier layer weight, relative to the keyword weight. Chosen by the Stage 3 Revision 2
 /// selection rule. It makes a precise identifier hit outrank a single lexical and vector pair.

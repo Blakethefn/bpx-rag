@@ -20,9 +20,9 @@ pub(crate) mod references;
 pub(crate) mod resolution;
 pub mod schema;
 pub mod scope;
+mod sources;
 pub mod symbols;
 pub mod sync;
-mod sources;
 mod vectors;
 
 pub use sources::{KnowledgeSourceInfo, RemoveResult};

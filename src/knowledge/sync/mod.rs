@@ -29,8 +29,8 @@ use files::*;
 use index::delete_file_chunks;
 use plan::apply_plan;
 use policy::{contains_google_api_key, is_sensitive_relative_path};
-pub(crate) use walk::{walk_source_dir, walk_source_dir_with_report};
 pub use scrub::*;
+pub(crate) use walk::{walk_source_dir, walk_source_dir_with_report};
 
 /// Builds metadata for a file from its content and path. `None` records no enrichment.
 pub type EnrichmentFn<'a> = Option<&'a dyn Fn(&str, &Path) -> serde_json::Value>;

@@ -2,18 +2,18 @@ use super::*;
 
 mod diversity;
 mod embedding;
-mod layer;
-mod retrieval;
 mod eval;
-mod sanitize;
-mod result;
 mod filter;
-mod rows;
-mod vector;
 mod fuzzy;
-mod vocab;
 mod identifier;
+mod layer;
+mod result;
+mod retrieval;
+mod rows;
 mod rules;
+mod sanitize;
+mod vector;
+mod vocab;
 
 use crate::support::make_store;
 use rusqlite::params;

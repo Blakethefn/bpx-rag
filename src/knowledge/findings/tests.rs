@@ -2,18 +2,18 @@ use crate::knowledge::sync::sync_source;
 use crate::knowledge::KnowledgeStore;
 use rusqlite::params;
 
-mod reach;
-mod report;
+mod alias;
+mod cargo;
 mod import;
 mod method;
+mod program;
+mod reach;
+mod report;
+mod roots;
 mod seal;
 mod status;
-mod roots;
-mod cargo;
-mod visibility;
-mod program;
 mod targets;
-mod alias;
+mod visibility;
 
 fn sync(store: &KnowledgeStore, label: &str) {
     let source = store.get_source(label).unwrap().unwrap();

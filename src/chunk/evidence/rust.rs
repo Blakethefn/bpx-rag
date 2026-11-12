@@ -13,7 +13,6 @@ mod paths;
 use attributes::{has_test_attribute, mod_path};
 use paths::{collect_use, join_path, path_segments, strip_raw};
 
-
 pub(super) fn visit(
     node: Node<'_>,
     content: &str,
@@ -111,4 +110,3 @@ fn has_anonymous_token(node: Node<'_>, content: &str, token: &str) -> bool {
         }
     }
 }
-

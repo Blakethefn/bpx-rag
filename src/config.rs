@@ -3,13 +3,13 @@ use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;
 
-mod search;
 mod embeddings;
 mod knowledge;
+mod search;
 
-pub use search::SearchConfig;
 pub use embeddings::{EmbeddingDevice, EmbeddingsConfig};
 pub use knowledge::{ContextConfig, KnowledgeConfig};
+pub use search::SearchConfig;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Config {

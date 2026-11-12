@@ -1,7 +1,7 @@
 use super::super::lexical::knowledge_identifier_search;
 use super::super::*;
-use super::make_store;
 use super::fuzzy::bm25_hits;
+use super::make_store;
 use super::rules::file_paths_of_ranked;
 
 // ── identifier layer ─────────────────────────────────────────────────────
@@ -29,7 +29,8 @@ fn file_paths(results: &[KnowledgeSearchResult]) -> Vec<&str> {
         .collect()
 }
 
-pub(super) const GET_USER_BY_ID: &str = "export function getUserById(id) {\n  return users.get(id);\n}\n";
+pub(super) const GET_USER_BY_ID: &str =
+    "export function getUserById(id) {\n  return users.get(id);\n}\n";
 
 #[test]
 fn identifier_layer_matches_a_natural_language_query_to_a_camel_case_identifier() {

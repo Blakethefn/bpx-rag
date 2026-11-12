@@ -75,8 +75,10 @@ fn sync_creates_wikilink_edges() {
     fs::write(dir.path().join("b.md"), "# B\nTarget note").unwrap();
 
     let source = register_source_with_enrichments(&store, dir.path(), &["wikilinks"]);
-    let enrich_fn =
-        super::super::super::enrichment::build_enrichment_fn(&source.enrichments, Path::new(&source.path));
+    let enrich_fn = super::super::super::enrichment::build_enrichment_fn(
+        &source.enrichments,
+        Path::new(&source.path),
+    );
     let enrich_ref = enrich_fn
         .as_ref()
         .map(|f| f.as_ref() as &dyn Fn(&str, &Path) -> serde_json::Value);
@@ -94,8 +96,10 @@ fn sync_no_self_links() {
     fs::write(dir.path().join("self.md"), "See [[self]]").unwrap();
 
     let source = register_source_with_enrichments(&store, dir.path(), &["wikilinks"]);
-    let enrich_fn =
-        super::super::super::enrichment::build_enrichment_fn(&source.enrichments, Path::new(&source.path));
+    let enrich_fn = super::super::super::enrichment::build_enrichment_fn(
+        &source.enrichments,
+        Path::new(&source.path),
+    );
     let enrich_ref = enrich_fn
         .as_ref()
         .map(|f| f.as_ref() as &dyn Fn(&str, &Path) -> serde_json::Value);
@@ -115,8 +119,10 @@ fn sync_unresolvable_links_ignored() {
     fs::write(dir.path().join("a.md"), "Link to [[nonexistent]]").unwrap();
 
     let source = register_source_with_enrichments(&store, dir.path(), &["wikilinks"]);
-    let enrich_fn =
-        super::super::super::enrichment::build_enrichment_fn(&source.enrichments, Path::new(&source.path));
+    let enrich_fn = super::super::super::enrichment::build_enrichment_fn(
+        &source.enrichments,
+        Path::new(&source.path),
+    );
     let enrich_ref = enrich_fn
         .as_ref()
         .map(|f| f.as_ref() as &dyn Fn(&str, &Path) -> serde_json::Value);
@@ -134,8 +140,10 @@ fn sync_resync_updates_links() {
     fs::write(dir.path().join("c.md"), "# C").unwrap();
 
     let source = register_source_with_enrichments(&store, dir.path(), &["wikilinks"]);
-    let enrich_fn =
-        super::super::super::enrichment::build_enrichment_fn(&source.enrichments, Path::new(&source.path));
+    let enrich_fn = super::super::super::enrichment::build_enrichment_fn(
+        &source.enrichments,
+        Path::new(&source.path),
+    );
     let enrich_ref = enrich_fn
         .as_ref()
         .map(|f| f.as_ref() as &dyn Fn(&str, &Path) -> serde_json::Value);
@@ -145,8 +153,10 @@ fn sync_resync_updates_links() {
     // Change a.md to link to c instead
     fs::write(dir.path().join("a.md"), "See [[c]]").unwrap();
     let source = store.get_source("test").unwrap().unwrap();
-    let enrich_fn =
-        super::super::super::enrichment::build_enrichment_fn(&source.enrichments, Path::new(&source.path));
+    let enrich_fn = super::super::super::enrichment::build_enrichment_fn(
+        &source.enrichments,
+        Path::new(&source.path),
+    );
     let enrich_ref = enrich_fn
         .as_ref()
         .map(|f| f.as_ref() as &dyn Fn(&str, &Path) -> serde_json::Value);

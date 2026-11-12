@@ -119,7 +119,11 @@ impl Engine {
     }
 }
 
-pub(super) fn register(label: &str, root: &Path, events: Sender<Event>) -> Result<RecommendedWatcher> {
+pub(super) fn register(
+    label: &str,
+    root: &Path,
+    events: Sender<Event>,
+) -> Result<RecommendedWatcher> {
     register_failpoint()?;
     let label = label.to_string();
     let mut watcher = notify::recommended_watcher(move |outcome| {

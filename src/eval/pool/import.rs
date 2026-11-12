@@ -148,4 +148,3 @@ pub fn import_judgment_pool(
     write_new_jsonl(output, &qrels)?;
     Ok(qrels.len())
 }
-

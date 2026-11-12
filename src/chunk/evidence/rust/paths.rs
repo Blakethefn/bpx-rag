@@ -177,4 +177,3 @@ pub(super) fn strip_raw(text: &str) -> Option<&str> {
     let stripped = text.strip_prefix("r#").unwrap_or(text);
     (!stripped.is_empty()).then_some(stripped)
 }
-

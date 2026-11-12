@@ -1,7 +1,7 @@
 use super::super::lexical::knowledge_identifier_search;
 use super::super::rank::RankedResult;
 use super::super::*;
-use super::identifier::{GET_USER_BY_ID, indexed_store};
+use super::identifier::{indexed_store, GET_USER_BY_ID};
 
 pub(super) fn file_paths_of_ranked(results: &[RankedResult]) -> Vec<&str> {
     results

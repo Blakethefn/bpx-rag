@@ -1,5 +1,5 @@
-use super::super::*;
 use super::super::lexical::{knowledge_bm25_search, knowledge_trigram_search};
+use super::super::*;
 use super::{make_store, seed_chunk};
 use crate::embed::Embed;
 use rusqlite::params;

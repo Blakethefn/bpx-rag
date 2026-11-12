@@ -138,4 +138,3 @@ pub(super) fn format_results(input: FormatInput<'_>) -> String {
     }
     output
 }
-

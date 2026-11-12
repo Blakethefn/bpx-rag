@@ -8,7 +8,6 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use tempfile::tempdir;
 
-
 #[test]
 fn sync_generates_embeddings_when_embedder_present() {
     let store = make_store_with_embedder();

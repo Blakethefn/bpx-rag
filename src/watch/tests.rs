@@ -10,8 +10,8 @@ use std::thread::JoinHandle;
 use std::time::Instant;
 use tempfile::{tempdir, TempDir};
 
-mod sync;
 mod registration;
+mod sync;
 
 fn fast_options() -> WatchOptions {
     WatchOptions {

@@ -5,8 +5,8 @@ use super::super::*;
 use super::seed_chunk;
 use crate::embed::Embed;
 
-mod report;
 mod gating;
+mod report;
 
 struct BrokenQueryEmbedder;
 

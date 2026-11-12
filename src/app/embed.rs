@@ -179,7 +179,11 @@ pub(super) fn embedding_notice(config: &Config) -> Option<String> {
     None
 }
 
-pub(super) fn add_embedding_notice(mut text: String, notice: Option<&str>, count_only: bool) -> String {
+pub(super) fn add_embedding_notice(
+    mut text: String,
+    notice: Option<&str>,
+    count_only: bool,
+) -> String {
     let Some(notice) = notice else {
         return text;
     };

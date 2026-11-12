@@ -183,4 +183,3 @@ fn knowledge_source_for_file(ks: &KnowledgeStore, file_id: i64) -> Result<(Strin
         |row| Ok((row.get(0)?, row.get(1)?)),
     )?)
 }
-

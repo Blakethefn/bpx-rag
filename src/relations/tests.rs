@@ -3,14 +3,14 @@ use super::*;
 use std::fs;
 use tempfile::tempdir;
 
-mod javascript;
-mod rust;
-mod python;
 mod cfamily;
+mod javascript;
 mod modules;
-mod scripting;
-mod scan;
 mod project;
+mod python;
+mod rust;
+mod scan;
+mod scripting;
 
 fn write_file(root: &std::path::Path, relative: &str, contents: &str) {
     let path = root.join(relative);

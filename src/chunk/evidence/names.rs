@@ -194,4 +194,3 @@ fn is_noise(specifier: &str) -> bool {
         "self" | "Self" | "super" | "crate" | "cls" | "this" | "_" | "__name__"
     )
 }
-

@@ -128,8 +128,8 @@ fn visit(
         node.kind(),
         "identifier" | "type_identifier" | "field_identifier" | "property_identifier"
     ) {
-        if let Some(reference) =
-            names::plain_reference(node, content).and_then(|reference| names::normalize_rust(grammar, reference))
+        if let Some(reference) = names::plain_reference(node, content)
+            .and_then(|reference| names::normalize_rust(grammar, reference))
         {
             push_reference(references, reference);
         }

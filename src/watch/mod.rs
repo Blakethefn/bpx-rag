@@ -182,7 +182,7 @@ mod engine;
 use engine::Engine;
 
 #[cfg(test)]
-pub(crate) use engine::{REGISTER_PROBE, RegisterProbe};
+pub(crate) use engine::{RegisterProbe, REGISTER_PROBE};
 
 #[cfg(test)]
 mod tests;

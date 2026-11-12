@@ -1,6 +1,6 @@
 use super::super::*;
-use super::{make_store, seed_chunk};
 use super::fuzzy::fuzzy_hits;
+use super::{make_store, seed_chunk};
 use rusqlite::params;
 
 /// Wrap a connection the way `open_in_memory` does, for tests that need two

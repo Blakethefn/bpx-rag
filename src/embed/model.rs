@@ -114,4 +114,3 @@ pub(super) fn max_length_for(model: &EmbeddingModel) -> usize {
         _ => MINI_LM_MAX_LENGTH,
     }
 }
-

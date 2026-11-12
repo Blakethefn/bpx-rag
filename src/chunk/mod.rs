@@ -1,13 +1,13 @@
 use std::path::Path;
 
+mod classify;
 mod code;
 pub(crate) mod evidence;
 mod lines;
+mod pack;
 mod symbols;
 mod syntax;
 mod text;
-mod classify;
-mod pack;
 use classify::{classify_content, ContentType};
 use code::*;
 use lines::*;

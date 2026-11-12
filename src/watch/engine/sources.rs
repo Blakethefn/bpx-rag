@@ -6,9 +6,9 @@ use anyhow::Result;
 
 use crate::knowledge::sync::sync_source;
 
+use super::super::SourceState;
 use super::events::{locked_sync, register};
 use super::fail;
-use super::super::SourceState;
 use super::Engine;
 
 impl Engine {
