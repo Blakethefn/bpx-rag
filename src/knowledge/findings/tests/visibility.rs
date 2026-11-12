@@ -1,14 +1,5 @@
-use super::{
-    make_store,
-    register,
-    sync,
-    analysis,
-    finding_rows,
-    unused,
-    file_reason,
-    entries,
-    has_entry,
-};
+use super::{analysis, entries, file_reason, finding_rows, has_entry, sync, unused};
+use crate::support::{add_source, make_store};
 use std::fs;
 use tempfile::tempdir;
 
@@ -37,7 +28,7 @@ fn an_implicit_lib_and_bin_split_pub_items_and_keep_a_library_child() {
         "pub fn bin_item() {}\nfn main() {}\n",
     )
     .unwrap();
-    register(&store, "demo", dir.path());
+    add_source(&store, "demo", dir.path());
     sync(&store, "demo");
 
     let (status, _, _, gaps) = analysis(&store, "demo");
@@ -91,7 +82,7 @@ fn a_parse_error_keeps_binary_pub_and_a_sealed_private_item_and_withholds_pub_cr
     )
     .unwrap();
     fs::write(dir.path().join("src/other.rs"), "fn broken( {\n").unwrap();
-    register(&store, "demo", dir.path());
+    add_source(&store, "demo", dir.path());
     sync(&store, "demo");
 
     let (status, _, _, gaps) = analysis(&store, "demo");
@@ -138,7 +129,7 @@ fn pub_super_is_reported_and_pub_in_paths_follow_their_scope() {
     .unwrap();
     fs::write(dir.path().join("src/other.rs"), "// sealed scope\n").unwrap();
     fs::write(dir.path().join("src/broken.rs"), "fn broken( {\n").unwrap();
-    register(&store, "demo", dir.path());
+    add_source(&store, "demo", dir.path());
     sync(&store, "demo");
 
     let (status, _, _, gaps) = analysis(&store, "demo");

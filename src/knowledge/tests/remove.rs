@@ -3,8 +3,8 @@
 
 use super::super::*;
 use crate::knowledge::sync::sync_source;
+use crate::support::{add_source, make_store};
 use std::fs;
-use std::path::Path;
 use tempfile::tempdir;
 
 const TABLES: &[&str] = &[
@@ -191,16 +191,6 @@ fn removing_a_source_leaves_other_sources_untouched() {
     );
 }
 
-fn make_store() -> KnowledgeStore {
-    open_in_memory().expect("in-memory knowledge store")
-}
-
-fn register(store: &KnowledgeStore, label: &str, dir: &Path) {
-    store
-        .add_source(label, dir.to_str().unwrap(), &[], &[])
-        .unwrap();
-}
-
 fn sync(store: &KnowledgeStore, label: &str) {
     let source = store.get_source(label).unwrap().unwrap();
     sync_source(store, &source, None).unwrap();
@@ -219,7 +209,7 @@ fn removing_a_source_drops_evidence_resolutions_analysis_and_findings() {
         "pub fn alpha() { beta(); }\npub fn beta() {}\nfn unused() {}\n",
     )
     .unwrap();
-    register(&store, "demo", dir.path());
+    add_source(&store, "demo", dir.path());
     sync(&store, "demo");
     assert!(count(&store, "SELECT COUNT(*) FROM knowledge_references") > 0);
     assert!(count(&store, "SELECT COUNT(*) FROM knowledge_resolutions") > 0);

@@ -1,14 +1,5 @@
-use super::{
-    make_store,
-    register,
-    sync,
-    analysis,
-    finding_rows,
-    unused,
-    file_reason,
-    entries,
-    has_entry,
-};
+use super::{analysis, entries, file_reason, finding_rows, has_entry, sync, unused};
+use crate::support::{add_source, make_store};
 use std::fs;
 use tempfile::tempdir;
 
@@ -23,7 +14,7 @@ fn autotests_false_does_not_root_a_test_file_added_on_the_next_sync() {
     )
     .unwrap();
     fs::write(dir.path().join("src/lib.rs"), "// crate root\n").unwrap();
-    register(&store, "demo", dir.path());
+    add_source(&store, "demo", dir.path());
     sync(&store, "demo");
 
     fs::create_dir(dir.path().join("tests")).unwrap();
@@ -65,7 +56,7 @@ fn deleting_an_implicit_bin_drops_its_entry_and_names_no_finding() {
     .unwrap();
     fs::write(dir.path().join("src/lib.rs"), "// crate root\n").unwrap();
     fs::write(dir.path().join("src/bin/tool.rs"), "fn orphan() {}\n").unwrap();
-    register(&store, "demo", dir.path());
+    add_source(&store, "demo", dir.path());
     sync(&store, "demo");
 
     let before = entries(&store);
@@ -115,7 +106,7 @@ fn a_file_on_both_the_library_and_the_bin_withholds_pub_and_reports_private() {
         "pub fn exported() {}\nfn hidden() {}\n",
     )
     .unwrap();
-    register(&store, "demo", dir.path());
+    add_source(&store, "demo", dir.path());
     sync(&store, "demo");
 
     let (status, _, _, gaps) = analysis(&store, "demo");

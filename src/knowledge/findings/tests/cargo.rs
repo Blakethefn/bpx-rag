@@ -1,12 +1,5 @@
-use super::{
-    make_store,
-    register,
-    sync,
-    analysis,
-    finding_rows,
-    unused,
-    file_reason,
-};
+use super::{analysis, file_reason, finding_rows, sync, unused};
+use crate::support::{add_source, make_store};
 use std::fs;
 use tempfile::tempdir;
 
@@ -22,7 +15,7 @@ fn autobins_false_omits_an_unrooted_bin_and_keeps_an_explicit_bin() {
     .unwrap();
     fs::write(dir.path().join("src/kept.rs"), "fn main() {}\n").unwrap();
     fs::write(dir.path().join("src/bin/tool.rs"), "fn orphan() {}\n").unwrap();
-    register(&store, "demo", dir.path());
+    add_source(&store, "demo", dir.path());
     sync(&store, "demo");
 
     let (status, _, _, gaps) = analysis(&store, "demo");
@@ -70,7 +63,7 @@ fn a_workspace_member_does_not_inherit_a_virtual_manifest() {
     )
     .unwrap();
     fs::write(dir.path().join("member/src/legacy.rs"), "fn old() {}\n").unwrap();
-    register(&store, "demo", dir.path());
+    add_source(&store, "demo", dir.path());
     sync(&store, "demo");
 
     let (status, _, _, gaps) = analysis(&store, "demo");
@@ -125,7 +118,7 @@ fn a_bin_added_after_the_manifest_becomes_an_implicit_root() {
     )
     .unwrap();
     fs::write(dir.path().join("src/lib.rs"), "// crate root\n").unwrap();
-    register(&store, "demo", dir.path());
+    add_source(&store, "demo", dir.path());
     sync(&store, "demo");
 
     fs::create_dir(dir.path().join("src/bin")).unwrap();
@@ -165,7 +158,7 @@ fn a_parse_error_publishes_no_unreachable_file_for_an_undeclared_sibling() {
     fs::write(dir.path().join("src/lib.rs"), "// crate root\n").unwrap();
     fs::write(dir.path().join("src/legacy.rs"), "fn old() {}\n").unwrap();
     fs::write(dir.path().join("src/broken.rs"), "fn broken( {\n").unwrap();
-    register(&store, "demo", dir.path());
+    add_source(&store, "demo", dir.path());
     sync(&store, "demo");
 
     let (status, _, _, gaps) = analysis(&store, "demo");

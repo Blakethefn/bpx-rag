@@ -1,20 +1,10 @@
-use super::super::{open_in_memory, KnowledgeStore};
+use super::super::KnowledgeStore;
 use crate::knowledge::findings::report;
 use crate::knowledge::sync::sync_source;
+use crate::support::{add_source, make_store};
 use rusqlite::params;
 use std::fs;
-use std::path::Path;
 use tempfile::tempdir;
-
-fn make_store() -> KnowledgeStore {
-    open_in_memory().expect("in-memory knowledge store")
-}
-
-fn register(store: &KnowledgeStore, label: &str, dir: &Path) {
-    store
-        .add_source(label, dir.to_str().unwrap(), &[], &[])
-        .unwrap();
-}
 
 fn sync(store: &KnowledgeStore, label: &str) {
     let source = store.get_source(label).unwrap().unwrap();
@@ -117,7 +107,7 @@ fn a_parse_error_publishes_an_incomplete_analysis_and_no_conclusions() {
         "pub fn fine() {}\nfn broken( {\n",
     )
     .unwrap();
-    register(&store, "demo", dir.path());
+    add_source(&store, "demo", dir.path());
     sync(&store, "demo");
 
     let chunks: i64 = store
@@ -158,7 +148,7 @@ fn an_unchanged_sync_keeps_the_fingerprint_and_the_finding_rows() {
         "pub fn alpha() { beta(); }\npub fn beta() {}\nfn unused() {}\n",
     )
     .unwrap();
-    register(&store, "demo", dir.path());
+    add_source(&store, "demo", dir.path());
     sync(&store, "demo");
     let (_, generation, fingerprint, _) = analysis(&store, "demo");
     let findings = finding_rows(&store);

@@ -1,12 +1,5 @@
-use super::{
-    make_store,
-    register,
-    sync,
-    analysis,
-    finding_rows,
-    resolutions,
-    unused,
-};
+use super::{analysis, finding_rows, resolutions, sync, unused};
+use crate::support::{add_source, make_store};
 use std::fs;
 use tempfile::tempdir;
 
@@ -21,7 +14,7 @@ fn a_type_path_uses_that_types_method_and_not_a_free_function() {
     )
     .unwrap();
     fs::write(dir.path().join("src/other.rs"), "fn helper() {}\n").unwrap();
-    register(&store, "demo", dir.path());
+    add_source(&store, "demo", dir.path());
     sync(&store, "demo");
 
     let helpers = resolutions(&store, "helper");
@@ -53,7 +46,7 @@ fn an_unknown_receiver_does_not_use_a_free_function() {
         "struct Foo;\nimpl Foo { fn helper(&self) {} }\nfn helper() {}\nfn main() { Self::helper(); }\n",
     )
     .unwrap();
-    register(&store, "demo", dir.path());
+    add_source(&store, "demo", dir.path());
     sync(&store, "demo");
 
     let helpers = resolutions(&store, "helper");
@@ -76,7 +69,7 @@ fn an_inline_module_shares_the_file_and_records_the_limitation() {
         "mod inline { fn hidden() {} }\nfn main() { hidden(); }\n",
     )
     .unwrap();
-    register(&store, "demo", dir.path());
+    add_source(&store, "demo", dir.path());
     sync(&store, "demo");
 
     let (_, _, _, gaps) = analysis(&store, "demo");
@@ -97,7 +90,7 @@ fn a_macro_records_a_limitation_and_still_publishes_findings() {
         "macro_rules! demo { () => {}; }\nfn main() {}\nfn kept() {}\n",
     )
     .unwrap();
-    register(&store, "demo", dir.path());
+    add_source(&store, "demo", dir.path());
     sync(&store, "demo");
 
     let (status, _, _, gaps) = analysis(&store, "demo");
@@ -121,7 +114,7 @@ fn two_imports_of_the_same_symbol_are_ambiguous() {
     )
     .unwrap();
     fs::write(dir.path().join("src/a.rs"), "pub(crate) fn helper() {}\n").unwrap();
-    register(&store, "demo", dir.path());
+    add_source(&store, "demo", dir.path());
     sync(&store, "demo");
 
     let names = resolutions(&store, "h");
@@ -156,7 +149,7 @@ fn a_type_method_does_not_use_another_types_method_of_the_same_name() {
         "pub struct Foo;\nimpl Foo { pub fn helper() {} }\n",
     )
     .unwrap();
-    register(&store, "demo", dir.path());
+    add_source(&store, "demo", dir.path());
     sync(&store, "demo");
 
     let helpers = resolutions(&store, "helper");
@@ -186,7 +179,7 @@ fn an_external_path_does_not_use_a_method_in_scope() {
         "fn foo() {}\nstruct Bar;\nimpl Bar { fn method(&self) {} }\nfn main() { ::foo::method(); }\n",
     )
     .unwrap();
-    register(&store, "demo", dir.path());
+    add_source(&store, "demo", dir.path());
     sync(&store, "demo");
 
     let methods = resolutions(&store, "method");

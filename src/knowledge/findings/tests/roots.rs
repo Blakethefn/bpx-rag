@@ -1,12 +1,5 @@
-use super::{
-    make_store,
-    register,
-    sync,
-    analysis,
-    finding_rows,
-    unused,
-    file_reason,
-};
+use super::{analysis, file_reason, finding_rows, sync, unused};
+use crate::support::{add_source, make_store};
 use std::fs;
 use tempfile::tempdir;
 
@@ -27,7 +20,7 @@ fn an_implicit_library_reaches_its_child_and_an_undeclared_file_is_unused() {
     .unwrap();
     fs::write(dir.path().join("src/util.rs"), "fn helper() {}\n").unwrap();
     fs::write(dir.path().join("src/legacy.rs"), "fn old() {}\n").unwrap();
-    register(&store, "demo", dir.path());
+    add_source(&store, "demo", dir.path());
     sync(&store, "demo");
 
     let (status, _, _, gaps) = analysis(&store, "demo");
@@ -62,7 +55,7 @@ fn modules_that_only_reach_each_other_are_detached() {
         "#[path = \"mod.rs\"]\nmod legacy;\n",
     )
     .unwrap();
-    register(&store, "demo", dir.path());
+    add_source(&store, "demo", dir.path());
     sync(&store, "demo");
 
     let findings = finding_rows(&store);
@@ -92,7 +85,7 @@ fn a_markdown_file_beside_a_sealed_rust_package_is_not_unreachable() {
     fs::write(dir.path().join("src/lib.rs"), "// crate root\n").unwrap();
     fs::write(dir.path().join("src/legacy.rs"), "fn old() {}\n").unwrap();
     fs::write(dir.path().join("README.md"), "# Title\n").unwrap();
-    register(&store, "demo", dir.path());
+    add_source(&store, "demo", dir.path());
     sync(&store, "demo");
 
     let (status, _, _, gaps) = analysis(&store, "demo");
@@ -129,7 +122,7 @@ fn a_path_attribute_reaches_its_file_and_a_missing_target_withholds_the_default(
     .unwrap();
     fs::write(dir.path().join("src/other.rs"), "fn reached() {}\n").unwrap();
     fs::write(dir.path().join("src/util.rs"), "fn orphan() {}\n").unwrap();
-    register(&store, "demo", dir.path());
+    add_source(&store, "demo", dir.path());
     sync(&store, "demo");
 
     let (status, _, _, gaps) = analysis(&store, "demo");

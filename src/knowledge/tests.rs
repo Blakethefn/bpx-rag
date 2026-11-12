@@ -1,10 +1,7 @@
 use super::*;
+use crate::support::make_store;
 
 mod remove;
-
-fn make_store() -> KnowledgeStore {
-    open_in_memory().expect("in-memory knowledge store")
-}
 
 // ── Schema / open ────────────────────────────────────────────────────────
 

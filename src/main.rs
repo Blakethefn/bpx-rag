@@ -11,6 +11,8 @@ mod language;
 mod mcp;
 mod relations;
 mod search;
+#[cfg(test)]
+mod support;
 mod watch;
 
 use anyhow::{anyhow, Result};

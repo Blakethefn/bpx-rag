@@ -1,5 +1,6 @@
 use super::super::report;
-use super::{make_store, register, sync, analysis, finding_rows, unused};
+use super::{analysis, finding_rows, sync, unused};
+use crate::support::{add_source, make_store};
 use std::fs;
 use tempfile::tempdir;
 
@@ -15,7 +16,7 @@ fn a_parse_error_in_a_sibling_file_keeps_a_sealed_private_function() {
     .unwrap();
     fs::write(dir.path().join("src/util.rs"), "fn hidden() {}\n").unwrap();
     fs::write(dir.path().join("src/other.rs"), "fn broken( {\n").unwrap();
-    register(&store, "demo", dir.path());
+    add_source(&store, "demo", dir.path());
     sync(&store, "demo");
 
     let (status, _, _, gaps) = analysis(&store, "demo");
@@ -51,7 +52,7 @@ fn a_parse_error_in_the_parent_withholds_the_child_without_a_stored_mod_edge() {
     )
     .unwrap();
     fs::write(dir.path().join("src/util.rs"), "fn hidden() {}\n").unwrap();
-    register(&store, "demo", dir.path());
+    add_source(&store, "demo", dir.path());
     sync(&store, "demo");
 
     let module_edges: i64 = store
@@ -90,7 +91,7 @@ fn a_broken_module_file_unseals_its_directory_and_not_a_sibling() {
         "fn hidden() {}\n",
     )
     .unwrap();
-    register(&store, "demo", dir.path());
+    add_source(&store, "demo", dir.path());
     sync(&store, "demo");
 
     let (status, _, _, gaps) = analysis(&store, "demo");
@@ -126,7 +127,7 @@ fn a_broken_parent_unseals_a_child_module_file_and_leaves_another_root_sealed() 
         "fn main() {}\nfn kept() {}\n",
     )
     .unwrap();
-    register(&store, "demo", dir.path());
+    add_source(&store, "demo", dir.path());
     sync(&store, "demo");
 
     let (status, _, _, gaps) = analysis(&store, "demo");
@@ -175,7 +176,7 @@ fn a_parse_error_in_one_package_withholds_pub_crate_and_spares_the_other_package
         "pub(crate) fn hidden() {}\n",
     )
     .unwrap();
-    register(&store, "demo", dir.path());
+    add_source(&store, "demo", dir.path());
     sync(&store, "demo");
 
     let (status, _, _, gaps) = analysis(&store, "demo");

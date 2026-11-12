@@ -1,6 +1,7 @@
 use super::super::*;
-use super::{count, exact, hit, lookup_with, make_store, register, sync};
+use super::{count, exact, hit, lookup_with, sync};
 use crate::knowledge::sync::sync_source;
+use crate::support::{add_source, make_store};
 use std::fs;
 use tempfile::tempdir;
 
@@ -9,7 +10,7 @@ fn rename_on_resync_replaces_the_old_name() {
     let store = make_store();
     let dir = tempdir().unwrap();
     fs::write(dir.path().join("lib.rs"), "pub fn old_name() {}\n").unwrap();
-    register(&store, "test", dir.path());
+    add_source(&store, "test", dir.path());
     sync(&store, "test");
     assert_eq!(exact(&store, "old_name").len(), 1);
 
@@ -28,7 +29,7 @@ fn moved_file_drops_the_old_path_and_indexes_the_new_one() {
     let store = make_store();
     let dir = tempdir().unwrap();
     fs::write(dir.path().join("lib.rs"), "pub fn moved() {}\n").unwrap();
-    register(&store, "test", dir.path());
+    add_source(&store, "test", dir.path());
     sync(&store, "test");
 
     fs::create_dir_all(dir.path().join("sub")).unwrap();
@@ -47,7 +48,7 @@ fn removed_file_drops_its_symbols() {
     let dir = tempdir().unwrap();
     fs::write(dir.path().join("keep.rs"), "pub fn keep() {}\n").unwrap();
     fs::write(dir.path().join("gone.rs"), "pub fn gone() {}\n").unwrap();
-    register(&store, "test", dir.path());
+    add_source(&store, "test", dir.path());
     sync(&store, "test");
 
     fs::remove_file(dir.path().join("gone.rs")).unwrap();
@@ -77,7 +78,7 @@ fn parse_error_file_keeps_its_chunks_and_reports_no_symbols() {
         "pub fn fine() {}\nfn broken( {\n",
     )
     .unwrap();
-    register(&store, "test", dir.path());
+    add_source(&store, "test", dir.path());
     sync(&store, "test");
 
     assert!(exact(&store, "fine").is_empty());
@@ -104,7 +105,7 @@ fn removing_a_source_deletes_its_symbol_rows() {
     let store = make_store();
     let dir = tempdir().unwrap();
     fs::write(dir.path().join("lib.rs"), "pub fn gone_with_source() {}\n").unwrap();
-    register(&store, "test", dir.path());
+    add_source(&store, "test", dir.path());
     sync(&store, "test");
     assert_eq!(
         count(
@@ -131,7 +132,7 @@ fn existing_index_is_backfilled_on_sync_without_rechunking() {
     let store = make_store();
     let dir = tempdir().unwrap();
     fs::write(dir.path().join("lib.rs"), "pub fn legacy_entry() {}\n").unwrap();
-    register(&store, "test", dir.path());
+    add_source(&store, "test", dir.path());
     sync(&store, "test");
 
     // Simulate a database built before symbols existed: no rows and version 0.

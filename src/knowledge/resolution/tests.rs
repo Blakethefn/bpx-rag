@@ -1,19 +1,9 @@
-use super::super::{open_in_memory, KnowledgeStore};
+use super::super::KnowledgeStore;
 use crate::knowledge::sync::sync_source;
+use crate::support::{add_source, make_store};
 use rusqlite::params;
 use std::fs;
-use std::path::Path;
 use tempfile::tempdir;
-
-fn make_store() -> KnowledgeStore {
-    open_in_memory().expect("in-memory knowledge store")
-}
-
-fn register(store: &KnowledgeStore, label: &str, dir: &Path) {
-    store
-        .add_source(label, dir.to_str().unwrap(), &[], &[])
-        .unwrap();
-}
 
 fn sync(store: &KnowledgeStore, label: &str) {
     let source = store.get_source(label).unwrap().unwrap();
@@ -59,7 +49,7 @@ fn a_symbol_version_backfill_rebuilds_resolutions_and_the_analysis_row() {
     let store = make_store();
     let dir = tempdir().unwrap();
     fs::write(dir.path().join("lib.rs"), "pub fn alpha() { beta(); }\n").unwrap();
-    register(&store, "demo", dir.path());
+    add_source(&store, "demo", dir.path());
     sync(&store, "demo");
     let (_, generation, _, _) = analysis(&store, "demo");
     store

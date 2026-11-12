@@ -1,11 +1,5 @@
-use super::{
-    make_store,
-    register,
-    sync,
-    analysis,
-    finding_rows,
-    resolutions,
-};
+use super::{analysis, finding_rows, resolutions, sync};
+use crate::support::{add_source, make_store};
 use std::fs;
 use tempfile::tempdir;
 
@@ -15,7 +9,7 @@ fn mutual_imports_without_a_package_record_no_entry_points() {
     let dir = tempdir().unwrap();
     fs::write(dir.path().join("a.rs"), "mod b;\npub fn only_a() {}\n").unwrap();
     fs::write(dir.path().join("b.rs"), "mod a;\npub fn only_b() {}\n").unwrap();
-    register(&store, "demo", dir.path());
+    add_source(&store, "demo", dir.path());
     sync(&store, "demo");
 
     let (status, _, _, gaps) = analysis(&store, "demo");
@@ -46,7 +40,7 @@ fn a_module_import_reaches_the_file_without_marking_its_functions_used() {
     fs::create_dir(dir.path().join("src")).unwrap();
     fs::write(dir.path().join("src/main.rs"), "mod util;\nfn main() {}\n").unwrap();
     fs::write(dir.path().join("src/util.rs"), "pub fn helper() {}\n").unwrap();
-    register(&store, "demo", dir.path());
+    add_source(&store, "demo", dir.path());
     sync(&store, "demo");
 
     let findings = finding_rows(&store);
@@ -78,7 +72,7 @@ fn an_unimported_call_resolves_to_neither_private_helper_and_a_called_function_s
     .unwrap();
     fs::write(dir.path().join("a.rs"), "fn helper() {}\n").unwrap();
     fs::write(dir.path().join("b.rs"), "fn helper() {}\n").unwrap();
-    register(&store, "demo", dir.path());
+    add_source(&store, "demo", dir.path());
     sync(&store, "demo");
 
     let ambiguous: i64 = store
@@ -151,7 +145,7 @@ fn a_file_reached_only_from_a_test_root_is_not_an_unused_file() {
     )
     .unwrap();
     fs::write(dir.path().join("tests/util.rs"), "pub fn helper() {}\n").unwrap();
-    register(&store, "demo", dir.path());
+    add_source(&store, "demo", dir.path());
     sync(&store, "demo");
 
     let findings = finding_rows(&store);

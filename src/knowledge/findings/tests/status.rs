@@ -1,4 +1,5 @@
-use super::{make_store, register, sync, analysis, finding_rows, unused};
+use super::{analysis, finding_rows, sync, unused};
+use crate::support::{add_source, make_store};
 use std::fs;
 use tempfile::tempdir;
 
@@ -18,7 +19,7 @@ fn an_unsupported_file_and_a_missing_entry_do_not_unseal_a_rust_file() {
     )
     .unwrap();
     fs::write(dir.path().join("README.md"), "# Title\n").unwrap();
-    register(&store, "demo", dir.path());
+    add_source(&store, "demo", dir.path());
     sync(&store, "demo");
 
     let (status, _, _, gaps) = analysis(&store, "demo");
@@ -45,7 +46,7 @@ fn a_stored_too_large_status_unseals_like_a_parse_error() {
     .unwrap();
     fs::write(dir.path().join("src/util.rs"), "fn hidden() {}\n").unwrap();
     fs::write(dir.path().join("src/other.rs"), "fn orphan() {}\n").unwrap();
-    register(&store, "demo", dir.path());
+    add_source(&store, "demo", dir.path());
     sync(&store, "demo");
 
     store

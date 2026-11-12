@@ -1,23 +1,10 @@
 use super::*;
 use crate::knowledge::sync::sync_source;
-use crate::knowledge::{open_in_memory, KnowledgeSourceInfo};
 use rusqlite::params;
-use std::path::Path;
 
 mod lookup;
 mod maintain;
 mod pending;
-
-fn make_store() -> KnowledgeStore {
-    open_in_memory().expect("in-memory knowledge store")
-}
-
-fn register(store: &KnowledgeStore, label: &str, dir: &Path) -> KnowledgeSourceInfo {
-    store
-        .add_source(label, dir.to_str().unwrap(), &[], &[])
-        .unwrap();
-    store.get_source(label).unwrap().unwrap()
-}
 
 fn sync(store: &KnowledgeStore, label: &str) {
     let source = store.get_source(label).unwrap().unwrap();

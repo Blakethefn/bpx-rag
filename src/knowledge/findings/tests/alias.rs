@@ -1,14 +1,5 @@
-use super::{
-    make_store,
-    register,
-    sync,
-    analysis,
-    finding_rows,
-    resolutions,
-    unused,
-    file_reason,
-    entries,
-};
+use super::{analysis, entries, file_reason, finding_rows, resolutions, sync, unused};
+use crate::support::{add_source, make_store};
 use std::fs;
 use tempfile::tempdir;
 
@@ -28,7 +19,7 @@ fn a_cfg_gated_mod_still_reaches_the_file() {
     )
     .unwrap();
     fs::write(dir.path().join("src/util.rs"), "fn hidden() {}\n").unwrap();
-    register(&store, "demo", dir.path());
+    add_source(&store, "demo", dir.path());
     sync(&store, "demo");
 
     let (status, _, _, gaps) = analysis(&store, "demo");
@@ -51,7 +42,7 @@ fn a_module_alias_leaves_the_called_function_unused() {
     )
     .unwrap();
     fs::write(dir.path().join("src/a.rs"), "pub(crate) fn helper() {}\n").unwrap();
-    register(&store, "demo", dir.path());
+    add_source(&store, "demo", dir.path());
     sync(&store, "demo");
 
     let (status, _, _, gaps) = analysis(&store, "demo");
@@ -80,7 +71,7 @@ fn a_doc_comment_between_the_test_attribute_and_the_function_reports_it() {
         "fn main() {}\n#[test]\n/// documents the check\nfn checks() {}\n",
     )
     .unwrap();
-    register(&store, "demo", dir.path());
+    add_source(&store, "demo", dir.path());
     sync(&store, "demo");
 
     let (status, _, _, gaps) = analysis(&store, "demo");

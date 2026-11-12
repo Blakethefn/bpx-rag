@@ -1,12 +1,5 @@
-use super::{
-    make_store,
-    register,
-    sync,
-    analysis,
-    finding_rows,
-    resolutions,
-    unused,
-};
+use super::{analysis, finding_rows, resolutions, sync, unused};
+use crate::support::{add_source, make_store};
 use std::fs;
 use tempfile::tempdir;
 
@@ -22,7 +15,7 @@ fn an_alias_uses_only_the_imported_helper() {
     .unwrap();
     fs::write(dir.path().join("src/a.rs"), "pub(crate) fn helper() {}\n").unwrap();
     fs::write(dir.path().join("src/b.rs"), "fn helper() {}\n").unwrap();
-    register(&store, "demo", dir.path());
+    add_source(&store, "demo", dir.path());
     sync(&store, "demo");
 
     let targets: Vec<_> = resolutions(&store, "h")
@@ -54,7 +47,7 @@ fn a_private_function_is_not_used_by_a_call_in_another_module() {
     .unwrap();
     fs::write(dir.path().join("src/a.rs"), "fn hidden() {}\n").unwrap();
     fs::write(dir.path().join("src/b.rs"), "fn caller() { hidden(); }\n").unwrap();
-    register(&store, "demo", dir.path());
+    add_source(&store, "demo", dir.path());
     sync(&store, "demo");
 
     let hidden = resolutions(&store, "hidden");
@@ -83,7 +76,7 @@ fn a_library_pub_item_is_withheld_and_pub_crate_can_be_unused() {
         "pub fn exported() {}\npub(crate) fn internal() {}\n",
     )
     .unwrap();
-    register(&store, "demo", dir.path());
+    add_source(&store, "demo", dir.path());
     sync(&store, "demo");
 
     let (status, _, _, gaps) = analysis(&store, "demo");
@@ -117,7 +110,7 @@ fn a_parsed_non_rust_file_has_no_finding_and_an_unsupported_file_keeps_its_gap()
     )
     .unwrap();
     fs::write(dir.path().join("README.md"), "# Title\n").unwrap();
-    register(&store, "demo", dir.path());
+    add_source(&store, "demo", dir.path());
     sync(&store, "demo");
 
     let (status, _, _, gaps) = analysis(&store, "demo");
@@ -157,7 +150,7 @@ fn a_glob_uses_visible_items_and_an_unresolved_glob_does_not_blank_the_source() 
         "pub fn helper() {}\nfn hidden() {}\n",
     )
     .unwrap();
-    register(&store, "demo", dir.path());
+    add_source(&store, "demo", dir.path());
     sync(&store, "demo");
 
     let (status, _, _, _) = analysis(&store, "demo");
@@ -179,7 +172,7 @@ fn a_prelude_name_does_not_use_a_function_in_another_module() {
     )
     .unwrap();
     fs::write(dir.path().join("src/other.rs"), "fn Some() {}\n").unwrap();
-    register(&store, "demo", dir.path());
+    add_source(&store, "demo", dir.path());
     sync(&store, "demo");
 
     let some = resolutions(&store, "Some");
@@ -207,7 +200,7 @@ fn two_imports_of_one_local_name_are_ambiguous() {
     .unwrap();
     fs::write(dir.path().join("src/a.rs"), "pub(crate) fn helper() {}\n").unwrap();
     fs::write(dir.path().join("src/b.rs"), "pub(crate) fn helper() {}\n").unwrap();
-    register(&store, "demo", dir.path());
+    add_source(&store, "demo", dir.path());
     sync(&store, "demo");
 
     let ambiguous: i64 = store

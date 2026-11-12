@@ -1,5 +1,6 @@
 use super::super::*;
-use super::{exact, hit, lookup_with, make_store, register, sync};
+use super::{exact, hit, lookup_with, sync};
+use crate::support::{add_source, make_store};
 use std::fs;
 use tempfile::tempdir;
 
@@ -27,7 +28,7 @@ fn exact_lookup_returns_paths_and_ranges_for_each_language() {
         "package main\n\nfunc GoEntry() int {\n\treturn 1\n}\n",
     )
     .unwrap();
-    register(&store, "test", dir.path());
+    add_source(&store, "test", dir.path());
     sync(&store, "test");
 
     assert_eq!(
@@ -70,7 +71,7 @@ fn duplicate_names_in_two_files_return_both_paths_in_order() {
     fs::create_dir_all(dir.path().join("a")).unwrap();
     fs::write(dir.path().join("b/two.rs"), "pub fn shared() -> u8 { 2 }\n").unwrap();
     fs::write(dir.path().join("a/one.rs"), "pub fn shared() -> u8 { 1 }\n").unwrap();
-    register(&store, "test", dir.path());
+    add_source(&store, "test", dir.path());
     sync(&store, "test");
 
     assert_eq!(
@@ -91,7 +92,7 @@ fn prefix_lookup_matches_names_with_the_prefix_and_exact_does_not() {
         "pub fn load_user() {}\npub fn load_config() {}\npub fn unload() {}\npub fn Load_Upper() {}\n",
     )
     .unwrap();
-    register(&store, "test", dir.path());
+    add_source(&store, "test", dir.path());
     sync(&store, "test");
 
     let prefixed = lookup_with(&store, "load_", MatchMode::Prefix, None, 20);
@@ -112,8 +113,8 @@ fn source_filter_restricts_results_to_one_source() {
     let two = tempdir().unwrap();
     fs::write(one.path().join("a.rs"), "pub fn common() {}\n").unwrap();
     fs::write(two.path().join("b.rs"), "pub fn common() {}\n").unwrap();
-    register(&store, "one", one.path());
-    register(&store, "two", two.path());
+    add_source(&store, "one", one.path());
+    add_source(&store, "two", two.path());
     sync(&store, "one");
     sync(&store, "two");
 
@@ -136,7 +137,7 @@ fn limit_truncates_and_reports_it() {
         )
         .unwrap();
     }
-    register(&store, "test", dir.path());
+    add_source(&store, "test", dir.path());
     sync(&store, "test");
 
     let report = lookup_with(&store, "shared", MatchMode::Exact, None, 2);

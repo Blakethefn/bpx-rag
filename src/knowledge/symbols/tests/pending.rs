@@ -1,7 +1,8 @@
 use super::super::*;
-use super::{count, exact, lookup_with, make_store, register, sync};
+use super::{count, exact, lookup_with, sync};
 use crate::knowledge::query::{knowledge_search_report, SearchWeights};
 use crate::knowledge::sync::sync_source;
+use crate::support::{add_source, make_store};
 use std::fs;
 use tempfile::tempdir;
 
@@ -14,7 +15,7 @@ fn default_search_does_not_read_the_symbol_index() {
         "/// Loads the configured user record.\npub fn load_user_record() -> u8 { 1 }\n",
     )
     .unwrap();
-    register(&store, "test", dir.path());
+    add_source(&store, "test", dir.path());
     sync(&store, "test");
 
     let weights = SearchWeights::default();
@@ -49,7 +50,7 @@ fn database_with_current_symbol_rows_reports_them_pending_after_upgrade_until_sy
     let db_path = dir.path().join("knowledge.db");
     {
         let store = KnowledgeStore::open_at(&db_path).unwrap();
-        register(&store, "test", &source_dir);
+        add_source(&store, "test", &source_dir);
         sync(&store, "test");
         assert_eq!(exact(&store, "upgraded_entry").len(), 1);
     }

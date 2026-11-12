@@ -1,14 +1,5 @@
-use super::{
-    make_store,
-    register,
-    sync,
-    analysis,
-    finding_rows,
-    unused,
-    file_reason,
-    entries,
-    has_entry,
-};
+use super::{analysis, entries, file_reason, finding_rows, has_entry, sync, unused};
+use crate::support::{add_source, make_store};
 use std::fs;
 use tempfile::tempdir;
 
@@ -37,7 +28,7 @@ fn an_example_and_a_bench_are_program_roots_and_a_test_child_keeps_pub() {
     fs::write(dir.path().join("benches/work.rs"), "fn bench_idle() {}\n").unwrap();
     fs::write(dir.path().join("tests/check.rs"), "mod util;\n").unwrap();
     fs::write(dir.path().join("tests/util.rs"), "pub fn exported() {}\n").unwrap();
-    register(&store, "demo", dir.path());
+    add_source(&store, "demo", dir.path());
     sync(&store, "demo");
 
     let (status, _, _, gaps) = analysis(&store, "demo");
@@ -121,7 +112,7 @@ fn a_test_root_alone_names_an_undeclared_file_and_skips_no_entry_points() {
     .unwrap();
     fs::write(dir.path().join("tests/check.rs"), "// integration test\n").unwrap();
     fs::write(dir.path().join("src/legacy.rs"), "fn old() {}\n").unwrap();
-    register(&store, "demo", dir.path());
+    add_source(&store, "demo", dir.path());
     sync(&store, "demo");
 
     let (status, _, _, gaps) = analysis(&store, "demo");
@@ -159,7 +150,7 @@ fn an_explicit_lib_path_roots_that_file_and_leaves_src_lib_rs_undeclared() {
     .unwrap();
     fs::write(dir.path().join("src/internal.rs"), "pub fn exported() {}\n").unwrap();
     fs::write(dir.path().join("src/lib.rs"), "fn leftover() {}\n").unwrap();
-    register(&store, "demo", dir.path());
+    add_source(&store, "demo", dir.path());
     sync(&store, "demo");
 
     let (status, _, _, gaps) = analysis(&store, "demo");

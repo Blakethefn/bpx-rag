@@ -1,19 +1,9 @@
-use super::super::{open_in_memory, KnowledgeStore};
+use super::super::KnowledgeStore;
 use crate::knowledge::sync::sync_source;
+use crate::support::{add_source, make_store};
 use rusqlite::params;
 use std::fs;
-use std::path::Path;
 use tempfile::tempdir;
-
-fn make_store() -> KnowledgeStore {
-    open_in_memory().expect("in-memory knowledge store")
-}
-
-fn register(store: &KnowledgeStore, label: &str, dir: &Path) {
-    store
-        .add_source(label, dir.to_str().unwrap(), &[], &[])
-        .unwrap();
-}
 
 fn sync(store: &KnowledgeStore, label: &str) {
     let source = store.get_source(label).unwrap().unwrap();
@@ -64,7 +54,7 @@ fn deleting_a_file_drops_its_evidence_and_nulls_an_entry_that_pointed_at_it() {
     .unwrap();
     fs::write(dir.path().join("src/main.rs"), "fn main() {}\n").unwrap();
     fs::write(dir.path().join("src/keep.rs"), "pub fn keep() {}\n").unwrap();
-    register(&store, "demo", dir.path());
+    add_source(&store, "demo", dir.path());
     sync(&store, "demo");
 
     let target_before: Option<i64> = store

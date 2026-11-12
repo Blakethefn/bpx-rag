@@ -1,5 +1,6 @@
 use super::super::report;
-use super::{make_store, register, sync, analysis, finding_rows};
+use super::{analysis, finding_rows, sync};
+use crate::support::{add_source, make_store};
 use std::fs;
 use tempfile::tempdir;
 
@@ -9,7 +10,7 @@ fn the_reader_returns_the_analysis_row_and_hides_findings_that_do_not_match_it()
     let dir = tempdir().unwrap();
     // Private, so the symbol is a finding. `pub` on neither root is withheld.
     fs::write(dir.path().join("lib.rs"), "fn alpha() {}\n").unwrap();
-    register(&store, "demo", dir.path());
+    add_source(&store, "demo", dir.path());
     sync(&store, "demo");
 
     let text = report(&store, None).unwrap();
@@ -38,7 +39,7 @@ fn a_source_with_no_analysis_row_does_not_invent_a_fingerprint() {
     let store = make_store();
     let dir = tempdir().unwrap();
     fs::write(dir.path().join("lib.rs"), "pub fn alpha() {}\n").unwrap();
-    register(&store, "demo", dir.path());
+    add_source(&store, "demo", dir.path());
 
     let text = report(&store, None).unwrap();
     assert_eq!(text, "source: demo\nno analysis stored\n");
@@ -52,8 +53,8 @@ fn several_sources_and_no_label_names_the_labels() {
     let second = tempdir().unwrap();
     fs::write(first.path().join("a.rs"), "pub fn alpha() {}\n").unwrap();
     fs::write(second.path().join("b.rs"), "pub fn beta() {}\n").unwrap();
-    register(&store, "alpha", first.path());
-    register(&store, "beta", second.path());
+    add_source(&store, "alpha", first.path());
+    add_source(&store, "beta", second.path());
 
     let error = report(&store, None).unwrap_err().to_string();
     assert!(error.contains("alpha"), "{error}");
@@ -67,7 +68,7 @@ fn every_rust_file_failing_to_parse_is_incomplete_and_has_no_findings() {
     let dir = tempdir().unwrap();
     fs::write(dir.path().join("a.rs"), "fn broken( {\n").unwrap();
     fs::write(dir.path().join("b.rs"), "pub fn fine() {}\nfn broken( {\n").unwrap();
-    register(&store, "demo", dir.path());
+    add_source(&store, "demo", dir.path());
     sync(&store, "demo");
 
     let (status, _, _, gaps) = analysis(&store, "demo");
@@ -91,7 +92,7 @@ fn tampering_a_partial_fingerprint_hides_finding_lines_and_keeps_the_header() {
     .unwrap();
     fs::write(dir.path().join("src/util.rs"), "fn hidden() {}\n").unwrap();
     fs::write(dir.path().join("src/other.rs"), "fn broken( {\n").unwrap();
-    register(&store, "demo", dir.path());
+    add_source(&store, "demo", dir.path());
     sync(&store, "demo");
 
     store
@@ -119,7 +120,7 @@ fn a_markdown_only_source_stays_complete_and_has_no_findings() {
     fs::create_dir(dir.path().join("docs")).unwrap();
     fs::write(dir.path().join("README.md"), "# Notes\n").unwrap();
     fs::write(dir.path().join("docs/guide.md"), "A guide.\n").unwrap();
-    register(&store, "demo", dir.path());
+    add_source(&store, "demo", dir.path());
     sync(&store, "demo");
 
     let (status, _, _, gaps) = analysis(&store, "demo");

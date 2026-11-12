@@ -1,5 +1,5 @@
 use crate::knowledge::*;
-use std::sync::Arc;
+use crate::support::{make_store, make_store_with_embedder};
 
 mod enrichment;
 mod scope;
@@ -16,16 +16,6 @@ fn link_count(store: &KnowledgeStore, source_id: i64) -> i64 {
             |row| row.get(0),
         )
         .unwrap()
-}
-
-fn make_store() -> KnowledgeStore {
-    open_in_memory().expect("in-memory knowledge store")
-}
-
-fn make_store_with_embedder() -> KnowledgeStore {
-    let mut store = make_store();
-    store.set_embedder(Arc::new(crate::embed::tests::MockEmbedder::new()));
-    store
 }
 
 // ── Test Anchor 1: Incremental sync correctness ────────────────────────
