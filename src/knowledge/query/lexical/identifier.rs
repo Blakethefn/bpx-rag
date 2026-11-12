@@ -3,7 +3,7 @@ use rusqlite::Connection;
 
 use crate::knowledge::identifiers::split_identifier;
 
-use super::{ranked_result_from_row, RankedResult};
+use super::{lexical_columns, ranked_result_from_row, select_list, RankedResult};
 
 /// Identifier layer: BM25 over the split words of compound identifiers in the
 /// `knowledge_identifiers` table. The query's own identifiers are split the same
@@ -35,13 +35,10 @@ pub(in crate::knowledge::query) fn knowledge_identifier_search(
         format!(" AND {meta_where}")
     };
 
+    let columns = lexical_columns("kc", "bm25(knowledge_identifiers)");
+    let select = select_list(&columns);
     let sql = format!(
-        "SELECT kc.rowid, kcm.file_id, kcm.source_id, kc.title, kc.content,
-                COALESCE(kcm.line_start, 0), COALESCE(kcm.line_end, 0),
-                COALESCE(kcm.metadata, '{{}}'),
-                COALESCE(ks.label, '') as source_label,
-                COALESCE(kf.rel_path, '') as file_path,
-                bm25(knowledge_identifiers) as rank
+        "SELECT {select}
          FROM knowledge_identifiers
          JOIN knowledge_chunks kc ON kc.rowid = knowledge_identifiers.rowid
          JOIN knowledge_chunk_meta kcm ON kcm.chunk_rowid = knowledge_identifiers.rowid
@@ -57,7 +54,9 @@ pub(in crate::knowledge::query) fn knowledge_identifier_search(
     let param_refs: Vec<&dyn rusqlite::types::ToSql> = params.iter().map(|p| p.as_ref()).collect();
     let mut stmt = conn.prepare(&sql)?;
     let results = stmt
-        .query_map(param_refs.as_slice(), ranked_result_from_row)?
+        .query_map(param_refs.as_slice(), |row| {
+            ranked_result_from_row(row, &columns)
+        })?
         .collect::<rusqlite::Result<Vec<_>>>()?;
 
     Ok(results)

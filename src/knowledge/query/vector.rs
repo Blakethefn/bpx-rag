@@ -1,7 +1,28 @@
+use super::lexical::{
+    chunk_columns, column_at, ranked_result_from_row, select_list, BoundColumn, ChunkColumn,
+    Selected,
+};
 use super::*;
 use crate::embed;
 use anyhow::Result;
 use rusqlite::Connection;
+
+#[cfg(test)]
+mod tests;
+
+/// Shared chunk columns with the embedding inserted after rowid.
+fn vector_columns(chunk: &str) -> Vec<BoundColumn> {
+    let mut columns = chunk_columns(chunk);
+    let rowid_at = column_at(&columns, Selected::Chunk(ChunkColumn::Rowid));
+    columns.insert(
+        rowid_at + 1,
+        BoundColumn {
+            selected: Selected::Embedding,
+            sql: "ke.embedding".to_string(),
+        },
+    );
+    columns
+}
 
 /// Vector similarity search over knowledge embeddings.
 pub(super) fn knowledge_vector_search(
@@ -29,14 +50,11 @@ pub(super) fn knowledge_vector_search(
         format!(" AND {meta_where}")
     };
 
+    let columns = vector_columns("kc");
+    let select = select_list(&columns);
+    let embedding_at = column_at(&columns, Selected::Embedding);
     let mut sql = format!(
-        "SELECT ke.chunk_rowid, ke.embedding,
-                kcm.file_id, kcm.source_id,
-                kc.title, kc.content,
-                COALESCE(kcm.line_start, 0), COALESCE(kcm.line_end, 0),
-                COALESCE(kcm.metadata, '{{}}'),
-                COALESCE(ks.label, '') as source_label,
-                COALESCE(kf.rel_path, '') as file_path
+        "SELECT {select}
          FROM knowledge_embeddings ke
          JOIN knowledge_chunks kc ON kc.rowid = ke.chunk_rowid
          JOIN knowledge_chunk_meta kcm ON kcm.chunk_rowid = ke.chunk_rowid
@@ -70,46 +88,17 @@ pub(super) fn knowledge_vector_search(
     let mut stmt = conn.prepare(&sql)?;
     let mut scored: Vec<(f32, RankedResult)> = stmt
         .query_map(param_refs.as_slice(), |row| {
-            let chunk_rowid: i64 = row.get(0)?;
-            let blob: Vec<u8> = row.get(1)?;
-            Ok((
-                blob,
-                chunk_rowid,
-                row.get::<_, i64>(2)?,
-                row.get::<_, i64>(3)?,
-                row.get::<_, String>(4)?,
-                row.get::<_, String>(5)?,
-                row.get::<_, i64>(6)? as u32,
-                row.get::<_, i64>(7)? as u32,
-                row.get::<_, String>(8)?,
-                row.get::<_, String>(9)?,
-                row.get::<_, String>(10)?,
-            ))
+            let blob: Vec<u8> = row.get(embedding_at)?;
+            let result = ranked_result_from_row(row, &columns)?;
+            Ok((blob, result))
         })?
         .collect::<rusqlite::Result<Vec<_>>>()?
         .into_iter()
-        .map(
-            |(blob, rowid, file_id, source_id, title, content, ls, le, meta, source, path)| {
-                let embedding = decode_stored_embedding(rowid, &blob, query_embedding.len())?;
-                let similarity = dot_product(query_embedding, &embedding);
-                Ok((
-                    similarity,
-                    RankedResult {
-                        rowid,
-                        file_id,
-                        source_id,
-                        title,
-                        content,
-                        rank: 0.0,
-                        source_label: source,
-                        file_path: path,
-                        line_start: ls,
-                        line_end: le,
-                        metadata: meta,
-                    },
-                ))
-            },
-        )
+        .map(|(blob, result)| {
+            let embedding = decode_stored_embedding(result.rowid, &blob, query_embedding.len())?;
+            let similarity = dot_product(query_embedding, &embedding);
+            Ok((similarity, result))
+        })
         .collect::<Result<Vec<_>>>()?;
 
     scored.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
