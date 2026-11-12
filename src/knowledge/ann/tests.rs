@@ -240,3 +240,43 @@ fn saved_sidecar_applies_incremental_embedding_updates_and_deletes() {
     assert_eq!(index.index.size(), count - 1);
     assert!(!index.index.contains(2));
 }
+
+fn built_index(count: usize) -> VectorIndex {
+    let conn = sample_database(count);
+    VectorIndex {
+        index: build_index(&conn, TEST_MODEL, TEST_DIMENSIONS, count).unwrap(),
+        dimensions: TEST_DIMENSIONS,
+    }
+}
+
+#[test]
+fn small_allowlist_is_returned_whole_even_above_the_limit() {
+    let index = built_index(4096);
+    let allowed = [7_i64, 42, 4000].into_iter().collect::<HashSet<_>>();
+
+    let mut candidates = index
+        .candidates(&vector_for(0), 2, Some(&allowed))
+        .unwrap()
+        .unwrap();
+    candidates.sort_unstable();
+
+    assert_eq!(candidates, vec![7, 42, 4000]);
+}
+
+#[test]
+fn large_allowlist_with_enough_matches_returns_only_allowed_candidates() {
+    let index = built_index(4096);
+    let allowed = (1..=600_i64).collect::<HashSet<_>>();
+
+    let candidates = index
+        .candidates(&vector_for(0), 10, Some(&allowed))
+        .unwrap()
+        .unwrap();
+
+    assert!(
+        candidates.len() >= 10,
+        "expected at least 10 candidates, got {}",
+        candidates.len()
+    );
+    assert!(candidates.iter().all(|rowid| allowed.contains(rowid)));
+}

@@ -202,3 +202,292 @@ impl RagApp {
         Ok(report)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::Config;
+    use crate::embed::tests::MockEmbedder;
+    use crate::embed::Embed;
+    use crate::knowledge::KnowledgeStore;
+    use crate::support::add_synced_source;
+    use rusqlite::Connection;
+    use std::fs;
+    use std::path::{Path, PathBuf};
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::Arc;
+    use tempfile::{tempdir, TempDir};
+
+    /// A `RagApp` over a file-backed store. The writer lock sits beside this store's database,
+    /// so the fixture needs no environment changes.
+    struct Fixture {
+        app: RagApp,
+        db_path: PathBuf,
+        _data_home: TempDir,
+    }
+
+    impl Fixture {
+        fn new(batch_size: usize) -> Self {
+            let data_home = tempdir().unwrap();
+            let db_path = data_home.path().join("test-knowledge.db");
+            let mut config = Config::default();
+            config.embeddings.batch_size = batch_size;
+            let app = RagApp {
+                config,
+                knowledge: KnowledgeStore::open_at(&db_path).unwrap(),
+                embedding_notice: None,
+                embedder_loaded: true,
+            };
+            Self {
+                app,
+                db_path,
+                _data_home: data_home,
+            }
+        }
+
+        fn conn(&self) -> &Connection {
+            self.app.knowledge.conn()
+        }
+    }
+
+    /// Returns the normal vectors, but one of them has the wrong length.
+    struct MisshapenEmbedder {
+        inner: MockEmbedder,
+        bad_index: usize,
+    }
+
+    impl Embed for MisshapenEmbedder {
+        fn embed_one(&self, text: &str) -> Result<Vec<f32>> {
+            self.inner.embed_one(text)
+        }
+
+        fn embed_batch(&self, texts: &[&str]) -> Result<Vec<Vec<f32>>> {
+            let mut vectors = self.inner.embed_batch(texts)?;
+            if let Some(vector) = vectors.get_mut(self.bad_index) {
+                vector.push(0.0);
+            }
+            Ok(vectors)
+        }
+
+        fn dim(&self) -> usize {
+            self.inner.dim()
+        }
+    }
+
+    /// Edits one chunk through a second connection during the first embedding call. That call
+    /// happens after the batch is selected and before its write transaction starts.
+    struct EditingEmbedder {
+        inner: MockEmbedder,
+        db_path: PathBuf,
+        edited: AtomicBool,
+    }
+
+    impl Embed for EditingEmbedder {
+        fn embed_one(&self, text: &str) -> Result<Vec<f32>> {
+            self.inner.embed_one(text)
+        }
+
+        fn embed_batch(&self, texts: &[&str]) -> Result<Vec<Vec<f32>>> {
+            if !self.edited.swap(true, Ordering::SeqCst) {
+                let other = Connection::open(&self.db_path)?;
+                other.execute(
+                    "UPDATE knowledge_chunks SET content = content || ' edited'
+                     WHERE rowid = (SELECT MIN(rowid) FROM knowledge_chunks)",
+                    [],
+                )?;
+            }
+            self.inner.embed_batch(texts)
+        }
+
+        fn dim(&self) -> usize {
+            self.inner.dim()
+        }
+    }
+
+    fn write_files(dir: &Path, count: usize) {
+        for index in 0..count {
+            fs::write(
+                dir.join(format!("file{index}.rs")),
+                format!("pub fn item{index}() -> u8 {{ {index} }}\n"),
+            )
+            .unwrap();
+        }
+    }
+
+    fn count_rows(conn: &Connection, sql: &str, source_id: Option<i64>) -> usize {
+        let count: i64 = match source_id {
+            Some(source_id) => conn.query_row(sql, params![source_id], |row| row.get(0)),
+            None => conn.query_row(sql, [], |row| row.get(0)),
+        }
+        .unwrap();
+        count as usize
+    }
+
+    fn chunk_count(conn: &Connection) -> usize {
+        count_rows(conn, "SELECT COUNT(*) FROM knowledge_chunks", None)
+    }
+
+    fn embedding_count(conn: &Connection) -> usize {
+        count_rows(conn, "SELECT COUNT(*) FROM knowledge_embeddings", None)
+    }
+
+    fn source_chunk_count(conn: &Connection, source_id: i64) -> usize {
+        count_rows(
+            conn,
+            "SELECT COUNT(*) FROM knowledge_chunk_meta WHERE source_id = ?1",
+            Some(source_id),
+        )
+    }
+
+    fn source_embedding_count(conn: &Connection, source_id: i64) -> usize {
+        count_rows(
+            conn,
+            "SELECT COUNT(*) FROM knowledge_embeddings e
+             JOIN knowledge_chunk_meta m ON m.chunk_rowid = e.chunk_rowid
+             WHERE m.source_id = ?1",
+            Some(source_id),
+        )
+    }
+
+    fn report(
+        source_label: Option<&str>,
+        embedded: usize,
+        skipped: usize,
+        remaining: usize,
+    ) -> EmbeddingBackfillReport {
+        EmbeddingBackfillReport {
+            source_label: source_label.map(str::to_string),
+            embedded_chunks: embedded,
+            skipped_chunks: skipped,
+            remaining_chunks: remaining,
+        }
+    }
+
+    #[test]
+    fn backfill_embeds_every_pending_chunk_across_batches_and_reports_counts() {
+        let mut fixture = Fixture::new(2);
+        let sources = tempdir().unwrap();
+        write_files(sources.path(), 3);
+        add_synced_source(&fixture.app.knowledge, "docs", sources.path());
+        let total = chunk_count(fixture.conn());
+        assert!(
+            total > 2,
+            "fixture must span more than one batch, got {total}"
+        );
+        assert_eq!(embedding_count(fixture.conn()), 0);
+        fixture
+            .app
+            .knowledge
+            .set_embedder(Arc::new(MockEmbedder::new()));
+
+        let result = fixture.app.backfill_embeddings(None).unwrap();
+
+        assert_eq!(result, report(None, total, 0, 0));
+        assert_eq!(embedding_count(fixture.conn()), total);
+    }
+
+    #[test]
+    fn backfill_with_no_pending_chunks_writes_nothing() {
+        let mut fixture = Fixture::new(2);
+        fixture
+            .app
+            .knowledge
+            .set_embedder(Arc::new(MockEmbedder::new()));
+        let sources = tempdir().unwrap();
+        write_files(sources.path(), 3);
+        add_synced_source(&fixture.app.knowledge, "docs", sources.path());
+        let total = chunk_count(fixture.conn());
+        assert_eq!(
+            embedding_count(fixture.conn()),
+            total,
+            "sync with an embedder should leave nothing pending"
+        );
+
+        let result = fixture.app.backfill_embeddings(None).unwrap();
+
+        assert_eq!(result, report(None, 0, 0, 0));
+        assert_eq!(embedding_count(fixture.conn()), total);
+    }
+
+    #[test]
+    fn chunk_edited_before_its_write_is_skipped_then_embedded_in_a_later_batch() {
+        let mut fixture = Fixture::new(2);
+        let sources = tempdir().unwrap();
+        write_files(sources.path(), 3);
+        add_synced_source(&fixture.app.knowledge, "docs", sources.path());
+        let total = chunk_count(fixture.conn());
+        let embedder = EditingEmbedder {
+            inner: MockEmbedder::new(),
+            db_path: fixture.db_path.clone(),
+            edited: AtomicBool::new(false),
+        };
+        fixture.app.knowledge.set_embedder(Arc::new(embedder));
+
+        let result = fixture.app.backfill_embeddings(None).unwrap();
+
+        assert_eq!(result, report(None, total, 1, 0));
+        assert_eq!(embedding_count(fixture.conn()), total);
+    }
+
+    #[test]
+    fn failed_batch_write_rolls_back_earlier_rows_and_leaves_the_store_usable() {
+        let mut fixture = Fixture::new(2);
+        let sources = tempdir().unwrap();
+        write_files(sources.path(), 3);
+        add_synced_source(&fixture.app.knowledge, "docs", sources.path());
+        let total = chunk_count(fixture.conn());
+        fixture
+            .app
+            .knowledge
+            .set_embedder(Arc::new(MisshapenEmbedder {
+                inner: MockEmbedder::new(),
+                bad_index: 1,
+            }));
+
+        let error = fixture.app.backfill_embeddings(None).unwrap_err();
+
+        assert!(
+            error.to_string().contains("dimension mismatch"),
+            "{error:#}"
+        );
+        assert_eq!(
+            embedding_count(fixture.conn()),
+            0,
+            "the first row of the failed batch must not survive the rollback"
+        );
+
+        fixture
+            .app
+            .knowledge
+            .set_embedder(Arc::new(MockEmbedder::new()));
+        let result = fixture.app.backfill_embeddings(None).unwrap();
+        assert_eq!(result, report(None, total, 0, 0));
+    }
+
+    #[test]
+    fn source_scoped_backfill_embeds_only_that_source_and_counts_only_its_remainder() {
+        let mut fixture = Fixture::new(16);
+        let alpha_dir = tempdir().unwrap();
+        let beta_dir = tempdir().unwrap();
+        write_files(alpha_dir.path(), 2);
+        write_files(beta_dir.path(), 3);
+        let alpha = add_synced_source(&fixture.app.knowledge, "alpha", alpha_dir.path());
+        let beta = add_synced_source(&fixture.app.knowledge, "beta", beta_dir.path());
+        let alpha_total = source_chunk_count(fixture.conn(), alpha.id);
+        let beta_total = source_chunk_count(fixture.conn(), beta.id);
+        assert!(alpha_total > 0 && beta_total > 0);
+        fixture
+            .app
+            .knowledge
+            .set_embedder(Arc::new(MockEmbedder::new()));
+
+        let result = fixture.app.backfill_embeddings(Some("alpha")).unwrap();
+
+        assert_eq!(result, report(Some("alpha"), alpha_total, 0, 0));
+        assert_eq!(
+            source_embedding_count(fixture.conn(), alpha.id),
+            alpha_total
+        );
+        assert_eq!(source_embedding_count(fixture.conn(), beta.id), 0);
+    }
+}

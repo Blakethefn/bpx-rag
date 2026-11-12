@@ -230,3 +230,165 @@ fn escape_like(value: &str) -> String {
 fn changed_files(result: &SyncResult) -> u64 {
     (result.files_added + result.files_updated + result.files_removed) as u64
 }
+
+#[cfg(test)]
+mod tests {
+    use super::super::Watched;
+    use super::*;
+    use crate::support::add_source;
+    use crate::watch::WatchOptions;
+    use notify::event::{AccessKind, Flag, ModifyKind};
+    use std::collections::BTreeSet;
+    use std::path::PathBuf;
+    use std::time::Duration;
+    use tempfile::{tempdir, TempDir};
+
+    const LABEL: &str = "docs";
+
+    /// An engine whose store lives in a temp database, with one watched source rooted at `root`.
+    /// No `notify` watcher is registered, so events are injected straight into the queue.
+    fn engine_watching(root: &Path) -> (TempDir, Engine) {
+        let data = tempdir().unwrap();
+        let mut engine = Engine::new(
+            &data.path().join("knowledge.db"),
+            WatchOptions::default(),
+            Box::new(|| None),
+        )
+        .unwrap();
+        let source = add_source(&engine.store, LABEL, root);
+        engine.watched.insert(
+            LABEL.to_string(),
+            Watched {
+                source,
+                root: root.to_path_buf(),
+                registration: None,
+                state: SourceState::Watching,
+                reconciled_at: None,
+                batches: 0,
+                reindexed_files: 0,
+                last_error: None,
+                skipped: Vec::new(),
+                retry_at: None,
+                backoff: Duration::ZERO,
+                pending: BTreeSet::new(),
+                need_full: false,
+                first_event: None,
+                last_event: None,
+            },
+        );
+        (data, engine)
+    }
+
+    fn deliver(engine: &mut Engine, outcome: notify::Result<notify::Event>) {
+        engine.events_tx.send((LABEL.to_string(), outcome)).unwrap();
+        engine.drain_events();
+    }
+
+    fn modify(path: PathBuf) -> notify::Result<notify::Event> {
+        Ok(notify::Event::new(EventKind::Modify(ModifyKind::Any)).add_path(path))
+    }
+
+    #[test]
+    fn access_events_are_not_recorded_as_changes() {
+        let root = tempdir().unwrap();
+        let (_data, mut engine) = engine_watching(root.path());
+        let read = notify::Event::new(EventKind::Access(AccessKind::Read))
+            .add_path(root.path().join("lib.rs"));
+
+        deliver(&mut engine, Ok(read));
+
+        let entry = &engine.watched[LABEL];
+        assert!(entry.pending.is_empty());
+        assert!(!entry.need_full);
+        assert!(entry.first_event.is_none());
+        assert!(entry.last_event.is_none());
+    }
+
+    #[test]
+    fn modified_file_inside_the_root_becomes_a_pending_relative_path() {
+        let root = tempdir().unwrap();
+        let (_data, mut engine) = engine_watching(root.path());
+
+        deliver(&mut engine, modify(root.path().join("src").join("lib.rs")));
+
+        let entry = &engine.watched[LABEL];
+        assert_eq!(
+            entry.pending.iter().cloned().collect::<Vec<_>>(),
+            vec!["src/lib.rs".to_string()]
+        );
+        assert!(!entry.need_full);
+        assert!(entry.first_event.is_some());
+        assert!(entry.last_event.is_some());
+    }
+
+    #[test]
+    fn path_outside_the_root_requests_a_full_reconcile() {
+        let root = tempdir().unwrap();
+        let (_data, mut engine) = engine_watching(root.path());
+        let outside = root.path().parent().unwrap().join("elsewhere.rs");
+
+        deliver(&mut engine, modify(outside));
+
+        let entry = &engine.watched[LABEL];
+        assert!(entry.pending.is_empty());
+        assert!(entry.need_full);
+    }
+
+    #[test]
+    fn event_on_the_root_itself_requests_a_full_reconcile() {
+        let root = tempdir().unwrap();
+        let (_data, mut engine) = engine_watching(root.path());
+
+        deliver(&mut engine, modify(root.path().to_path_buf()));
+
+        let entry = &engine.watched[LABEL];
+        assert!(entry.pending.is_empty());
+        assert!(entry.need_full);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn backslash_separators_are_normalized_to_forward_slashes() {
+        let root = tempdir().unwrap();
+        let (_data, mut engine) = engine_watching(root.path());
+
+        deliver(&mut engine, modify(root.path().join("sub\\lib.rs")));
+
+        let entry = &engine.watched[LABEL];
+        assert_eq!(
+            entry.pending.iter().cloned().collect::<Vec<_>>(),
+            vec!["sub/lib.rs".to_string()]
+        );
+        assert!(!entry.need_full);
+    }
+
+    #[test]
+    fn rescan_flag_requests_a_full_reconcile_and_keeps_the_paths() {
+        let root = tempdir().unwrap();
+        let (_data, mut engine) = engine_watching(root.path());
+        let rescan = notify::Event::new(EventKind::Modify(ModifyKind::Any))
+            .add_path(root.path().join("a.rs"))
+            .set_flag(Flag::Rescan);
+
+        deliver(&mut engine, Ok(rescan));
+
+        let entry = &engine.watched[LABEL];
+        assert!(entry.need_full);
+        assert!(entry.pending.contains("a.rs"));
+    }
+
+    #[test]
+    fn notify_error_requests_a_full_reconcile_and_records_the_error() {
+        let root = tempdir().unwrap();
+        let (_data, mut engine) = engine_watching(root.path());
+
+        deliver(&mut engine, Err(notify::Error::generic("queue overflow")));
+
+        let entry = &engine.watched[LABEL];
+        assert!(entry.need_full);
+        assert!(entry.pending.is_empty());
+        let message = entry.last_error.as_deref().unwrap();
+        assert!(message.starts_with("watch event error:"), "{message}");
+        assert!(message.contains("queue overflow"), "{message}");
+    }
+}
