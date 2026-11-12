@@ -16,15 +16,14 @@ pub(super) fn ensure_analysis_status(conn: &Connection) -> Result<()> {
     }
     let foreign_keys: i64 = conn.query_row("PRAGMA foreign_keys", [], |row| row.get(0))?;
     conn.execute_batch("PRAGMA foreign_keys = OFF")?;
-    let migrated = conn.execute_batch(
-        "
+    let migration = "
         BEGIN IMMEDIATE;
         CREATE TABLE knowledge_analysis_next (
             source_id           INTEGER PRIMARY KEY REFERENCES knowledge_sources(id) ON DELETE CASCADE,
             analysis_version    INTEGER NOT NULL,
             evidence_generation INTEGER NOT NULL,
             fingerprint         TEXT NOT NULL,
-            status              TEXT NOT NULL CHECK (status IN ('complete', 'partial', 'incomplete')),
+            status              TEXT NOT NULL {analysis_status_check},
             gaps                TEXT NOT NULL
         );
         INSERT INTO knowledge_analysis_next
@@ -34,8 +33,9 @@ pub(super) fn ensure_analysis_status(conn: &Connection) -> Result<()> {
         DROP TABLE knowledge_analysis;
         ALTER TABLE knowledge_analysis_next RENAME TO knowledge_analysis;
         COMMIT;
-        ",
-    );
+        "
+    .replace("{analysis_status_check}", super::ANALYSIS_STATUS_CHECK);
+    let migrated = conn.execute_batch(&migration);
     if migrated.is_err() {
         let _ = conn.execute_batch("ROLLBACK");
     }

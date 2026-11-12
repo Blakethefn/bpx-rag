@@ -14,9 +14,10 @@ mod membership;
 mod visible;
 mod walk;
 
-pub(in crate::knowledge::resolution) use walk::{path_segments, walk_modules, Walk};
 use layout::extension;
 use load::{load_entries, load_files, load_modules, load_symbols};
+pub(crate) use membership::ENTRY_KINDS;
+pub(in crate::knowledge::resolution) use walk::{path_segments, walk_modules, Walk};
 
 pub(crate) struct Symbol {
     pub id: i64,

@@ -15,7 +15,22 @@ mod rust;
 mod tree;
 
 pub(crate) use tree::is_rust_path;
-pub(crate) use tree::{Symbol, Tree};
+pub(crate) use tree::{Symbol, Tree, ENTRY_KINDS};
+
+const STATUS_RESOLVED: &str = "resolved";
+const STATUS_AMBIGUOUS: &str = "ambiguous";
+const STATUS_UNRESOLVED: &str = "unresolved";
+
+pub(crate) const RESOLUTION_STATUSES: &[&str] =
+    &[STATUS_RESOLVED, STATUS_AMBIGUOUS, STATUS_UNRESOLVED];
+
+fn status_of(outcome: &rust::Outcome) -> &'static str {
+    match outcome {
+        rust::Outcome::Resolved(_) => STATUS_RESOLVED,
+        rust::Outcome::Ambiguous(_) => STATUS_AMBIGUOUS,
+        rust::Outcome::Unresolved => STATUS_UNRESOLVED,
+    }
+}
 
 struct StoredFile {
     id: i64,
@@ -54,31 +69,24 @@ pub(crate) fn rebuild(conn: &Connection, source_id: i64) -> Result<()> {
 
     for reference in &references {
         if reference.kind == KIND_MODULE || reference.kind == KIND_PATH {
-            match paths::module_file(
+            let file_id = paths::module_file(
                 &reference.from_rel,
                 &reference.specifier,
                 &files_by_path,
                 reference.file_id,
-            ) {
-                Some(file_id) => {
-                    insert.execute(params![
-                        source_id,
-                        reference.id,
-                        "resolved",
-                        None::<i64>,
-                        file_id
-                    ])?;
-                }
-                None => {
-                    insert.execute(params![
-                        source_id,
-                        reference.id,
-                        "unresolved",
-                        None::<i64>,
-                        None::<i64>
-                    ])?;
-                }
-            }
+            );
+            // The outcome only selects the status. This branch stores a file, not a symbol.
+            let outcome = match file_id {
+                Some(_) => rust::Outcome::Resolved(0),
+                None => rust::Outcome::Unresolved,
+            };
+            insert.execute(params![
+                source_id,
+                reference.id,
+                status_of(&outcome),
+                None::<i64>,
+                file_id
+            ])?;
             continue;
         }
 
@@ -108,12 +116,13 @@ fn write_outcome(
     reference_id: i64,
     outcome: &rust::Outcome,
 ) -> Result<()> {
+    let status = status_of(outcome);
     match outcome {
         rust::Outcome::Unresolved => {
             insert.execute(params![
                 source_id,
                 reference_id,
-                "unresolved",
+                status,
                 None::<i64>,
                 None::<i64>
             ])?;
@@ -122,7 +131,7 @@ fn write_outcome(
             insert.execute(params![
                 source_id,
                 reference_id,
-                "resolved",
+                status,
                 symbol_id,
                 None::<i64>
             ])?;
@@ -132,7 +141,7 @@ fn write_outcome(
                 insert.execute(params![
                     source_id,
                     reference_id,
-                    "ambiguous",
+                    status,
                     symbol_id,
                     None::<i64>
                 ])?;
