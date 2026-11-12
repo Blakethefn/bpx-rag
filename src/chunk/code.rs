@@ -62,12 +62,7 @@ pub(super) fn chunk_code(content: &str) -> Vec<Chunk> {
 
         if current_title.is_none() && is_structural_boundary(line) {
             let trimmed = line.trim();
-            let label = if trimmed.len() > 60 {
-                format!("{}...", &trimmed[..57])
-            } else {
-                trimmed.to_string()
-            };
-            current_title = Some(label);
+            current_title = Some(code_label(trimmed));
         }
 
         current_lines.push(line);
@@ -96,13 +91,19 @@ pub(super) fn make_code_title(lines: &[&str]) -> String {
     for line in lines.iter().take(5) {
         let trimmed = line.trim();
         if !trimmed.is_empty() && trimmed.len() > 2 {
-            let label = if trimmed.len() > 60 {
-                format!("{}...", &trimmed[..57])
-            } else {
-                trimmed.to_string()
-            };
-            return label;
+            return code_label(trimmed);
         }
     }
     "code-section".to_string()
+}
+
+fn code_label(trimmed: &str) -> String {
+    if trimmed.len() <= 60 {
+        return trimmed.to_string();
+    }
+    let mut end = 57;
+    while !trimmed.is_char_boundary(end) {
+        end -= 1;
+    }
+    format!("{}...", &trimmed[..end])
 }

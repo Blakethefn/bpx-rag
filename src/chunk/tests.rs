@@ -90,6 +90,33 @@ fn test_no_chunk_exceeds_max_bytes_dense_content() {
 }
 
 #[test]
+fn test_code_title_truncates_on_char_boundary_for_multibyte_line() {
+    let line = format!("{}ℹ{}", "x".repeat(56), "y".repeat(10));
+
+    let title = make_code_title(&[line.as_str()]);
+
+    assert_eq!(title, format!("{}...", "x".repeat(56)));
+}
+
+#[test]
+fn test_chunk_code_title_truncates_on_char_boundary_for_multibyte_line() {
+    let line = format!("function {}ℹ{}", "x".repeat(47), "y".repeat(10));
+
+    let chunks = chunk_code(&line);
+
+    assert_eq!(chunks[0].title, format!("function {}...", "x".repeat(47)));
+}
+
+#[test]
+fn test_code_title_ascii_truncation_keeps_57_bytes() {
+    let line = "x".repeat(70);
+
+    let title = make_code_title(&[line.as_str()]);
+
+    assert_eq!(title, format!("{}...", "x".repeat(57)));
+}
+
+#[test]
 fn test_no_chunk_exceeds_max_bytes_no_newlines() {
     let content = "x".repeat(10000);
     let chunks = chunk_content(&content);
