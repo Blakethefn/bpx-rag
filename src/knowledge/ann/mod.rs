@@ -15,11 +15,12 @@ use usearch::Index;
 mod build;
 mod sidecar;
 
-use build::{apply_incremental_changes, build_index};
+use build::{apply_incremental_changes, build_index, IncrementalChanges};
 use sidecar::{load_sidecar, save_sidecar};
 
 const ANN_MIN_VECTORS: usize = 4_096;
 const ANN_MAX_CANDIDATES: usize = 8_192;
+const _: () = assert!(ANN_MAX_CANDIDATES >= 256);
 const ANN_CANDIDATE_MULTIPLIER: usize = 512;
 const SMALL_FILTER_EXACT_LIMIT: usize = 512;
 
@@ -53,16 +54,17 @@ impl VectorIndex {
                     return Ok(Some(Self { index, dimensions }));
                 }
                 if manifest.generation < generation {
-                    if let Some(tombstones) = apply_incremental_changes(
+                    let changes = IncrementalChanges {
                         conn,
-                        &index,
+                        index: &index,
                         model_id,
                         dimensions,
-                        manifest.generation,
-                        generation,
-                        manifest.tombstones,
-                        vector_count,
-                    )? {
+                        from_generation: manifest.generation,
+                        to_generation: generation,
+                        previous_tombstones: manifest.tombstones,
+                        expected_size: vector_count,
+                    };
+                    if let Some(tombstones) = apply_incremental_changes(changes)? {
                         let index_size = index.size();
                         let compact_threshold = (index_size / 10).max(1_000);
                         let tombstones = if tombstones >= compact_threshold {
@@ -119,8 +121,7 @@ impl VectorIndex {
         }
         let target = limit
             .saturating_mul(ANN_CANDIDATE_MULTIPLIER)
-            .max(256)
-            .min(ANN_MAX_CANDIDATES)
+            .clamp(256, ANN_MAX_CANDIDATES)
             .min(self.index.size());
         if target == 0 {
             return Ok(Some(Vec::new()));
@@ -140,17 +141,15 @@ impl VectorIndex {
             .into_iter()
             .map(|key| key as i64)
             .collect::<Vec<_>>();
-        if candidates.len() < limit {
-            if let Some(allowed) = allowed {
-                if allowed.len() > SMALL_FILTER_EXACT_LIMIT {
-                    // Let SQL do an exact filtered scan. Expanding a large
-                    // allowlist into an IN clause can exceed SQLite's bind limit.
-                    return Ok(None);
-                }
-                return Ok(Some(allowed.iter().copied().collect()));
-            }
+        if candidates.len() >= limit {
+            return Ok(Some(candidates));
         }
-        Ok(Some(candidates))
+        match allowed {
+            // Let SQL do an exact filtered scan. Expanding a large
+            // allowlist into an IN clause can exceed SQLite's bind limit.
+            Some(_) => Ok(None),
+            None => Ok(Some(candidates)),
+        }
     }
 }
 

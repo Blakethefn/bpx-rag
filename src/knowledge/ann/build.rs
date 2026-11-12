@@ -54,16 +54,28 @@ pub(super) fn build_index(
     Ok(index)
 }
 
-pub(super) fn apply_incremental_changes(
-    conn: &Connection,
-    index: &Index,
-    model_id: &str,
-    dimensions: usize,
-    from_generation: i64,
-    to_generation: i64,
-    previous_tombstones: usize,
-    expected_size: usize,
-) -> Result<Option<usize>> {
+pub(super) struct IncrementalChanges<'a> {
+    pub(super) conn: &'a Connection,
+    pub(super) index: &'a Index,
+    pub(super) model_id: &'a str,
+    pub(super) dimensions: usize,
+    pub(super) from_generation: i64,
+    pub(super) to_generation: i64,
+    pub(super) previous_tombstones: usize,
+    pub(super) expected_size: usize,
+}
+
+pub(super) fn apply_incremental_changes(changes: IncrementalChanges<'_>) -> Result<Option<usize>> {
+    let IncrementalChanges {
+        conn,
+        index,
+        model_id,
+        dimensions,
+        from_generation,
+        to_generation,
+        previous_tombstones,
+        expected_size,
+    } = changes;
     let (first_change, change_count): (Option<i64>, i64) = conn.query_row(
         "SELECT MIN(change_id), COUNT(*) FROM knowledge_embedding_changes
          WHERE change_id > ?1 AND change_id <= ?2",

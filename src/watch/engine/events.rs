@@ -17,7 +17,7 @@ use crate::knowledge::sync::{sync_paths, sync_source, EnrichmentFn, SyncResult};
 use crate::knowledge::{KnowledgeSourceInfo, KnowledgeStore};
 
 use super::super::{SourceState, EVENT_POLL};
-use super::{fail, Engine, Event};
+use super::{fail, Engine, Event, Watched};
 
 impl Engine {
     /// Move queued events into each source's pending set. A notify error or an overflow asks for a
@@ -40,14 +40,7 @@ impl Engine {
                         entry.need_full = true;
                     }
                     for path in &event.paths {
-                        match path.strip_prefix(&entry.root) {
-                            Ok(relative) if !relative.as_os_str().is_empty() => {
-                                entry
-                                    .pending
-                                    .insert(relative.to_string_lossy().replace('\\', "/"));
-                            }
-                            _ => entry.need_full = true,
-                        }
+                        note_path(entry, path);
                     }
                 }
                 Err(error) => {
@@ -229,6 +222,19 @@ fn escape_like(value: &str) -> String {
 
 fn changed_files(result: &SyncResult) -> u64 {
     (result.files_added + result.files_updated + result.files_removed) as u64
+}
+
+/// Queue a changed path as a root-relative pending path. The root itself, or a path outside it,
+/// cannot be mapped to one entry, so it asks for a full reconcile.
+fn note_path(entry: &mut Watched, path: &Path) {
+    match path.strip_prefix(&entry.root) {
+        Ok(relative) if !relative.as_os_str().is_empty() => {
+            entry
+                .pending
+                .insert(relative.to_string_lossy().replace('\\', "/"));
+        }
+        _ => entry.need_full = true,
+    }
 }
 
 #[cfg(test)]
