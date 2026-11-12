@@ -12,19 +12,63 @@
 use serde_json::Value;
 use std::path::Path;
 
-/// Valid enrichment names.
-const KNOWN_ENRICHMENTS: &[&str] = &["frontmatter", "wikilinks", "folder_tags"];
+/// Extractor for one enrichment. `None` means the value is empty and is not stored.
+type Extract = fn(&str, &Path, &Path) -> Option<Value>;
+
+/// The only catalog. Each arm pairs a name with its extractor; that name is the JSON key.
+macro_rules! enrichment_catalog {
+    ($($name:literal => $extract:ident),+ $(,)?) => {
+        fn enrichment(name: &str) -> Option<(&'static str, Extract)> {
+            match name {
+                $($name => Some(($name, $extract)),)+
+                _ => None,
+            }
+        }
+
+        fn enrichment_names() -> &'static [&'static str] {
+            &[$($name),+]
+        }
+    };
+}
+
+fn frontmatter_value(content: &str, _path: &Path, _base: &Path) -> Option<Value> {
+    let value = extract_frontmatter(content);
+    if value.as_object().is_some_and(|fields| !fields.is_empty()) {
+        Some(value)
+    } else {
+        None
+    }
+}
+
+fn wikilinks_value(content: &str, _path: &Path, _base: &Path) -> Option<Value> {
+    present_array(extract_wikilinks(content))
+}
+
+fn folder_tags_value(_content: &str, path: &Path, base: &Path) -> Option<Value> {
+    present_array(extract_folder_tags(path, base))
+}
+
+fn present_array(value: Value) -> Option<Value> {
+    if value.as_array().is_some_and(|items| !items.is_empty()) {
+        Some(value)
+    } else {
+        None
+    }
+}
+
+enrichment_catalog! {
+    "frontmatter" => frontmatter_value,
+    "wikilinks" => wikilinks_value,
+    "folder_tags" => folder_tags_value,
+}
 
 /// Reject enrichment names this build does not know, so a typo fails at `add`.
 pub fn validate_enrichments(names: &[String]) -> anyhow::Result<()> {
-    match names
-        .iter()
-        .find(|name| !KNOWN_ENRICHMENTS.contains(&name.as_str()))
-    {
+    match names.iter().find(|name| enrichment(name).is_none()) {
         None => Ok(()),
         Some(name) => Err(anyhow::anyhow!(
             "unknown enrichment '{name}'; choose from: {}",
-            KNOWN_ENRICHMENTS.join(", ")
+            enrichment_names().join(", ")
         )),
     }
 }
@@ -42,44 +86,22 @@ pub fn build_enrichment_fn(
         return None;
     }
 
-    let do_frontmatter = enrichments.iter().any(|e| e == "frontmatter");
-    let do_wikilinks = enrichments.iter().any(|e| e == "wikilinks");
-    let do_folder_tags = enrichments.iter().any(|e| e == "folder_tags");
-    let base = source_base_path.to_path_buf();
-
-    // Log unknown enrichment names
-    for e in enrichments {
-        if !KNOWN_ENRICHMENTS.contains(&e.as_str()) {
-            eprintln!("Warning: unknown enrichment '{}', ignoring", e);
+    let mut selected = Vec::new();
+    for name in enrichments {
+        match enrichment(name) {
+            Some(spec) => selected.push(spec),
+            None => eprintln!("Warning: unknown enrichment '{name}', ignoring"),
         }
     }
+    let base = source_base_path.to_path_buf();
 
     Some(Box::new(move |content: &str, path: &Path| {
         let mut obj = serde_json::Map::new();
-
-        if do_frontmatter {
-            let fm = extract_frontmatter(content);
-            if !fm.is_null() && fm.as_object().map_or(false, |o| !o.is_empty()) {
-                obj.insert("frontmatter".to_string(), fm);
+        for (name, extract) in &selected {
+            if let Some(value) = extract(content, path, &base) {
+                obj.insert((*name).to_string(), value);
             }
         }
-        if do_wikilinks {
-            let links = extract_wikilinks(content);
-            if let Value::Array(ref arr) = links {
-                if !arr.is_empty() {
-                    obj.insert("wikilinks".to_string(), links);
-                }
-            }
-        }
-        if do_folder_tags {
-            let tags = extract_folder_tags(path, &base);
-            if let Value::Array(ref arr) = tags {
-                if !arr.is_empty() {
-                    obj.insert("folder_tags".to_string(), tags);
-                }
-            }
-        }
-
         Value::Object(obj)
     }))
 }
