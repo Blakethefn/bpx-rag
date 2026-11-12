@@ -12,7 +12,10 @@ use super::lexical::{
     identifier_match_expression, knowledge_bm25_search, knowledge_identifier_search,
     knowledge_trigram_search,
 };
-use super::rank::{diversify_by_file, merge_results, ScoredResult};
+use super::rank::{
+    diversify_by_file, keyword_layers, merge_results, ScoredResult, BM25, FUZZY, IDENTIFIER,
+    TRIGRAM, VECTOR,
+};
 use super::vector::knowledge_vector_search;
 use super::{
     KnowledgeSearchResult, SearchReport, SearchScope, SearchWeights, IDENTIFIER_LAYER_WEIGHT,
@@ -55,13 +58,13 @@ pub(crate) fn search_with_pool(
     if weights.keyword_weight > 0.0 {
         // Layer 1: FTS5 BM25. Always runs.
         let bm25 = knowledge_bm25_search(conn, query, candidate_limit, &meta_where, &meta_params)?;
-        merge_results(&mut all_results, &bm25, weights.keyword_weight, "bm25");
-        layers.push(LayerReport::ran("bm25", bm25.len()));
+        merge_results(&mut all_results, &bm25, weights.keyword_weight, BM25);
+        layers.push(LayerReport::ran(BM25.name, bm25.len()));
 
         // Layer 2: trigram. It searches a wider chunk candidate pool before the final
         // result limit is chosen. File diversity is applied after chunk-level RRF.
         match trigram_skip(policy, query, bm25.len(), pool_limit) {
-            Some(reason) => layers.push(LayerReport::skipped("trigram", reason)),
+            Some(reason) => layers.push(LayerReport::skipped(TRIGRAM.name, reason)),
             None => {
                 let trigram = knowledge_trigram_search(
                     conn,
@@ -70,19 +73,14 @@ pub(crate) fn search_with_pool(
                     &meta_where,
                     &meta_params,
                 )?;
-                merge_results(
-                    &mut all_results,
-                    &trigram,
-                    weights.keyword_weight,
-                    "trigram",
-                );
-                layers.push(LayerReport::ran("trigram", trigram.len()));
+                merge_results(&mut all_results, &trigram, weights.keyword_weight, TRIGRAM);
+                layers.push(LayerReport::ran(TRIGRAM.name, trigram.len()));
             }
         }
 
         // Layer 3: fuzzy. The gate reads the pool the policy names.
         match fuzzy_skip(policy, bm25.len(), all_results.len(), pool_limit) {
-            Some(reason) => layers.push(LayerReport::skipped("fuzzy", reason)),
+            Some(reason) => layers.push(LayerReport::skipped(FUZZY.name, reason)),
             None => {
                 match knowledge_fuzzy_search(
                     store,
@@ -92,10 +90,13 @@ pub(crate) fn search_with_pool(
                     &meta_params,
                 )? {
                     Some(fuzzy) => {
-                        merge_results(&mut all_results, &fuzzy, weights.keyword_weight, "fuzzy");
-                        layers.push(LayerReport::ran("fuzzy", fuzzy.len()));
+                        merge_results(&mut all_results, &fuzzy, weights.keyword_weight, FUZZY);
+                        layers.push(LayerReport::ran(FUZZY.name, fuzzy.len()));
                     }
-                    None => layers.push(LayerReport::skipped("fuzzy", SkipReason::NoCorrectedWord)),
+                    None => layers.push(LayerReport::skipped(
+                        FUZZY.name,
+                        SkipReason::NoCorrectedWord,
+                    )),
                 }
             }
         }
@@ -103,7 +104,7 @@ pub(crate) fn search_with_pool(
         // Identifier words. This runs after the gates, and no gate counts its results.
         if identifier_match_expression(query).is_empty() {
             layers.push(LayerReport::skipped(
-                "identifier",
+                IDENTIFIER.name,
                 SkipReason::TooFewContentWords,
             ));
         } else {
@@ -118,13 +119,13 @@ pub(crate) fn search_with_pool(
                 &mut all_results,
                 &identifiers,
                 weights.keyword_weight * IDENTIFIER_LAYER_WEIGHT,
-                "identifier",
+                IDENTIFIER,
             );
-            layers.push(LayerReport::ran("identifier", identifiers.len()));
+            layers.push(LayerReport::ran(IDENTIFIER.name, identifiers.len()));
         }
     } else {
-        for layer in ["bm25", "trigram", "fuzzy", "identifier"] {
-            layers.push(LayerReport::skipped(layer, SkipReason::Disabled));
+        for layer in keyword_layers() {
+            layers.push(LayerReport::skipped(layer.name, SkipReason::Disabled));
         }
     }
 
@@ -132,7 +133,7 @@ pub(crate) fn search_with_pool(
 
     // Layer 4: vector similarity. Runs whenever an embedder is attached.
     if weights.vector_weight <= 0.0 {
-        layers.push(LayerReport::skipped("vector", SkipReason::Disabled));
+        layers.push(LayerReport::skipped(VECTOR.name, SkipReason::Disabled));
     } else if let Some(emb) = store.embedder() {
         match cached_query_embedding(store, emb.as_ref(), query) {
             Ok(query_embedding) => {
@@ -153,18 +154,18 @@ pub(crate) fn search_with_pool(
                     // lexical hits. SQL rechecks model, metadata, and exact scores.
                     candidates.as_deref(),
                 )?;
-                merge_results(&mut all_results, &vector, weights.vector_weight, "vector");
-                layers.push(LayerReport::ran("vector", vector.len()));
+                merge_results(&mut all_results, &vector, weights.vector_weight, VECTOR);
+                layers.push(LayerReport::ran(VECTOR.name, vector.len()));
             }
             Err(error) => {
                 warnings.push(format!(
                     "query embedding failed, so vector search was skipped: {error}"
                 ));
-                layers.push(LayerReport::failed("vector", error.to_string()));
+                layers.push(LayerReport::failed(VECTOR.name, error.to_string()));
             }
         }
     } else {
-        layers.push(LayerReport::skipped("vector", SkipReason::NoEmbedder));
+        layers.push(LayerReport::skipped(VECTOR.name, SkipReason::NoEmbedder));
     }
 
     // Sort by RRF score, then by chunk rowid, so ties do not depend on hash order.

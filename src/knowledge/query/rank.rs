@@ -92,12 +92,73 @@ impl ScoredResult {
     }
 }
 
+/// One retrieval layer: the name that flows through the ranker, the
+/// [`SearchWhy`] field it writes, and whether a zero keyword weight skips it.
+///
+/// First-hit and later-hit scoring both call [`RetrievalLayer::add`], and the
+/// zero-weight skip list is [`keyword_layers`]. A new layer is one record.
+#[derive(Clone, Copy, Debug)]
+pub(super) struct RetrievalLayer {
+    pub(super) name: &'static str,
+    keyword: bool,
+    score: fn(&mut SearchWhy, f64),
+}
+
+impl RetrievalLayer {
+    const fn new(name: &'static str, keyword: bool, score: fn(&mut SearchWhy, f64)) -> Self {
+        Self {
+            name,
+            keyword,
+            score,
+        }
+    }
+
+    fn add(self, why: &mut SearchWhy, score: f64) {
+        (self.score)(why, score);
+    }
+}
+
+fn add_bm25(why: &mut SearchWhy, score: f64) {
+    why.layers.bm25 += score;
+}
+
+fn add_trigram(why: &mut SearchWhy, score: f64) {
+    why.layers.trigram += score;
+}
+
+fn add_fuzzy(why: &mut SearchWhy, score: f64) {
+    why.layers.fuzzy += score;
+}
+
+fn add_identifier(why: &mut SearchWhy, score: f64) {
+    why.layers.identifier += score;
+}
+
+fn add_vector(why: &mut SearchWhy, score: f64) {
+    why.layers.vector += score;
+}
+
+pub(super) const BM25: RetrievalLayer = RetrievalLayer::new("bm25", true, add_bm25);
+pub(super) const TRIGRAM: RetrievalLayer = RetrievalLayer::new("trigram", true, add_trigram);
+pub(super) const FUZZY: RetrievalLayer = RetrievalLayer::new("fuzzy", true, add_fuzzy);
+pub(super) const IDENTIFIER: RetrievalLayer =
+    RetrievalLayer::new("identifier", true, add_identifier);
+pub(super) const VECTOR: RetrievalLayer = RetrievalLayer::new("vector", false, add_vector);
+
+/// Pipeline order. Score routing and the zero-weight keyword skip list both read this.
+pub(super) const LAYERS: &[RetrievalLayer] = &[BM25, TRIGRAM, FUZZY, IDENTIFIER, VECTOR];
+
+/// Layers skipped together when the keyword weight is zero. Vector is absent.
+pub(super) fn keyword_layers() -> impl Iterator<Item = RetrievalLayer> {
+    LAYERS.iter().copied().filter(|layer| layer.keyword)
+}
+
 /// RRF merge with K=60.
 pub(super) fn merge_results(
     acc: &mut HashMap<i64, ScoredResult>,
     results: &[RankedResult],
     weight: f64,
-    layer: &str,
+    layer: RetrievalLayer,
 ) {
     const K: f64 = 60.0;
 
@@ -107,38 +168,24 @@ pub(super) fn merge_results(
         acc.entry(result.rowid)
             .and_modify(|sr| {
                 sr.rrf_score += rrf_score;
-                match layer {
-                    "bm25" => sr.why.layers.bm25 += rrf_score,
-                    "trigram" => sr.why.layers.trigram += rrf_score,
-                    "fuzzy" => sr.why.layers.fuzzy += rrf_score,
-                    "identifier" => sr.why.layers.identifier += rrf_score,
-                    "vector" => sr.why.layers.vector += rrf_score,
-                    _ => {}
-                }
+                layer.add(&mut sr.why, rrf_score);
             })
-            .or_insert_with(|| ScoredResult {
-                file_id: result.file_id,
-                source_id: result.source_id,
-                title: result.title.clone(),
-                content: result.content.clone(),
-                source_label: result.source_label.clone(),
-                file_path: result.file_path.clone(),
-                line_start: result.line_start,
-                line_end: result.line_end,
-                metadata: result.metadata.clone(),
-                rrf_score,
-                why: {
-                    let mut why = SearchWhy::default();
-                    match layer {
-                        "bm25" => why.layers.bm25 = rrf_score,
-                        "trigram" => why.layers.trigram = rrf_score,
-                        "fuzzy" => why.layers.fuzzy = rrf_score,
-                        "identifier" => why.layers.identifier = rrf_score,
-                        "vector" => why.layers.vector = rrf_score,
-                        _ => {}
-                    }
-                    why
-                },
+            .or_insert_with(|| {
+                let mut why = SearchWhy::default();
+                layer.add(&mut why, rrf_score);
+                ScoredResult {
+                    file_id: result.file_id,
+                    source_id: result.source_id,
+                    title: result.title.clone(),
+                    content: result.content.clone(),
+                    source_label: result.source_label.clone(),
+                    file_path: result.file_path.clone(),
+                    line_start: result.line_start,
+                    line_end: result.line_end,
+                    metadata: result.metadata.clone(),
+                    rrf_score,
+                    why,
+                }
             });
     }
 }
@@ -165,3 +212,6 @@ pub(super) fn truncate_snippet(content: &str, max_bytes: usize) -> String {
         .unwrap_or(boundary);
     format!("{}...", &content[..cut])
 }
+
+#[cfg(test)]
+mod tests;
