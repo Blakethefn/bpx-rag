@@ -203,7 +203,7 @@ fn needs_full_scan(
         if root.join(relative).is_dir() {
             return true;
         }
-        let prefix = format!("{}/", relative.replace('\\', "/"));
+        let prefix = format!("{relative}/");
         let pattern = format!("{}%", escape_like(&prefix));
         store
             .conn()
@@ -383,7 +383,7 @@ mod tests {
     }
 
     #[test]
-    fn unix_filename_keeps_its_backslash() {
+    fn backslash_in_filename_follows_platform_rule() {
         let root = tempdir().unwrap();
         let (_data, mut engine) = engine_watching(root.path());
 
