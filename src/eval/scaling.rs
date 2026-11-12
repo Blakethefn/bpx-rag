@@ -243,27 +243,22 @@ impl ScalingEmbedder {
     }
 }
 
+fn parse_query_index(text: &str) -> usize {
+    text.split_whitespace()
+        .last()
+        .and_then(|value| value.parse::<usize>().ok())
+        .unwrap_or_default()
+}
+
 impl embed::Embed for ScalingEmbedder {
-    fn embed_one(&self, _text: &str) -> Result<Vec<f32>> {
-        let query_index = _text
-            .split_whitespace()
-            .last()
-            .and_then(|value| value.parse::<usize>().ok())
-            .unwrap_or_default();
-        Ok(Self::vector_for(1_000_000 + query_index))
+    fn embed_one(&self, text: &str) -> Result<Vec<f32>> {
+        Ok(Self::vector_for(1_000_000 + parse_query_index(text)))
     }
 
     fn embed_batch(&self, texts: &[&str]) -> Result<Vec<Vec<f32>>> {
         Ok(texts
             .iter()
-            .map(|text| {
-                let query_index = text
-                    .split_whitespace()
-                    .last()
-                    .and_then(|value| value.parse::<usize>().ok())
-                    .unwrap_or_default();
-                Self::vector_for(1_000_000 + query_index)
-            })
+            .map(|text| Self::vector_for(1_000_000 + parse_query_index(text)))
             .collect())
     }
 

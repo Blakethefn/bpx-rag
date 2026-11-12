@@ -6,11 +6,12 @@
 //! The corpus is synthetic: deterministic chunk text and random unit vectors. Only time and
 //! bytes are measured, not ranking quality.
 
-use super::super::tests::{make_store, seed_chunk};
+use super::super::tests::seed_chunk;
 use super::super::vector::knowledge_vector_search;
 use super::super::*;
 use crate::config::EmbeddingDevice;
 use crate::embed::{self, Embed, Embedder, CODE_MODEL};
+use crate::support::make_store;
 use rusqlite::params;
 use std::path::Path;
 use std::sync::Arc;

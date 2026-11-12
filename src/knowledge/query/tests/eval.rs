@@ -147,7 +147,7 @@ fn deterministic_retrieval_eval_measures_recall_mrr_and_ndcg() {
         assert!(
             results
                 .iter()
-                .all(|result| source.map_or(true, |source| result.source_label == source)),
+                .all(|result| source.is_none_or(|source| result.source_label == source)),
             "source-filtered query returned an out-of-scope result"
         );
         assert!(

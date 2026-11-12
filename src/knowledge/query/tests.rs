@@ -15,12 +15,8 @@ mod vocab;
 mod identifier;
 mod rules;
 
-use crate::knowledge;
+use crate::support::make_store;
 use rusqlite::params;
-
-pub(super) fn make_store() -> KnowledgeStore {
-    knowledge::open_in_memory().expect("in-memory knowledge store")
-}
 
 /// Insert a source + file + chunk with metadata for testing search.
 pub(super) fn seed_chunk(
