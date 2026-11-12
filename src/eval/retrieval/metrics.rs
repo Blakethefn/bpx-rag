@@ -4,25 +4,17 @@ use std::collections::BTreeMap;
 use std::fs::{self};
 use std::path::Path;
 
+/// Running total of one [`QualityMetrics`] record, plus how many samples were added.
 #[derive(Clone, Copy, Default)]
 pub(in crate::eval) struct MetricSums {
-    pub(in crate::eval) recall_at_5: f64,
-    pub(in crate::eval) recall_at_10: f64,
-    pub(in crate::eval) precision_at_5: f64,
-    pub(in crate::eval) precision_at_10: f64,
-    pub(in crate::eval) judged_coverage_at_5: f64,
-    pub(in crate::eval) judged_coverage_at_10: f64,
-    pub(in crate::eval) mrr_at_10: f64,
-    pub(in crate::eval) ndcg_at_10: f64,
-    pub(in crate::eval) success_at_5: f64,
+    total: QualityMetrics,
     pub(in crate::eval) count: usize,
 }
 
+/// Running total of one [`UnanswerableMetrics`] record. `count` becomes `query_count`.
 #[derive(Clone, Copy, Default)]
 pub(in crate::eval) struct UnanswerableMetricSums {
-    pub(in crate::eval) explicit_negative_share_at_10: f64,
-    pub(in crate::eval) judged_coverage_at_10: f64,
-    pub(in crate::eval) empty_result_rate: f64,
+    total: UnanswerableMetrics,
     pub(in crate::eval) count: usize,
 }
 
@@ -32,21 +24,15 @@ impl UnanswerableMetricSums {
         ranked_paths: &[String],
         judgments: &BTreeMap<String, u8>,
     ) {
-        let metrics = measure_unanswerable_query(ranked_paths, judgments);
-        self.explicit_negative_share_at_10 += metrics.explicit_negative_share_at_10;
-        self.judged_coverage_at_10 += metrics.judged_coverage_at_10;
-        self.empty_result_rate += metrics.empty_result_rate;
+        self.total
+            .accumulate(&measure_unanswerable_query(ranked_paths, judgments));
         self.count += 1;
     }
 
-    pub(in crate::eval) fn average(self) -> UnanswerableMetrics {
-        let count = self.count.max(1) as f64;
-        UnanswerableMetrics {
-            query_count: self.count,
-            explicit_negative_share_at_10: self.explicit_negative_share_at_10 / count,
-            judged_coverage_at_10: self.judged_coverage_at_10 / count,
-            empty_result_rate: self.empty_result_rate / count,
-        }
+    pub(in crate::eval) fn average(mut self) -> UnanswerableMetrics {
+        self.total.mean(self.count);
+        self.total.query_count = self.count;
+        self.total
     }
 }
 
@@ -82,31 +68,13 @@ pub(in crate::eval) fn measure_unanswerable_query(
 
 impl MetricSums {
     pub(in crate::eval) fn push(&mut self, metrics: &QualityMetrics) {
-        self.recall_at_5 += metrics.recall_at_5;
-        self.recall_at_10 += metrics.recall_at_10;
-        self.precision_at_5 += metrics.precision_at_5;
-        self.precision_at_10 += metrics.precision_at_10;
-        self.judged_coverage_at_5 += metrics.judged_coverage_at_5;
-        self.judged_coverage_at_10 += metrics.judged_coverage_at_10;
-        self.mrr_at_10 += metrics.mrr_at_10;
-        self.ndcg_at_10 += metrics.ndcg_at_10;
-        self.success_at_5 += metrics.success_at_5;
+        self.total.accumulate(metrics);
         self.count += 1;
     }
 
-    pub(in crate::eval) fn average(self) -> QualityMetrics {
-        let count = self.count.max(1) as f64;
-        QualityMetrics {
-            recall_at_5: self.recall_at_5 / count,
-            recall_at_10: self.recall_at_10 / count,
-            precision_at_5: self.precision_at_5 / count,
-            precision_at_10: self.precision_at_10 / count,
-            judged_coverage_at_5: self.judged_coverage_at_5 / count,
-            judged_coverage_at_10: self.judged_coverage_at_10 / count,
-            mrr_at_10: self.mrr_at_10 / count,
-            ndcg_at_10: self.ndcg_at_10 / count,
-            success_at_5: self.success_at_5 / count,
-        }
+    pub(in crate::eval) fn average(mut self) -> QualityMetrics {
+        self.total.mean(self.count);
+        self.total
     }
 }
 
@@ -232,3 +200,6 @@ pub(in crate::eval) fn citation_quality(
 pub(in crate::eval) fn normalize_citation_text(text: &str) -> String {
     text.split_whitespace().collect::<Vec<_>>().join(" ")
 }
+
+#[cfg(test)]
+mod tests;
