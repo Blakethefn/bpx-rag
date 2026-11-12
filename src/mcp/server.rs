@@ -1,9 +1,9 @@
-use anyhow::{anyhow, Result};
+use anyhow::Result;
 use serde_json::{json, Value};
 use std::io::{self, BufReader};
 use std::path::Path;
 
-use super::{handlers, tools, transport};
+use super::{tools, transport};
 use crate::app::RagApp;
 
 pub fn run(project_dir: &Path) -> Result<()> {
@@ -88,21 +88,7 @@ fn dispatch_tool(
 ) -> Value {
     let name = request["params"]["name"].as_str().unwrap_or("");
     let args = &request["params"]["arguments"];
-    let result = match name {
-        "bpx_relate" => handlers::handle_file_relationships(args, project_dir),
-        "bpx_symbol" => with_app(app_slot, |app| handlers::handle_symbol(args, app)),
-        "bpx_findings" => with_app(app_slot, |app| handlers::handle_findings(args, app)),
-        "bpx_watch" => with_app(app_slot, |app| handlers::handle_watch(args, app)),
-        "bpx_search" => with_app(app_slot, |app| handlers::handle_search(args, app)),
-        "bpx_add" => with_app(app_slot, |app| handlers::handle_knowledge_add(args, app)),
-        "bpx_sync" => with_app(app_slot, |app| handlers::handle_knowledge_sync(args, app)),
-        "bpx_status" => with_app(app_slot, |app| app.source_status()),
-        "bpx_remove" => with_app(app_slot, |app| handlers::handle_knowledge_remove(args, app)),
-        "bpx_read" => with_app(app_slot, |app| handlers::handle_knowledge_read(args, app)),
-        "bpx_models" => with_app(app_slot, |app| handlers::handle_models(args, app)),
-        "bpx_embed" => with_app(app_slot, |app| handlers::handle_embed(args, app)),
-        _ => Err(anyhow!("unknown tool: {name}")),
-    };
+    let result = tools::call_tool(name, args, project_dir, app_slot);
 
     match result {
         Ok(text) => json!({
@@ -121,13 +107,5 @@ fn dispatch_tool(
     }
 }
 
-fn with_app(
-    slot: &mut Option<RagApp>,
-    operation: impl FnOnce(&mut RagApp) -> Result<String>,
-) -> Result<String> {
-    if slot.is_none() {
-        *slot = Some(RagApp::open()?);
-    }
-    operation(slot.as_mut().expect("RAG app was just initialized"))
-}
-
+#[cfg(test)]
+mod tests;

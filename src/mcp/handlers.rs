@@ -4,6 +4,83 @@ use std::path::Path;
 
 use crate::app::{RagApp, SearchOptions};
 
+/// `bpx_models` wire actions. The schema enum and `handle_models` both read this table.
+const MODEL_ACTIONS: &[(ModelAction, &str)] = &[
+    (ModelAction::Status, "status"),
+    (ModelAction::Download, "download"),
+];
+
+/// `bpx_watch` wire actions. The schema enum and `handle_watch` both read this table.
+/// CLI `watch enable`, `disable`, and `run` are a separate surface.
+const WATCH_ACTIONS: &[(WatchAction, &str)] = &[
+    (WatchAction::On, "on"),
+    (WatchAction::Off, "off"),
+    (WatchAction::Status, "status"),
+];
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum ModelAction {
+    Status,
+    Download,
+}
+
+impl ModelAction {
+    pub(super) fn parse(value: Option<&str>) -> Result<Self> {
+        MODEL_ACTIONS
+            .iter()
+            .find(|(_, name)| Some(*name) == value)
+            .map(|(action, _)| *action)
+            .ok_or_else(|| anyhow!("unknown models action '{}'", value.unwrap_or("")))
+    }
+
+    fn as_str(self) -> &'static str {
+        MODEL_ACTIONS
+            .iter()
+            .find(|(action, _)| *action == self)
+            .map(|(_, name)| *name)
+            .expect("every models action has one wire name")
+    }
+
+    pub(super) fn wire_names() -> Vec<&'static str> {
+        MODEL_ACTIONS
+            .iter()
+            .map(|(action, _)| action.as_str())
+            .collect()
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum WatchAction {
+    On,
+    Off,
+    Status,
+}
+
+impl WatchAction {
+    pub(super) fn parse(value: Option<&str>) -> Result<Self> {
+        WATCH_ACTIONS
+            .iter()
+            .find(|(_, name)| Some(*name) == value)
+            .map(|(action, _)| *action)
+            .ok_or_else(|| anyhow!("unknown watch action '{}'", value.unwrap_or("")))
+    }
+
+    fn as_str(self) -> &'static str {
+        WATCH_ACTIONS
+            .iter()
+            .find(|(action, _)| *action == self)
+            .map(|(_, name)| *name)
+            .expect("every watch action has one wire name")
+    }
+
+    pub(super) fn wire_names() -> Vec<&'static str> {
+        WATCH_ACTIONS
+            .iter()
+            .map(|(action, _)| action.as_str())
+            .collect()
+    }
+}
+
 pub(super) fn handle_search(args: &Value, app: &mut RagApp) -> Result<String> {
     let queries = if let Some(queries) = args["queries"].as_array() {
         queries
@@ -105,7 +182,7 @@ pub(super) fn handle_knowledge_sync(args: &Value, app: &mut RagApp) -> Result<St
         .join("\n"))
 }
 
-pub(super) fn handle_knowledge_remove(args: &Value, app: &RagApp) -> Result<String> {
+pub(super) fn handle_knowledge_remove(args: &Value, app: &mut RagApp) -> Result<String> {
     let label = required_string(args, "label")?;
     let result = app.remove_source(label)?;
     Ok(format!(
@@ -114,7 +191,7 @@ pub(super) fn handle_knowledge_remove(args: &Value, app: &RagApp) -> Result<Stri
     ))
 }
 
-pub(super) fn handle_knowledge_read(args: &Value, app: &RagApp) -> Result<String> {
+pub(super) fn handle_knowledge_read(args: &Value, app: &mut RagApp) -> Result<String> {
     let label = required_string(args, "label")?;
     app.read_chunks(
         label,
@@ -126,10 +203,9 @@ pub(super) fn handle_knowledge_read(args: &Value, app: &RagApp) -> Result<String
 }
 
 pub(super) fn handle_models(args: &Value, app: &mut RagApp) -> Result<String> {
-    match args["action"].as_str().unwrap_or("") {
-        "status" => Ok(app.embedding_model_status()),
-        "download" => app.download_embedding_model(),
-        action => Err(anyhow!("unknown models action '{action}'")),
+    match ModelAction::parse(args["action"].as_str())? {
+        ModelAction::Status => Ok(app.embedding_model_status()),
+        ModelAction::Download => app.download_embedding_model(),
     }
 }
 
@@ -143,11 +219,10 @@ pub(super) fn handle_embed(args: &Value, app: &mut RagApp) -> Result<String> {
 }
 
 pub(super) fn handle_watch(args: &Value, app: &mut RagApp) -> Result<String> {
-    match args["action"].as_str().unwrap_or("") {
-        "on" => app.set_watch(required_string(args, "label")?, true),
-        "off" => app.set_watch(required_string(args, "label")?, false),
-        "status" => app.watch_status(),
-        action => Err(anyhow!("unknown watch action '{action}'")),
+    match WatchAction::parse(args["action"].as_str())? {
+        WatchAction::On => app.set_watch(required_string(args, "label")?, true),
+        WatchAction::Off => app.set_watch(required_string(args, "label")?, false),
+        WatchAction::Status => app.watch_status(),
     }
 }
 
@@ -232,3 +307,6 @@ fn bounded_usize(args: &Value, key: &str, default: usize, min: usize, max: usize
 fn queries_len_multi(value: &Value) -> bool {
     value.as_array().is_some_and(|queries| queries.len() > 1)
 }
+
+#[cfg(test)]
+mod tests;
