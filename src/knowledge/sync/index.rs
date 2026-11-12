@@ -116,30 +116,47 @@ pub(super) fn index_prepared_file(
     )?;
     replace_file_evidence(
         conn,
-        source_id,
-        file_id,
-        &file.rel_path,
-        file.symbol_status,
-        &file.symbols,
-        &file.references,
-        &file.entries,
+        FileEvidence {
+            source_id,
+            file_id,
+            rel_path: &file.rel_path,
+            status: file.symbol_status,
+            symbols: &file.symbols,
+            references: &file.references,
+            entries: &file.entries,
+        },
     )?;
 
     Ok(file.chunks.len())
+}
+
+/// The evidence rows for one file: symbols, references, and entries, with the status that
+/// labels the symbol rows.
+pub(super) struct FileEvidence<'a> {
+    pub(super) source_id: i64,
+    pub(super) file_id: i64,
+    pub(super) rel_path: &'a str,
+    pub(super) status: &'a str,
+    pub(super) symbols: &'a [Symbol],
+    pub(super) references: &'a [Reference],
+    pub(super) entries: &'a [EntryObservation],
 }
 
 /// Write symbols, references, and entries for one file, then stamp both hashes from the
 /// content hash already stored on the file row.
 pub(super) fn replace_file_evidence(
     conn: &rusqlite::Connection,
-    source_id: i64,
-    file_id: i64,
-    rel_path: &str,
-    status: &str,
-    symbols: &[Symbol],
-    references: &[Reference],
-    entries: &[EntryObservation],
+    evidence: FileEvidence<'_>,
 ) -> Result<()> {
+    let FileEvidence {
+        source_id,
+        file_id,
+        rel_path,
+        status,
+        symbols,
+        references,
+        entries,
+    } = evidence;
     let evidence_hash: String = conn.query_row(
         "SELECT content_hash FROM knowledge_files WHERE id = ?1",
         params![file_id],

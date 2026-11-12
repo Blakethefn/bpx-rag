@@ -10,6 +10,8 @@ use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::{fs, io};
 
+use super::EnrichmentFn;
+
 /// File metadata read before the content, so a later metadata check can never mistake
 /// a newer file for the one that was indexed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -120,7 +122,7 @@ pub(super) fn prepare_file(
     hash: String,
     file_id: Option<i64>,
     stat: StatRecord,
-    enrichment_fn: Option<&dyn Fn(&str, &Path) -> serde_json::Value>,
+    enrichment_fn: EnrichmentFn<'_>,
 ) -> PreparedFile {
     let size_bytes = content.len() as i64;
     let metadata = match enrichment_fn {

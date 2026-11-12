@@ -15,21 +15,26 @@ use std::path::Path;
 /// Extractor for one enrichment. `None` means the value is empty and is not stored.
 type Extract = fn(&str, &Path, &Path) -> Option<Value>;
 
-/// The only catalog. Each arm pairs a name with its extractor; that name is the JSON key.
-macro_rules! enrichment_catalog {
-    ($($name:literal => $extract:ident),+ $(,)?) => {
-        fn enrichment(name: &str) -> Option<(&'static str, Extract)> {
-            match name {
-                $($name => Some(($name, $extract)),)+
-                _ => None,
-            }
-        }
+/// The only catalog. Each entry pairs a name with its extractor; that name is the JSON key.
+const CATALOG: &[(&str, Extract)] = &[
+    ("frontmatter", frontmatter_value),
+    ("wikilinks", wikilinks_value),
+    ("folder_tags", folder_tags_value),
+];
 
-        fn enrichment_names() -> &'static [&'static str] {
-            &[$($name),+]
-        }
-    };
+/// Names in `CATALOG` order. Keep the two tables in sync.
+const NAMES: &[&str] = &["frontmatter", "wikilinks", "folder_tags"];
+
+fn enrichment(name: &str) -> Option<(&'static str, Extract)> {
+    CATALOG.iter().find(|(key, _)| *key == name).copied()
 }
+
+fn enrichment_names() -> &'static [&'static str] {
+    NAMES
+}
+
+/// Boxed enrichment closure returned by `build_enrichment_fn`.
+type BoxedEnrichment = Box<dyn Fn(&str, &Path) -> Value>;
 
 fn frontmatter_value(content: &str, _path: &Path, _base: &Path) -> Option<Value> {
     let value = extract_frontmatter(content);
@@ -56,12 +61,6 @@ fn present_array(value: Value) -> Option<Value> {
     }
 }
 
-enrichment_catalog! {
-    "frontmatter" => frontmatter_value,
-    "wikilinks" => wikilinks_value,
-    "folder_tags" => folder_tags_value,
-}
-
 /// Reject enrichment names this build does not know, so a typo fails at `add`.
 pub fn validate_enrichments(names: &[String]) -> anyhow::Result<()> {
     match names.iter().find(|name| enrichment(name).is_none()) {
@@ -81,7 +80,7 @@ pub fn validate_enrichments(names: &[String]) -> anyhow::Result<()> {
 pub fn build_enrichment_fn(
     enrichments: &[String],
     source_base_path: &Path,
-) -> Option<Box<dyn Fn(&str, &Path) -> Value>> {
+) -> Option<BoxedEnrichment> {
     if enrichments.is_empty() {
         return None;
     }

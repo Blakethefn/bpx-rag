@@ -11,7 +11,7 @@ use super::classify::ChangePlan;
 use super::files::{load_db_files, DbFile, PreparedFile};
 use super::index::{
     delete_file_chunks, index_prepared_file, replace_file_evidence, resolve_code_edges,
-    resolve_wikilinks_for_source,
+    resolve_wikilinks_for_source, FileEvidence,
 };
 
 /// Apply the plan inside one `BEGIN IMMEDIATE` transaction. Returns the links created and the
@@ -50,13 +50,15 @@ pub(super) fn commit_plan(
         for file in &plan.backfill {
             replace_file_evidence(
                 conn,
-                source.id,
-                file.file_id,
-                &file.rel_path,
-                file.status,
-                &file.symbols,
-                &file.references,
-                &file.entries,
+                FileEvidence {
+                    source_id: source.id,
+                    file_id: file.file_id,
+                    rel_path: &file.rel_path,
+                    status: file.status,
+                    symbols: &file.symbols,
+                    references: &file.references,
+                    entries: &file.entries,
+                },
             )?;
         }
         for (file_id, stat) in &plan.backfill_stat {

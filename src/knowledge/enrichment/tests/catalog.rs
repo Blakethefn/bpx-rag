@@ -1,10 +1,13 @@
-use super::super::{build_enrichment_fn, enrichment, enrichment_names, validate_enrichments};
+use super::super::{
+    build_enrichment_fn, enrichment, enrichment_names, validate_enrichments, CATALOG,
+};
 use std::path::Path;
 
 #[test]
 fn catalog_names_are_the_match_and_the_json_keys() {
     let names = enrichment_names();
     assert_eq!(names, ["frontmatter", "wikilinks", "folder_tags"]);
+    assert!(CATALOG.iter().map(|(name, _)| *name).eq(names.iter().copied()));
 
     let content = "---\ntype: task\n---\nSee [[other]]";
     let path = Path::new("/vault/01-projects/note.md");
