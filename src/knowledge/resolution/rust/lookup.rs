@@ -4,6 +4,8 @@ use super::super::paths::{is_path_keyword, path_keyword, PathKeyword};
 use super::super::tree::{ident, path_segments, walk_modules, Tree, Walk};
 use super::{Outcome, Space};
 
+type Bindings = HashMap<i64, HashMap<String, Vec<Vec<i64>>>>;
+
 pub(super) enum Found {
     Symbols {
         ids: Vec<i64>,
@@ -32,7 +34,7 @@ pub(super) fn symbol_outcome(found: Found) -> Option<Outcome> {
 
 pub(super) fn find_path(
     tree: &Tree,
-    bindings: Option<&HashMap<i64, HashMap<String, Vec<Vec<i64>>>>>,
+    bindings: Option<&Bindings>,
     from: i64,
     path: &str,
     space: Option<Space>,

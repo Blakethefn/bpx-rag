@@ -40,10 +40,11 @@ pub(super) fn classify_content(content: &str) -> ContentType {
         if trimmed.starts_with("```") {
             md_score += 1;
         }
-        if trimmed.starts_with("- ") || trimmed.starts_with("* ") {
-            if !trimmed.contains('{') && !trimmed.contains(';') {
-                md_score += 1;
-            }
+        if (trimmed.starts_with("- ") || trimmed.starts_with("* "))
+            && !trimmed.contains('{')
+            && !trimmed.contains(';')
+        {
+            md_score += 1;
         }
 
         // --- Code counter-indicators (for markdown rejection) ---
@@ -84,7 +85,7 @@ pub(super) fn classify_content(content: &str) -> ContentType {
     // --- Markdown check (priority) ---
     if line_count > 0 && md_score > 0 {
         let md_passes =
-            (md_score as f64 / line_count as f64) > 0.02 && !(md_code_counter > md_score * 2);
+            (md_score as f64 / line_count as f64) > 0.02 && md_code_counter <= md_score * 2;
         if md_passes {
             return ContentType::Markdown;
         }

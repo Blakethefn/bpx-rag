@@ -3,12 +3,14 @@ use std::collections::{HashMap, HashSet};
 use super::layout::{join_rel, module_base, normalize_rel, parent_dir};
 use super::ModRef;
 
+type ModuleTree = (HashMap<i64, HashMap<String, i64>>, HashMap<i64, Vec<i64>>);
+
 pub(super) fn module_tree(
     modules: &[ModRef],
     files_by_path: &HashMap<&str, i64>,
     packages: &HashMap<i64, Option<String>>,
     rust_files: &HashSet<i64>,
-) -> (HashMap<i64, HashMap<String, i64>>, HashMap<i64, Vec<i64>>) {
+) -> ModuleTree {
     let mut grouped: HashMap<(i64, &str), Vec<&ModRef>> = HashMap::new();
     for module in modules {
         if !rust_files.contains(&module.file_id) {

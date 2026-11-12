@@ -88,9 +88,7 @@ pub(super) fn chunk_syntax_tree(
         if end <= *start {
             continue;
         }
-        let Some(section) = content.get(*start..end) else {
-            return None;
-        };
+        let section = content.get(*start..end)?;
         let line_start = line_for_byte(&line_starts, *start);
         let line_end = line_for_byte(&line_starts, end - 1);
         if section.len() > MAX_CHUNK_BYTES {

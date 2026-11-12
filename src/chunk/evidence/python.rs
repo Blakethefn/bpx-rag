@@ -55,7 +55,7 @@ fn import_statement(node: Node<'_>, content: &str, references: &mut Vec<super::R
         return;
     };
     for part in rest.split(',') {
-        let Some(name) = part.trim().split_whitespace().next() else {
+        let Some(name) = part.split_whitespace().next() else {
             continue;
         };
         if name.is_empty() || name == "as" {

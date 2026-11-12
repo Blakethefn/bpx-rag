@@ -85,16 +85,15 @@ const ENTRY_LIBRARY: &str = "library_root";
 
 pub(crate) const ENTRY_KINDS: &[&str] = &[ENTRY_PROGRAM, ENTRY_TEST, ENTRY_LIBRARY];
 
-fn roots(
-    entries: &[(Option<i64>, String, String)],
-    rust_files: &HashSet<i64>,
-) -> (
+type Roots = (
     Vec<i64>,
     Vec<i64>,
     HashSet<i64>,
     Vec<i64>,
     HashMap<i64, HashSet<String>>,
-) {
+);
+
+fn roots(entries: &[(Option<i64>, String, String)], rust_files: &HashSet<i64>) -> Roots {
     let mut library = Vec::new();
     let mut program = Vec::new();
     let mut program_entries = HashSet::new();
