@@ -1,20 +1,17 @@
 use std::path::{Path, PathBuf};
 
-use super::super::super::super::languages::Grammar;
 use super::super::super::super::types::SourceFile;
 
 pub(in crate::relations::polyglot::resolve) fn jvm_targets(
-    grammar: Grammar,
     path: &Path,
     wildcard: bool,
     files: &[SourceFile],
     extensions: &[&str],
 ) -> Vec<PathBuf> {
-    let suffix_paths = match grammar {
-        Grammar::Java => vec![path.with_extension("java")],
-        Grammar::Scala => vec![path.with_extension("scala"), path.with_extension("sc")],
-        _ => vec![path.with_extension("kt"), path.with_extension("kts")],
-    };
+    let suffix_paths: Vec<PathBuf> = extensions
+        .iter()
+        .map(|extension| path.with_extension(*extension))
+        .collect();
     files
         .iter()
         .filter(|file| {
@@ -61,3 +58,6 @@ pub(in crate::relations::polyglot::resolve) fn namespace_targets(
         .map(|file| file.path.clone())
         .collect()
 }
+
+#[cfg(test)]
+mod tests;

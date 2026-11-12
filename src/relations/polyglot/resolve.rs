@@ -3,7 +3,7 @@ mod resolvers;
 
 use std::path::{Path, PathBuf};
 
-use super::super::languages::Grammar;
+use super::super::languages::{candidate_extensions, Grammar};
 use super::super::metadata::ProjectMetadata;
 use super::super::types::SourceFile;
 
@@ -15,39 +15,7 @@ pub(super) fn resolve_specifier(
     files: &[SourceFile],
     metadata: &ProjectMetadata,
 ) -> Vec<PathBuf> {
-    let extensions = match grammar {
-        Grammar::C => &["h", "c"][..],
-        Grammar::Cpp => &["hpp", "hh", "hxx", "h", "cpp", "cc", "cxx"][..],
-        Grammar::CSharp => &["cs"][..],
-        Grammar::JavaScript | Grammar::TypeScript | Grammar::Tsx => {
-            &["ts", "tsx", "js", "jsx", "mjs", "cjs", "json"][..]
-        }
-        Grammar::Go => &["go"][..],
-        Grammar::Java => &["java"][..],
-        Grammar::Python => &["py", "pyi"][..],
-        Grammar::Php => &["php", "phtml"][..],
-        Grammar::Ruby => &["rb", "rake"][..],
-        Grammar::Bash => &["sh", "bash"][..],
-        Grammar::Lua => &["lua"][..],
-        Grammar::Dart => &["dart"][..],
-        Grammar::Swift => &["swift"][..],
-        Grammar::Kotlin => &["kt", "kts"][..],
-        Grammar::Sql => &["sql"][..],
-        Grammar::Scala => &["scala", "sc"][..],
-        Grammar::Haskell => &["hs", "lhs"][..],
-        Grammar::Elixir => &["ex", "exs"][..],
-        Grammar::Erlang => &["erl", "hrl"][..],
-        Grammar::R => &["r", "R"][..],
-        Grammar::Julia => &["jl"][..],
-        Grammar::Perl => &["pm", "pl", "t"][..],
-        Grammar::PowerShell => &["ps1", "psm1", "psd1"][..],
-        Grammar::Solidity => &["sol"][..],
-        Grammar::Html => &[
-            "html", "htm", "js", "jsx", "ts", "tsx", "css", "json", "svg",
-        ][..],
-        Grammar::Css => &["css", "scss", "sass", "less"][..],
-        Grammar::Markdown | Grammar::Rust => &[][..],
-    };
+    let extensions = candidate_extensions(grammar);
     let normalized = match grammar {
         Grammar::Python => resolvers::python_module_path(source, specifier),
         Grammar::Dart if specifier.starts_with("package:") => {
@@ -111,12 +79,12 @@ pub(super) fn resolve_specifier(
     };
     let mut targets = Vec::new();
     for base in bases {
-        resolvers::add_file_candidates(&base, root, extensions, &mut targets);
+        resolvers::add_file_candidates(&base, root, &extensions, &mut targets);
         if matches!(
             grammar,
             Grammar::Python | Grammar::Lua | Grammar::CSharp | Grammar::Swift
         ) {
-            for extension in extensions {
+            for extension in &extensions {
                 resolvers::add_file_candidates(
                     &base
                         .join(if *extension == "py" {
@@ -126,7 +94,7 @@ pub(super) fn resolve_specifier(
                         })
                         .with_extension(extension),
                     root,
-                    extensions,
+                    &extensions,
                     &mut targets,
                 );
             }
@@ -138,13 +106,11 @@ pub(super) fn resolve_specifier(
     }
 
     if targets.is_empty() && matches!(grammar, Grammar::Java | Grammar::Kotlin | Grammar::Scala) {
-        targets.extend(resolvers::jvm_targets(
-            grammar, path, wildcard, files, extensions,
-        ));
+        targets.extend(resolvers::jvm_targets(path, wildcard, files, &extensions));
     }
 
     if targets.is_empty() && matches!(grammar, Grammar::CSharp | Grammar::Swift) {
-        targets.extend(resolvers::namespace_targets(path, files, extensions));
+        targets.extend(resolvers::namespace_targets(path, files, &extensions));
     }
 
     targets.sort();
@@ -174,3 +140,6 @@ fn elixir_module_path(specifier: &str) -> String {
         .collect::<Vec<_>>()
         .join("/")
 }
+
+#[cfg(test)]
+mod tests;
