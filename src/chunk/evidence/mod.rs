@@ -115,16 +115,9 @@ fn visit(
         return false;
     }
 
-    if matches!(
-        node.kind(),
-        "scoped_identifier"
-            | "scoped_type_identifier"
-            | "attribute"
-            | "selector_expression"
-            | "member_expression"
-    ) {
-        if let Some(reference) = names::qualified_reference(node, content)
-            .and_then(|reference| names::normalize_rust(grammar, reference))
+    if let names::Qualified::Stop(reference) = names::qualified_reference(node, content) {
+        if let Some(reference) =
+            reference.and_then(|reference| names::normalize_rust(grammar, reference))
         {
             push_reference(references, reference);
         }

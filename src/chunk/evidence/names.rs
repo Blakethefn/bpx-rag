@@ -56,15 +56,39 @@ pub(super) fn plain_reference(node: Node<'_>, content: &str) -> Option<Reference
     Some(reference(kind, specifier, None, node))
 }
 
-pub(super) fn qualified_reference(node: Node<'_>, content: &str) -> Option<Reference> {
+/// `Stop` claims the node. The same arm names the qualifier field, the name field, and the
+/// reference kind. Children of a claimed node are not walked again.
+pub(super) enum Qualified {
+    Skip,
+    Stop(Option<Reference>),
+}
+
+/// Claims a qualified-name node and reads the fields that arm chose.
+pub(super) fn qualified_reference(node: Node<'_>, content: &str) -> Qualified {
     let (qualifier_field, name_field, kind) = match node.kind() {
         "scoped_type_identifier" => ("path", "name", KIND_TYPE),
         "scoped_identifier" => ("path", "name", KIND_NAME),
         "attribute" => ("object", "attribute", KIND_NAME),
         "selector_expression" => ("operand", "field", KIND_NAME),
         "member_expression" => ("object", "property", KIND_NAME),
-        _ => return None,
+        _ => return Qualified::Skip,
     };
+    Qualified::Stop(recorded_qualified(
+        node,
+        content,
+        qualifier_field,
+        name_field,
+        kind,
+    ))
+}
+
+fn recorded_qualified(
+    node: Node<'_>,
+    content: &str,
+    qualifier_field: &str,
+    name_field: &str,
+    kind: &'static str,
+) -> Option<Reference> {
     let specifier = field_text(node, name_field, content).or_else(|| {
         node.child_by_field_name(name_field)
             .and_then(|child| node_text(child, content))
