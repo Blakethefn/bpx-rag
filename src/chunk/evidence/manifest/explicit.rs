@@ -1,16 +1,14 @@
 use std::collections::HashSet;
 use std::path::Path;
 
-use super::super::{push_entry, EntryObservation, ENTRY_LIBRARY, ENTRY_PROGRAM, ENTRY_TEST};
+use super::super::{push_entry, EntryObservation, ENTRY_LIBRARY};
+use super::catalog;
 use super::manifest_entry;
 use super::normalize_target;
 
 pub(super) struct ExplicitTargets {
     pub(super) lib: bool,
-    pub(super) bins: HashSet<String>,
-    pub(super) tests: HashSet<String>,
-    pub(super) examples: HashSet<String>,
-    pub(super) benches: HashSet<String>,
+    pub(super) suppressed: Vec<HashSet<String>>,
 }
 
 pub(super) fn cargo_entries(path: &Path, content: &str) -> Vec<EntryObservation> {
@@ -28,54 +26,33 @@ pub(super) fn cargo_entries(path: &Path, content: &str) -> Vec<EntryObservation>
             manifest_entry(path, target, ENTRY_LIBRARY, "Cargo.toml lib"),
         );
     }
-    push_table(
-        &mut entries,
-        path,
-        value.get("bin"),
-        "src/bin",
-        ENTRY_PROGRAM,
-        "Cargo.toml bin",
-    );
-    push_table(
-        &mut entries,
-        path,
-        value.get("test"),
-        "tests",
-        ENTRY_TEST,
-        "Cargo.toml test",
-    );
-    push_table(
-        &mut entries,
-        path,
-        value.get("example"),
-        "examples",
-        ENTRY_PROGRAM,
-        "Cargo.toml example",
-    );
-    push_table(
-        &mut entries,
-        path,
-        value.get("bench"),
-        "benches",
-        ENTRY_PROGRAM,
-        "Cargo.toml bench",
-    );
+    for target in catalog::TARGETS {
+        let reason = target.explicit_reason();
+        push_table(
+            &mut entries,
+            path,
+            value.get(target.key),
+            target.directory,
+            target.kind,
+            &reason,
+        );
+    }
     entries
 }
 
 pub(super) fn explicit_targets(value: &toml::Value) -> ExplicitTargets {
-    let mut explicit = ExplicitTargets {
+    let suppressed = catalog::TARGETS
+        .iter()
+        .map(|target| {
+            let mut paths = HashSet::new();
+            collect_targets(value.get(target.key), target.directory, &mut paths);
+            paths
+        })
+        .collect();
+    ExplicitTargets {
         lib: value.get("lib").is_some(),
-        bins: HashSet::new(),
-        tests: HashSet::new(),
-        examples: HashSet::new(),
-        benches: HashSet::new(),
-    };
-    collect_targets(value.get("bin"), "src/bin", &mut explicit.bins);
-    collect_targets(value.get("test"), "tests", &mut explicit.tests);
-    collect_targets(value.get("example"), "examples", &mut explicit.examples);
-    collect_targets(value.get("bench"), "benches", &mut explicit.benches);
-    explicit
+        suppressed,
+    }
 }
 
 fn collect_targets(table: Option<&toml::Value>, default_dir: &str, explicit: &mut HashSet<String>) {
@@ -95,7 +72,7 @@ fn push_table(
     table: Option<&toml::Value>,
     default_dir: &str,
     kind: &'static str,
-    reason: &'static str,
+    reason: &str,
 ) {
     let Some(items) = table.and_then(toml::Value::as_array) else {
         return;
@@ -118,4 +95,3 @@ fn target_path(item: &toml::Value, default_dir: &str) -> Option<String> {
                 .map(|name| format!("{default_dir}/{name}.rs"))
         })
 }
-

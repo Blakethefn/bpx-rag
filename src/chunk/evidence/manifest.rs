@@ -8,9 +8,13 @@
 use std::collections::HashSet;
 use std::path::{Component, Path};
 
-use super::{push_entry, EntryObservation, ENTRY_LIBRARY, ENTRY_PROGRAM, ENTRY_TEST};
+use super::{push_entry, EntryObservation, ENTRY_LIBRARY, ENTRY_PROGRAM};
 
+mod catalog;
 mod explicit;
+
+#[cfg(test)]
+mod tests;
 
 pub(super) fn manifest_entries(path: &Path, content: &str) -> Vec<EntryObservation> {
     let Some(name) = path.file_name().and_then(|name| name.to_str()) else {
@@ -25,8 +29,8 @@ pub(super) fn manifest_entries(path: &Path, content: &str) -> Vec<EntryObservati
 
 /// Implicit layout roots whose paths are in `indexed`. `indexed` holds source-relative paths.
 /// A `[lib]` table suppresses the implicit library. An explicit target suppresses the implicit
-/// entry for that same path. `autobins`, `autoexamples`, `autotests`, and `autobenches` set
-/// false omit that kind. A manifest without `[package]` has no implicit roots.
+/// entry for that same path. A catalog row's auto flag set false omits that kind. The package
+/// binary `src/main.rs` follows the `bin` row. A manifest without `[package]` has no implicit roots.
 pub(crate) fn implicit_cargo_entries(
     manifest_rel: &str,
     content: &str,
@@ -52,64 +56,32 @@ pub(crate) fn implicit_cargo_entries(
             &HashSet::new(),
         );
     }
-    if auto_enabled(package, "autobins") {
-        push_indexed(
-            &mut entries,
-            manifest,
-            indexed,
-            "src/main.rs",
-            ENTRY_PROGRAM,
-            "Cargo.toml implicit bin",
-            &explicit.bins,
-        );
-        for relative in indexed_direct(&explicit_prefix(manifest_rel), indexed, "src/bin") {
+    debug_assert_eq!(catalog::TARGETS.len(), explicit.suppressed.len());
+    for (target, suppressed) in catalog::TARGETS.iter().zip(&explicit.suppressed) {
+        if !auto_enabled(package, target.auto) {
+            continue;
+        }
+        let reason = target.implicit_reason();
+        if target.key == "bin" {
             push_indexed(
                 &mut entries,
                 manifest,
                 indexed,
-                &relative,
-                ENTRY_PROGRAM,
-                "Cargo.toml implicit bin",
-                &explicit.bins,
+                "src/main.rs",
+                target.kind,
+                &reason,
+                suppressed,
             );
         }
-    }
-    if auto_enabled(package, "autoexamples") {
-        for relative in indexed_direct(&explicit_prefix(manifest_rel), indexed, "examples") {
+        for relative in indexed_direct(&explicit_prefix(manifest_rel), indexed, target.directory) {
             push_indexed(
                 &mut entries,
                 manifest,
                 indexed,
                 &relative,
-                ENTRY_PROGRAM,
-                "Cargo.toml implicit example",
-                &explicit.examples,
-            );
-        }
-    }
-    if auto_enabled(package, "autotests") {
-        for relative in indexed_direct(&explicit_prefix(manifest_rel), indexed, "tests") {
-            push_indexed(
-                &mut entries,
-                manifest,
-                indexed,
-                &relative,
-                ENTRY_TEST,
-                "Cargo.toml implicit test",
-                &explicit.tests,
-            );
-        }
-    }
-    if auto_enabled(package, "autobenches") {
-        for relative in indexed_direct(&explicit_prefix(manifest_rel), indexed, "benches") {
-            push_indexed(
-                &mut entries,
-                manifest,
-                indexed,
-                &relative,
-                ENTRY_PROGRAM,
-                "Cargo.toml implicit bench",
-                &explicit.benches,
+                target.kind,
+                &reason,
+                suppressed,
             );
         }
     }
@@ -126,7 +98,7 @@ fn push_indexed(
     indexed: &HashSet<String>,
     relative: &str,
     kind: &'static str,
-    reason: &'static str,
+    reason: &str,
     explicit: &HashSet<String>,
 ) {
     if explicit.contains(&normalize_target(relative)) {
@@ -200,7 +172,7 @@ fn manifest_entry(
     manifest: &Path,
     target: &str,
     kind: &'static str,
-    reason: &'static str,
+    reason: &str,
 ) -> EntryObservation {
     let parent = manifest.parent().unwrap_or(Path::new(""));
     EntryObservation {
