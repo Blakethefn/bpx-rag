@@ -5,19 +5,7 @@ use crate::knowledge::identifiers::identifier_words;
 use crate::knowledge::identifiers::tests::maintenance::legacy;
 use tempfile::tempdir;
 
-fn make_store() -> KnowledgeStore {
-    crate::knowledge::open_in_memory().expect("in-memory knowledge store")
-}
-
-fn register(store: &KnowledgeStore, dir: &Path) -> KnowledgeSourceInfo {
-    store
-        .add_source("identifier-maintenance", &dir.to_string_lossy(), &[], &[])
-        .unwrap();
-    store
-        .get_source("identifier-maintenance")
-        .unwrap()
-        .expect("registered source")
-}
+use crate::support::{add_source, make_store};
 
 /// Every identifier row belongs to a live chunk, and its words match the stored chunk text.
 fn assert_identifier_index_matches_chunks(store: &KnowledgeStore) {
@@ -64,7 +52,7 @@ fn sync_succeeds_after_a_legacy_writer_deletes_and_reuses_chunk_rowids() {
         "export function buildInvoiceTotal() { return 1; }\n",
     )
     .unwrap();
-    let source = register(&store, dir.path());
+    let source = add_source(&store, "identifier-maintenance", dir.path());
     sync_source(&store, &source, None).unwrap();
     let billing_id: i64 = store
         .conn()
@@ -101,7 +89,7 @@ fn legacy_deletion_then_sync_leaves_no_stale_identifier_citations() {
         "export function buildInvoiceTotal() { return 1; }\n",
     )
     .unwrap();
-    let source = register(&store, dir.path());
+    let source = add_source(&store, "identifier-maintenance", dir.path());
     sync_source(&store, &source, None).unwrap();
     let billing_id: i64 = store
         .conn()
@@ -160,7 +148,7 @@ fn legacy_content_update_hides_stale_symbol_lines_until_sync_rebuilds_them() {
         "pub fn alpha_one() -> u8 {\n    1\n}\n",
     )
     .unwrap();
-    let source = register(&store, dir.path());
+    let source = add_source(&store, "identifier-maintenance", dir.path());
     sync_source(&store, &source, None).unwrap();
     assert_eq!(symbol_hits(&store, "alpha_one"), vec![(1, 3)]);
     let file_id: i64 = store

@@ -1,5 +1,6 @@
 use super::super::*;
-use super::{make_store, register_source, CountingEmbedder};
+use super::CountingEmbedder;
+use crate::support::{add_source, make_store};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use tempfile::tempdir;
@@ -26,7 +27,7 @@ fn upgrading_the_identifier_index_does_not_reembed_unchanged_files() {
         "# Notes\nblue-green-deploy plan\n",
     )
     .unwrap();
-    let source = register_source(&store, dir.path());
+    let source = add_source(&store, "test", dir.path());
     let first = sync_source(&store, &source, None).unwrap();
     assert_eq!(first.files_added, 2);
     let embed_calls_after_index = calls.load(Ordering::SeqCst);

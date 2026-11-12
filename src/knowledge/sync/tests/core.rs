@@ -1,8 +1,6 @@
 use super::super::*;
-use super::{
-    chunk_count_for_source, file_count_for_source, make_store, register_source,
-    register_source_glob,
-};
+use super::{chunk_count_for_source, file_count_for_source, register_source_glob};
+use crate::support::{add_source, make_store};
 use tempfile::tempdir;
 
 // ── sync_source ─────────────────────────────────────────────────────────
@@ -18,7 +16,7 @@ fn sync_new_source_indexes_all_files() {
         )
         .unwrap();
     }
-    let source = register_source(&store, dir.path());
+    let source = add_source(&store, "test", dir.path());
     let result = sync_source(&store, &source, None).unwrap();
 
     assert_eq!(result.files_added, 5);
@@ -38,7 +36,7 @@ fn sync_assigns_file_ids_in_path_order() {
     for name in ["zeta.md", "alpha.md", "mid.md", "beta.md"] {
         fs::write(dir.path().join(name), format!("content of {name}")).unwrap();
     }
-    let source = register_source(&store, dir.path());
+    let source = add_source(&store, "test", dir.path());
     sync_source(&store, &source, None).unwrap();
 
     let mut stmt = store
@@ -60,7 +58,7 @@ fn sync_unchanged_reports_zero_changes() {
     for i in 0..5 {
         fs::write(dir.path().join(format!("f{i}.md")), format!("# F{i}\nBody")).unwrap();
     }
-    let source = register_source(&store, dir.path());
+    let source = add_source(&store, "test", dir.path());
     sync_source(&store, &source, None).unwrap();
 
     let source = store.get_source("test").unwrap().unwrap();
@@ -83,7 +81,7 @@ fn sync_detects_add_update_remove() {
         )
         .unwrap();
     }
-    let source = register_source(&store, dir.path());
+    let source = add_source(&store, "test", dir.path());
     sync_source(&store, &source, None).unwrap();
 
     // Modify 2, delete 1, add 1
@@ -106,7 +104,7 @@ fn sync_detects_add_update_remove() {
 fn sync_empty_directory() {
     let store = make_store();
     let dir = tempdir().unwrap();
-    let source = register_source(&store, dir.path());
+    let source = add_source(&store, "test", dir.path());
     let result = sync_source(&store, &source, None).unwrap();
 
     assert_eq!(result.files_scanned, 0);
@@ -121,7 +119,7 @@ fn sync_skips_binary_files() {
     fs::write(dir.path().join("text.md"), "# Hello\nText").unwrap();
     fs::write(dir.path().join("binary.dat"), b"data\x00\x00\x01").unwrap();
 
-    let source = register_source(&store, dir.path());
+    let source = add_source(&store, "test", dir.path());
     let result = sync_source(&store, &source, None).unwrap();
 
     assert_eq!(result.files_added, 1, "only text file should be indexed");
@@ -137,7 +135,7 @@ fn sync_invalid_utf8_skips_the_file_and_removes_its_stale_rows() {
     fs::write(&file_path, "# Kept content\nsearchable phrase").unwrap();
     fs::write(dir.path().join("other.md"), "# Other\nunrelated text").unwrap();
 
-    let source = register_source(&store, dir.path());
+    let source = add_source(&store, "test", dir.path());
     sync_source(&store, &source, None).unwrap();
     assert_eq!(file_count_for_source(&store, source.id), 2);
 

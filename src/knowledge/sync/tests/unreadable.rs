@@ -6,19 +6,7 @@ use super::super::*;
 use std::os::unix::fs::PermissionsExt;
 use tempfile::tempdir;
 
-fn make_store() -> KnowledgeStore {
-    crate::knowledge::open_in_memory().expect("in-memory knowledge store")
-}
-
-fn register(store: &KnowledgeStore, dir: &Path) -> KnowledgeSourceInfo {
-    store
-        .add_source("unreadable", &dir.to_string_lossy(), &[], &[])
-        .unwrap();
-    store
-        .get_source("unreadable")
-        .unwrap()
-        .expect("registered source")
-}
+use crate::support::{add_source, make_store};
 
 fn indexed_paths(store: &KnowledgeStore) -> Vec<String> {
     let mut statement = store
@@ -66,7 +54,7 @@ fn unreadable_file_is_skipped_with_a_reason_and_other_files_still_sync() {
     let locked = dir.path().join("locked.txt");
     fs::write(&locked, "alpha beta gamma\n").unwrap();
     let Some(_guard) = lock(&locked) else { return };
-    let source = register(&store, dir.path());
+    let source = add_source(&store, "unreadable", dir.path());
 
     let result = sync_source(&store, &source, None).expect("an unreadable file must not abort");
 
@@ -87,7 +75,7 @@ fn file_that_becomes_unreadable_loses_its_rows_and_is_indexed_again_once_readabl
     let dir = tempdir().unwrap();
     let notes = dir.path().join("notes.txt");
     fs::write(&notes, "alpha beta gamma\n").unwrap();
-    let source = register(&store, dir.path());
+    let source = add_source(&store, "unreadable", dir.path());
     sync_source(&store, &source, None).unwrap();
     assert_eq!(indexed_paths(&store), vec!["notes.txt".to_string()]);
 
@@ -111,7 +99,7 @@ fn event_driven_sync_skips_an_unreadable_file_and_reports_it() {
     let notes = dir.path().join("notes.txt");
     fs::write(&notes, "alpha beta gamma\n").unwrap();
     fs::write(dir.path().join("other.txt"), "delta epsilon\n").unwrap();
-    let source = register(&store, dir.path());
+    let source = add_source(&store, "unreadable", dir.path());
     sync_source(&store, &source, None).unwrap();
 
     let Some(guard) = lock(&notes) else { return };
@@ -137,7 +125,7 @@ fn event_driven_sync_does_not_report_unreadable_files_it_was_not_asked_about() {
     let locked = dir.path().join("locked.txt");
     fs::write(&locked, "alpha beta gamma\n").unwrap();
     fs::write(dir.path().join("other.txt"), "delta epsilon\n").unwrap();
-    let source = register(&store, dir.path());
+    let source = add_source(&store, "unreadable", dir.path());
     let Some(_guard) = lock(&locked) else { return };
 
     let result = sync_paths(&store, &source, None, &["other.txt".to_string()]).unwrap();
@@ -160,7 +148,7 @@ fn unreadable_directory_still_fails_the_sync() {
     fs::create_dir(&locked).unwrap();
     fs::write(locked.join("inner.txt"), "alpha beta gamma\n").unwrap();
     let Some(_guard) = lock(&locked) else { return };
-    let source = register(&store, dir.path());
+    let source = add_source(&store, "unreadable", dir.path());
 
     let result = sync_source(&store, &source, None);
 

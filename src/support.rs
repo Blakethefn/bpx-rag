@@ -1,3 +1,4 @@
+use crate::knowledge::sync::sync_source;
 use crate::knowledge::{open_in_memory, KnowledgeSourceInfo, KnowledgeStore};
 use std::path::Path;
 use std::sync::Arc;
@@ -17,4 +18,14 @@ pub(crate) fn add_source(store: &KnowledgeStore, label: &str, dir: &Path) -> Kno
         .add_source(label, dir.to_str().unwrap(), &[], &[])
         .unwrap();
     store.get_source(label).unwrap().unwrap()
+}
+
+pub(crate) fn add_synced_source(
+    store: &KnowledgeStore,
+    label: &str,
+    dir: &Path,
+) -> KnowledgeSourceInfo {
+    let source = add_source(store, label, dir);
+    sync_source(store, &source, None).unwrap();
+    source
 }

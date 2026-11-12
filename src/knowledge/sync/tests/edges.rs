@@ -1,5 +1,5 @@
 use super::super::*;
-use super::{make_store, register_source};
+use crate::support::{add_source, make_store};
 use tempfile::tempdir;
 
 fn code_edge_count(store: &KnowledgeStore, source_id: i64) -> i64 {
@@ -30,7 +30,7 @@ fn sync_stores_rust_module_relations_and_drops_them_when_removed() {
         "pub fn helper() -> u8 { 1 }\n",
     )
     .unwrap();
-    let source = register_source(&store, dir.path());
+    let source = add_source(&store, "test", dir.path());
     sync_source(&store, &source, None).unwrap();
 
     let lib_id: i64 = store
@@ -59,7 +59,7 @@ fn unchanged_sync_keeps_code_edges_without_rereading_files() {
     let dir = tempdir().unwrap();
     fs::write(dir.path().join("lib.rs"), "mod util;\n").unwrap();
     fs::write(dir.path().join("util.rs"), "pub fn helper() {}\n").unwrap();
-    let source = register_source(&store, dir.path());
+    let source = add_source(&store, "test", dir.path());
     sync_source(&store, &source, None).unwrap();
     let edges = code_edge_count(&store, source.id);
     assert!(edges >= 1);

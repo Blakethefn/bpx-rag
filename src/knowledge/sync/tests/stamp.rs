@@ -4,16 +4,6 @@ use rusqlite::params;
 mod backfill;
 mod edit;
 
-fn make_store() -> KnowledgeStore {
-    crate::knowledge::open_in_memory().expect("in-memory knowledge store")
-}
-
-fn register(store: &KnowledgeStore, label: &str, dir: &Path) {
-    store
-        .add_source(label, dir.to_str().unwrap(), &[], &[])
-        .unwrap();
-}
-
 fn sync(store: &KnowledgeStore, label: &str) {
     let source = store.get_source(label).unwrap().unwrap();
     sync_source(store, &source, None).unwrap();

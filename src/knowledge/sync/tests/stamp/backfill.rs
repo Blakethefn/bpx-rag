@@ -1,5 +1,6 @@
 use super::super::super::*;
-use super::{make_store, register, sync};
+use super::sync;
+use crate::support::{add_source, make_store};
 use rusqlite::params;
 use std::fs;
 use tempfile::tempdir;
@@ -73,7 +74,7 @@ fn an_unchanged_tree_backfills_visibility_and_references_once() {
     )
     .unwrap();
     fs::write(dir.path().join("app.py"), "def load():\n    return 1\n").unwrap();
-    register(&store, "demo", dir.path());
+    add_source(&store, "demo", dir.path());
     sync(&store, "demo");
     let (generation, _) = analysis(&store, "demo");
 

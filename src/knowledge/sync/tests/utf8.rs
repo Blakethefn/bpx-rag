@@ -3,19 +3,7 @@
 use super::super::*;
 use tempfile::tempdir;
 
-fn make_store() -> KnowledgeStore {
-    crate::knowledge::open_in_memory().expect("in-memory knowledge store")
-}
-
-fn register(store: &KnowledgeStore, dir: &Path) -> KnowledgeSourceInfo {
-    store
-        .add_source("utf8", &dir.to_string_lossy(), &[], &[])
-        .unwrap();
-    store
-        .get_source("utf8")
-        .unwrap()
-        .expect("registered source")
-}
+use crate::support::{add_source, make_store};
 
 fn indexed_paths(store: &KnowledgeStore) -> Vec<String> {
     let mut statement = store
@@ -51,7 +39,7 @@ fn invalid_utf8_file_is_skipped_with_a_reason_and_other_files_still_sync() {
     let dir = tempdir().unwrap();
     fs::write(dir.path().join("alpha.rs"), "fn alpha_one() -> u8 { 1 }\n").unwrap();
     fs::write(dir.path().join("menu.txt"), LATIN1).unwrap();
-    let source = register(&store, dir.path());
+    let source = add_source(&store, "utf8", dir.path());
 
     let result = sync_source(&store, &source, None).unwrap();
 
@@ -76,7 +64,7 @@ fn file_that_becomes_invalid_loses_its_rows_and_is_reported() {
     let store = make_store();
     let dir = tempdir().unwrap();
     fs::write(dir.path().join("notes.txt"), "alpha beta gamma\n").unwrap();
-    let source = register(&store, dir.path());
+    let source = add_source(&store, "utf8", dir.path());
     sync_source(&store, &source, None).unwrap();
     assert_eq!(indexed_paths(&store), vec!["notes.txt".to_string()]);
 
@@ -94,7 +82,7 @@ fn file_is_indexed_again_once_its_content_is_valid() {
     let store = make_store();
     let dir = tempdir().unwrap();
     fs::write(dir.path().join("notes.txt"), LATIN1).unwrap();
-    let source = register(&store, dir.path());
+    let source = add_source(&store, "utf8", dir.path());
     sync_source(&store, &source, None).unwrap();
     assert!(indexed_paths(&store).is_empty());
 
@@ -112,7 +100,7 @@ fn event_driven_sync_skips_then_recovers_the_same_way() {
     let store = make_store();
     let dir = tempdir().unwrap();
     fs::write(dir.path().join("notes.txt"), "alpha beta gamma\n").unwrap();
-    let source = register(&store, dir.path());
+    let source = add_source(&store, "utf8", dir.path());
     sync_source(&store, &source, None).unwrap();
 
     fs::write(dir.path().join("notes.txt"), LATIN1).unwrap();

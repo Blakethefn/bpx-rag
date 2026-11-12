@@ -1,6 +1,6 @@
 use super::super::scrub::scrub_sensitive_indexed_files;
 use super::super::*;
-use super::{make_store, register_source};
+use crate::support::{add_source, make_store};
 use tempfile::tempdir;
 
 fn indexed_rel_paths(store: &KnowledgeStore, source_id: i64) -> Vec<String> {
@@ -37,7 +37,7 @@ fn sync_never_indexes_credential_files_or_key_material() {
         format!("# Leak\nkestrel key {fake_key}"),
     )
     .unwrap();
-    let source = register_source(&store, dir.path());
+    let source = add_source(&store, "test", dir.path());
 
     sync_source(&store, &source, None).unwrap();
 
@@ -61,7 +61,7 @@ fn scrub_removes_rows_that_match_the_policy_after_they_were_indexed() {
     let store = make_store();
     let dir = tempdir().unwrap();
     fs::write(dir.path().join("readme.md"), "# Readme\nkestrel public").unwrap();
-    let source = register_source(&store, dir.path());
+    let source = add_source(&store, "test", dir.path());
     sync_source(&store, &source, None).unwrap();
 
     // Simulate a row written before the policy existed.

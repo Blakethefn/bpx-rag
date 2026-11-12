@@ -1,5 +1,5 @@
 use super::super::*;
-use super::{make_store, register_source};
+use crate::support::{add_source, make_store};
 use tempfile::tempdir;
 
 // ── FTS5 cleanup ────────────────────────────────────────────────────────
@@ -11,7 +11,7 @@ fn no_orphaned_chunks_after_file_removal() {
     fs::write(dir.path().join("keep.md"), "# Keep\nPersistent").unwrap();
     fs::write(dir.path().join("gone.md"), "# Gone\nWill be deleted").unwrap();
 
-    let source = register_source(&store, dir.path());
+    let source = add_source(&store, "test", dir.path());
     sync_source(&store, &source, None).unwrap();
 
     fs::remove_file(dir.path().join("gone.md")).unwrap();

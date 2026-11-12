@@ -1,5 +1,6 @@
 use super::super::super::*;
-use super::{make_store, names, reference_specifiers, register, status_of, sync};
+use super::{names, reference_specifiers, status_of, sync};
+use crate::support::{add_source, make_store};
 use rusqlite::params;
 use std::fs;
 use tempfile::tempdir;
@@ -9,7 +10,7 @@ fn editing_a_file_replaces_its_symbols_references_and_status() {
     let store = make_store();
     let dir = tempdir().unwrap();
     fs::write(dir.path().join("lib.rs"), "pub fn alpha() { other(); }\n").unwrap();
-    register(&store, "demo", dir.path());
+    add_source(&store, "demo", dir.path());
     sync(&store, "demo");
 
     assert_eq!(names(&store, "lib.rs"), vec!["alpha".to_string()]);
@@ -59,7 +60,7 @@ fn a_partial_sync_does_not_rebuild_another_files_references_from_disk() {
     )
     .unwrap();
     fs::write(dir.path().join("b.rs"), "pub fn kept() { other(); }\n").unwrap();
-    register(&store, "demo", dir.path());
+    add_source(&store, "demo", dir.path());
     sync(&store, "demo");
     let before = reference_specifiers(&store, "b.rs");
     assert!(
@@ -101,7 +102,7 @@ fn a_file_that_declares_nothing_stores_complete_and_no_symbol_rows() {
     let store = make_store();
     let dir = tempdir().unwrap();
     fs::write(dir.path().join("quiet.rs"), "// no declarations\n").unwrap();
-    register(&store, "demo", dir.path());
+    add_source(&store, "demo", dir.path());
     sync(&store, "demo");
 
     assert_eq!(

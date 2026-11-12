@@ -16,8 +16,8 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use tempfile::tempdir;
 
-use crate::embed::tests::MockEmbedder;
 use crate::embed::Embed;
+use crate::support::{add_source, make_store};
 
 struct CountingEmbedder {
     calls: Arc<AtomicUsize>,
@@ -75,23 +75,6 @@ impl Embed for MutatingEmbedder {
     }
 }
 
-fn make_store() -> KnowledgeStore {
-    crate::knowledge::open_in_memory().expect("in-memory knowledge store")
-}
-
-fn make_store_with_embedder() -> KnowledgeStore {
-    let mut store = make_store();
-    store.set_embedder(Arc::new(MockEmbedder::new()));
-    store
-}
-
-fn register_source(store: &KnowledgeStore, dir: &Path) -> KnowledgeSourceInfo {
-    store
-        .add_source("test", dir.to_str().unwrap(), &[], &[])
-        .unwrap();
-    store.get_source("test").unwrap().unwrap()
-}
-
 fn register_source_glob(store: &KnowledgeStore, dir: &Path, glob: &str) -> KnowledgeSourceInfo {
     store
         .add_source("test", dir.to_str().unwrap(), &[glob.to_string()], &[])
@@ -128,7 +111,7 @@ fn enrichment_fn_metadata_stored() {
     let store = make_store();
     let dir = tempdir().unwrap();
     fs::write(dir.path().join("test.md"), "# Enriched\nContent").unwrap();
-    let source = register_source(&store, dir.path());
+    let source = add_source(&store, "test", dir.path());
 
     let enrich = |_content: &str, _path: &Path| -> serde_json::Value {
         serde_json::json!({"frontmatter": {"type": "task", "status": "active"}})

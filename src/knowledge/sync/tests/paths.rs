@@ -1,17 +1,9 @@
 use super::super::*;
 use crate::knowledge::open_in_memory;
+use crate::support::add_synced_source;
 use rusqlite::params;
 use std::fs;
 use tempfile::tempdir;
-
-fn register(store: &KnowledgeStore, dir: &Path) -> KnowledgeSourceInfo {
-    store
-        .add_source("test", dir.to_str().unwrap(), &[], &[])
-        .unwrap();
-    let source = store.get_source("test").unwrap().unwrap();
-    sync_source(store, &source, None).unwrap();
-    source
-}
 
 fn indexed_paths(store: &KnowledgeStore) -> Vec<String> {
     let mut statement = store
@@ -62,7 +54,7 @@ fn paths_add_modify_rename_and_remove_files() {
     let store = open_in_memory().unwrap();
     let dir = tempdir().unwrap();
     fs::write(dir.path().join("a.rs"), "pub fn alpha() -> u8 { 1 }\n").unwrap();
-    let source = register(&store, dir.path());
+    let source = add_synced_source(&store, "test", dir.path());
 
     fs::write(dir.path().join("b.rs"), "pub fn beta() -> u8 { 2 }\n").unwrap();
     fs::write(
@@ -102,7 +94,7 @@ fn unchanged_content_rewrites_no_chunks_or_vectors() {
     let dir = tempdir().unwrap();
     fs::write(dir.path().join("a.rs"), "pub fn alpha() -> u8 { 1 }\n").unwrap();
     fs::write(dir.path().join("b.rs"), "pub fn beta() -> u8 { 2 }\n").unwrap();
-    let source = register(&store, dir.path());
+    let source = add_synced_source(&store, "test", dir.path());
     let before = chunk_rowids(&store, "a.rs");
 
     let result = sync_paths(&store, &source, None, &["a.rs".to_string()]).unwrap();
@@ -119,7 +111,7 @@ fn sensitive_content_removes_the_indexed_file() {
         "pub const NAME: &str = \"demo\";\n",
     )
     .unwrap();
-    let source = register(&store, dir.path());
+    let source = add_synced_source(&store, "test", dir.path());
     assert_eq!(indexed_paths(&store), vec!["config.rs"]);
 
     fs::write(
@@ -140,7 +132,7 @@ fn unreadable_changed_file_is_skipped_and_other_files_stay_indexed() {
     let dir = tempdir().unwrap();
     fs::write(dir.path().join("a.rs"), "pub fn alpha() -> u8 { 1 }\n").unwrap();
     fs::write(dir.path().join("b.rs"), "pub fn beta() -> u8 { 2 }\n").unwrap();
-    let source = register(&store, dir.path());
+    let source = add_synced_source(&store, "test", dir.path());
 
     fs::write(dir.path().join("a.rs"), "pub fn alpha_v2() -> u8 { 1 }\n").unwrap();
     fs::set_permissions(
@@ -172,7 +164,7 @@ fn reindex_matches_a_full_sync_for_the_same_changes() {
     let store = open_in_memory().unwrap();
     let dir = tempdir().unwrap();
     fs::write(dir.path().join("a.rs"), "pub fn alpha() -> u8 { 1 }\n").unwrap();
-    let source = register(&store, dir.path());
+    let source = add_synced_source(&store, "test", dir.path());
 
     fs::write(
         dir.path().join("a.rs"),

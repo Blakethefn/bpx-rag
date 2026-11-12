@@ -1,8 +1,9 @@
 use super::super::*;
 use super::{
-    chunk_count_for_source, file_count_for_source, make_store, make_store_with_embedder,
-    register_source, CountingEmbedder, FailingEmbedder, MutatingEmbedder,
+    chunk_count_for_source, file_count_for_source, CountingEmbedder, FailingEmbedder,
+    MutatingEmbedder,
 };
+use crate::support::{add_source, make_store, make_store_with_embedder};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use tempfile::tempdir;
@@ -18,7 +19,7 @@ fn sync_generates_embeddings_when_embedder_present() {
     )
     .unwrap();
 
-    let source = register_source(&store, dir.path());
+    let source = add_source(&store, "test", dir.path());
     sync_source(&store, &source, None).unwrap();
 
     let count: i64 = store
@@ -42,7 +43,7 @@ fn sync_embeds_all_changed_files_in_one_corpus_call_before_persisting() {
     let dir = tempdir().unwrap();
     fs::write(dir.path().join("first.md"), "# First\nfirst document").unwrap();
     fs::write(dir.path().join("second.md"), "# Second\nsecond document").unwrap();
-    let source = register_source(&store, dir.path());
+    let source = add_source(&store, "test", dir.path());
 
     let result = sync_source(&store, &source, None).unwrap();
 
@@ -69,7 +70,7 @@ fn embedding_failure_happens_before_the_sync_transaction_and_preserves_index() {
     let dir = tempdir().unwrap();
     let existing_path = dir.path().join("existing.md");
     fs::write(&existing_path, "# Original\nExisting indexed content").unwrap();
-    let source = register_source(&store, dir.path());
+    let source = add_source(&store, "test", dir.path());
     sync_source(&store, &source, None).unwrap();
 
     fs::write(&existing_path, "# Changed\nNew replacement content").unwrap();
@@ -98,7 +99,7 @@ fn changed_file_during_embedding_aborts_before_stale_content_is_committed() {
     let dir = tempdir().unwrap();
     let file_path = dir.path().join("existing.md");
     fs::write(&file_path, "# Original\nExisting indexed content").unwrap();
-    let source = register_source(&store, dir.path());
+    let source = add_source(&store, "test", dir.path());
     sync_source(&store, &source, None).unwrap();
     let original_hash: String = store
         .conn()
@@ -144,7 +145,7 @@ fn sync_works_without_embedder() {
     let dir = tempdir().unwrap();
     fs::write(dir.path().join("test.md"), "# No Embed\nStill works").unwrap();
 
-    let source = register_source(&store, dir.path());
+    let source = add_source(&store, "test", dir.path());
     let result = sync_source(&store, &source, None).unwrap();
 
     assert_eq!(result.files_added, 1);

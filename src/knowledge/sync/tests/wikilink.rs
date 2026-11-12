@@ -1,6 +1,6 @@
 use super::super::index::resolve_wikilink;
 use super::super::*;
-use super::{make_store, register_source};
+use crate::support::{add_source, make_store};
 use std::collections::HashMap;
 use tempfile::tempdir;
 
@@ -163,7 +163,7 @@ fn sync_without_enrichments_creates_no_links() {
     fs::write(dir.path().join("a.md"), "See [[b]]").unwrap();
     fs::write(dir.path().join("b.md"), "# B").unwrap();
 
-    let source = register_source(&store, dir.path());
+    let source = add_source(&store, "test", dir.path());
     sync_source(&store, &source, None).unwrap();
 
     assert_eq!(
