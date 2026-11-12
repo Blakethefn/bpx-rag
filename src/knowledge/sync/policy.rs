@@ -1,23 +1,24 @@
 use std::path::Path;
 
+const SENSITIVE_DIRECTORIES: &[&str] = &[
+    ".aws",
+    ".azure",
+    ".git",
+    ".gnupg",
+    ".hg",
+    ".kube",
+    ".ssh",
+    ".svn",
+    ".terraform",
+];
+
+const SSH_IDENTITY_STEMS: &[&str] = &["id_dsa", "id_ecdsa", "id_ed25519", "id_rsa", "id_xmss"];
+
 pub(super) fn is_sensitive_path(source_root: &Path, path: &Path) -> bool {
     is_sensitive_relative_path(path.strip_prefix(source_root).unwrap_or(path))
 }
 
 pub(super) fn is_sensitive_relative_path(path: &Path) -> bool {
-    const SENSITIVE_DIRECTORIES: &[&str] = &[
-        ".aws",
-        ".azure",
-        ".git",
-        ".gnupg",
-        ".hg",
-        ".kube",
-        ".ssh",
-        ".svn",
-        ".terraform",
-        "credentials",
-        "secrets",
-    ];
     const SAFE_ENV_TEMPLATES: &[&str] = &["example", "sample", "template", "dist", "defaults"];
     const SENSITIVE_BASENAMES: &[&str] = &[
         ".envrc",
@@ -30,11 +31,6 @@ pub(super) fn is_sensitive_relative_path(path: &Path) -> bool {
         "credentials.json",
         "credentials.yaml",
         "credentials.yml",
-        "id_dsa",
-        "id_ecdsa",
-        "id_ed25519",
-        "id_rsa",
-        "id_xmss",
         "kubeconfig",
         "sa-key.json",
         "secret",
@@ -54,9 +50,10 @@ pub(super) fn is_sensitive_relative_path(path: &Path) -> bool {
 
     if path.components().any(|component| {
         let value = component.as_os_str().to_string_lossy();
-        SENSITIVE_DIRECTORIES
-            .iter()
-            .any(|directory| value.eq_ignore_ascii_case(directory))
+        is_sensitive_directory(&value)
+            || ["credentials", "secrets"]
+                .iter()
+                .any(|name| value.eq_ignore_ascii_case(name))
     }) {
         return true;
     }
@@ -74,9 +71,7 @@ pub(super) fn is_sensitive_relative_path(path: &Path) -> bool {
             return true;
         }
     }
-    let private_key_file = ["id_rsa.", "id_ed25519.", "id_ecdsa.", "id_dsa.", "id_xmss."]
-        .iter()
-        .any(|prefix| normalized_name.starts_with(prefix) && !normalized_name.ends_with(".pub"));
+    let private_key_file = is_ssh_identity(&normalized_name);
     let extensionless_private_key = path.extension().is_none()
         && (normalized_name.contains("private_key")
             || normalized_name.contains("private-key")
@@ -126,17 +121,6 @@ pub(super) fn is_google_api_key_byte(byte: u8) -> bool {
 }
 
 pub(super) fn is_sensitive_source_root(path: &Path) -> bool {
-    const SENSITIVE_STORE_DIRECTORIES: &[&str] = &[
-        ".aws",
-        ".azure",
-        ".git",
-        ".gnupg",
-        ".hg",
-        ".kube",
-        ".ssh",
-        ".svn",
-        ".terraform",
-    ];
     let sensitive_name = path
         .file_name()
         .and_then(|name| name.to_str())
@@ -148,8 +132,27 @@ pub(super) fn is_sensitive_source_root(path: &Path) -> bool {
     sensitive_name
         || path.components().any(|component| {
             let value = component.as_os_str().to_string_lossy();
-            SENSITIVE_STORE_DIRECTORIES
-                .iter()
-                .any(|directory| value.eq_ignore_ascii_case(directory))
+            is_sensitive_directory(&value)
         })
 }
+
+fn is_sensitive_directory(value: &str) -> bool {
+    SENSITIVE_DIRECTORIES
+        .iter()
+        .any(|directory| value.eq_ignore_ascii_case(directory))
+}
+
+fn is_ssh_identity(normalized_name: &str) -> bool {
+    SSH_IDENTITY_STEMS.iter().any(|stem| {
+        if normalized_name == *stem {
+            return true;
+        }
+        let Some(suffix) = normalized_name.strip_prefix(stem) else {
+            return false;
+        };
+        suffix.starts_with('.') && !normalized_name.ends_with(".pub")
+    })
+}
+
+#[cfg(test)]
+mod tests;
