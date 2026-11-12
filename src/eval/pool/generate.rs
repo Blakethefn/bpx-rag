@@ -3,14 +3,13 @@ use super::super::{
     QueryAnswerability,
 };
 use super::{
-    ensure_new_distinct_outputs, opaque_id, write_new_json, JudgmentPoolArtifact,
+    ensure_new_distinct_outputs, opaque_id, write_new_json, GradeGuideEntry, JudgmentPoolArtifact,
     JudgmentPoolCandidate, JudgmentPoolEvidence, JudgmentPoolGenerationReport, JudgmentPoolKey,
-    GradeGuideEntry, JudgmentPoolKeyEntry, PoolCandidateAccumulator, JUDGMENT_POOL_SCHEMA_VERSION,
+    JudgmentPoolKeyEntry, PoolCandidateAccumulator, PoolChannel, JUDGMENT_POOL_SCHEMA_VERSION,
 };
 use crate::config::Config;
 use crate::embed::{self, Embed, Embedder};
 use crate::knowledge;
-use crate::knowledge::query::SearchWeights;
 use anyhow::{anyhow, Context, Result};
 use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
@@ -108,30 +107,8 @@ pub fn generate_judgment_pool(
     for query in &queries {
         let blinded_query_id = opaque_id(seed, "query", &query.query_id);
         let mut candidates: BTreeMap<String, PoolCandidateAccumulator> = BTreeMap::new();
-        let channels = [
-            (
-                "hybrid",
-                SearchWeights {
-                    keyword_weight: 1.0,
-                    vector_weight: 1.0,
-                },
-            ),
-            (
-                "lexical",
-                SearchWeights {
-                    keyword_weight: 1.0,
-                    vector_weight: 0.0,
-                },
-            ),
-            (
-                "vector",
-                SearchWeights {
-                    keyword_weight: 0.0,
-                    vector_weight: 1.0,
-                },
-            ),
-        ];
-        for (channel, weights) in channels {
+        for channel in PoolChannel::ALL {
+            let weights = channel.weights();
             let results = knowledge::query::knowledge_search(
                 &store,
                 &query.text,
@@ -141,7 +118,7 @@ pub fn generate_judgment_pool(
                 &weights,
                 1200,
             )?;
-            for (rank, result) in results.into_iter().enumerate() {
+            for (offset, result) in results.into_iter().enumerate() {
                 let candidate = candidates.entry(result.file_path.clone()).or_default();
                 let evidence_key = format!(
                     "{}:{}:{}",
@@ -157,33 +134,7 @@ pub fn generate_judgment_pool(
                         lines: result.lines,
                         snippet: result.snippet,
                     });
-                match channel {
-                    "hybrid" => {
-                        candidate.retrieved_by.hybrid = Some(
-                            candidate
-                                .retrieved_by
-                                .hybrid
-                                .map_or(rank + 1, |old| old.min(rank + 1)),
-                        );
-                    }
-                    "lexical" => {
-                        candidate.retrieved_by.lexical = Some(
-                            candidate
-                                .retrieved_by
-                                .lexical
-                                .map_or(rank + 1, |old| old.min(rank + 1)),
-                        );
-                    }
-                    "vector" => {
-                        candidate.retrieved_by.vector = Some(
-                            candidate
-                                .retrieved_by
-                                .vector
-                                .map_or(rank + 1, |old| old.min(rank + 1)),
-                        );
-                    }
-                    _ => anyhow::bail!("unexpected judgment-pool retrieval channel"),
-                }
+                channel.record_rank(&mut candidate.retrieved_by, offset + 1);
             }
         }
 
@@ -324,4 +275,3 @@ pub(in crate::eval) fn indexed_corpus_evidence(
     }
     Ok(files)
 }
-

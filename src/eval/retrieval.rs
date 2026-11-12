@@ -1,3 +1,4 @@
+use super::pool::PoolChannel;
 use super::*;
 use crate::config::Config;
 use crate::embed::{self, Embed, Embedder};
@@ -170,10 +171,7 @@ pub fn run_retrieval_evaluation(
             &query.text,
             scope,
             TOP_K as u32,
-            &SearchWeights {
-                keyword_weight: 1.0,
-                vector_weight: 0.0,
-            },
+            &PoolChannel::Lexical.weights(),
             1024,
         )?
         .results;
@@ -182,10 +180,7 @@ pub fn run_retrieval_evaluation(
             &query.text,
             scope,
             TOP_K as u32,
-            &SearchWeights {
-                keyword_weight: 0.0,
-                vector_weight: 1.0,
-            },
+            &PoolChannel::Vector.weights(),
             1024,
         )?
         .results;
