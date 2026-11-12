@@ -3,7 +3,8 @@ use rusqlite::Connection;
 
 use crate::knowledge::identifiers::split_identifier;
 
-use super::{lexical_columns, ranked_result_from_row, select_list, RankedResult};
+use super::super::rank::RankedResult;
+use super::{lexical_columns, ranked_result_from_row, select_list};
 
 /// Identifier layer: BM25 over the split words of compound identifiers in the
 /// `knowledge_identifiers` table. The query's own identifiers are split the same

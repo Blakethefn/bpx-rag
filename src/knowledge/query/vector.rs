@@ -2,7 +2,7 @@ use super::lexical::{
     chunk_columns, column_at, ranked_result_from_row, select_list, BoundColumn, ChunkColumn,
     Selected,
 };
-use super::*;
+use super::rank::RankedResult;
 use crate::embed;
 use anyhow::Result;
 use rusqlite::Connection;

@@ -1,4 +1,4 @@
-use super::*;
+use super::rank::RankedResult;
 use anyhow::Result;
 use rusqlite::Connection;
 

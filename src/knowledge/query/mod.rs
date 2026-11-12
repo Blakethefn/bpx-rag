@@ -14,17 +14,9 @@ mod rank;
 mod vector;
 pub(crate) use fuse::search_with_pool;
 pub(crate) use fuzzy::VocabularyCache;
-#[allow(unused_imports)]
-use fuzzy::*;
 pub use layers::{LayerOutcome, LayerPolicy, LayerReport};
 #[cfg(test)]
 pub use layers::SkipReason;
-#[allow(unused_imports)]
-use lexical::*;
-#[allow(unused_imports)]
-use rank::*;
-#[allow(unused_imports)]
-use vector::*;
 
 /// Identifier layer weight, relative to the keyword weight. Chosen by the Stage 3 Revision 2
 /// selection rule. It makes a precise identifier hit outrank a single lexical and vector pair.
@@ -57,7 +49,7 @@ pub struct SearchScope<'a> {
 }
 
 /// A search result from the knowledge store (or combined search).
-#[derive(Debug, serde::Serialize)]
+#[derive(Debug, Clone, serde::Serialize)]
 pub struct KnowledgeSearchResult {
     pub title: String,
     pub snippet: String,
@@ -174,24 +166,6 @@ pub(crate) fn expanded_candidate_limit(limit: u32) -> u32 {
         .saturating_mul(CANDIDATE_OVERSAMPLE_FACTOR)
         .min(MAX_CANDIDATE_CHUNKS)
         .max(limit)
-}
-
-impl Clone for KnowledgeSearchResult {
-    fn clone(&self) -> Self {
-        Self {
-            title: self.title.clone(),
-            snippet: self.snippet.clone(),
-            score: self.score,
-            source_label: self.source_label.clone(),
-            file_path: self.file_path.clone(),
-            file_id: self.file_id,
-            source_id: self.source_id,
-            lines: self.lines.clone(),
-            metadata: self.metadata.clone(),
-            source_type: self.source_type.clone(),
-            why: self.why.clone(),
-        }
-    }
 }
 
 // ── Search layers ────────────────────────────────────────────────────────────

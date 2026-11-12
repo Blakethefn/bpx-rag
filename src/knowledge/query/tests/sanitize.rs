@@ -1,4 +1,5 @@
-use super::super::*;
+use super::super::lexical::{sanitize_fts_query, sanitize_trigram_query};
+use super::super::rank::truncate_snippet;
 
 // ── sanitize helpers ─────────────────────────────────────────────────────
 

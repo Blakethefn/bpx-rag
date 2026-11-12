@@ -1,3 +1,4 @@
+use super::super::lexical::knowledge_identifier_search;
 use super::super::*;
 use super::make_store;
 use super::fuzzy::bm25_hits;

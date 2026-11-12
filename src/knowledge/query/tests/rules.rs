@@ -1,3 +1,5 @@
+use super::super::lexical::knowledge_identifier_search;
+use super::super::rank::RankedResult;
 use super::super::*;
 use super::identifier::{GET_USER_BY_ID, indexed_store};
 

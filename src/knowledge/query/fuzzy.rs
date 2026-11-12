@@ -8,6 +8,8 @@
 //! again only when the database has changed. Candidates are pruned by length,
 //! then by a letter-count bound, before any Levenshtein computation.
 
+use super::lexical::knowledge_bm25_search;
+use super::rank::RankedResult;
 use super::*;
 use rusqlite::Connection;
 use std::cell::RefCell;

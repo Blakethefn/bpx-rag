@@ -1,3 +1,4 @@
+use super::super::vector::dot_product;
 use super::super::*;
 use super::{make_store, seed_chunk};
 

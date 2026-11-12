@@ -1,4 +1,5 @@
 use super::super::*;
+use super::super::vector::knowledge_vector_search;
 use super::{make_store, seed_chunk};
 use crate::embed::Embed;
 use rusqlite::params;

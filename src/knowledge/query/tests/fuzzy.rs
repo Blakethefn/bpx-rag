@@ -1,3 +1,5 @@
+use super::super::fuzzy::{extract_knowledge_terms, knowledge_fuzzy_search};
+use super::super::lexical::knowledge_bm25_search;
 use super::super::*;
 use super::{make_store, seed_chunk};
 use rusqlite::params;

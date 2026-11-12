@@ -6,6 +6,7 @@
 //! The vocabulary comes from a fixed-seed generator and the misspelling set is
 //! derived from it, so every run measures the same workload.
 
+use super::super::fuzzy::{fuzzy_correct, knowledge_fuzzy_search};
 use super::super::*;
 use crate::knowledge;
 use rusqlite::params;
