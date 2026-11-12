@@ -11,6 +11,28 @@ pub const RELATION_KEEP_TOP: usize = 5;
 /// Most linked files added from the top hit's relations.
 pub const RELATION_NEIGHBOR_LIMIT: usize = 2;
 
+/// Columns of a related chunk. `related_from_row` reads them in this order.
+const RELATED_COLUMNS: &[&str] = &[
+    "kcm.file_id",
+    "kf.rel_path",
+    "kc.title",
+    "kc.content",
+    "COALESCE(kcm.line_start, 0)",
+    "COALESCE(kcm.line_end, 0)",
+];
+
+/// Read one related chunk. Positions follow `RELATED_COLUMNS`.
+fn related_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<RelatedChunk> {
+    Ok(RelatedChunk {
+        file_id: row.get(0)?,
+        rel_path: row.get(1)?,
+        title: row.get(2)?,
+        content: row.get(3)?,
+        line_start: row.get(4)?,
+        line_end: row.get(5)?,
+    })
+}
+
 impl KnowledgeStore {
     /// Get chunks from files linked to the given chunk's file.
     ///
@@ -35,9 +57,9 @@ impl KnowledgeStore {
             _ => (String::new(), vec![]),
         };
         let limit_idx = 2 + filter_params.len();
+        let columns = RELATED_COLUMNS.join(", ");
         let outgoing = format!(
-            "SELECT kcm.file_id, kf.rel_path, kc.title, kc.content,
-                    COALESCE(kcm.line_start, 0), COALESCE(kcm.line_end, 0)
+            "SELECT {columns}
              FROM knowledge_links kl
              JOIN knowledge_chunk_meta kcm ON kcm.file_id = kl.target_file_id
              JOIN knowledge_chunks kc ON kc.rowid = kcm.chunk_rowid
@@ -50,8 +72,7 @@ impl KnowledgeStore {
         let remaining = max_results.saturating_sub(results.len());
         if remaining > 0 {
             let incoming = format!(
-                "SELECT kcm.file_id, kf.rel_path, kc.title, kc.content,
-                        COALESCE(kcm.line_start, 0), COALESCE(kcm.line_end, 0)
+                "SELECT {columns}
                  FROM knowledge_links kl
                  JOIN knowledge_chunk_meta kcm ON kcm.file_id = kl.source_file_id
                  JOIN knowledge_chunks kc ON kc.rowid = kcm.chunk_rowid
@@ -79,16 +100,7 @@ impl KnowledgeStore {
         let refs: Vec<&dyn rusqlite::types::ToSql> = params.iter().map(|p| p.as_ref()).collect();
 
         let mut stmt = self.conn.prepare(sql)?;
-        let rows = stmt.query_map(refs.as_slice(), |row| {
-            Ok(RelatedChunk {
-                file_id: row.get(0)?,
-                rel_path: row.get(1)?,
-                title: row.get(2)?,
-                content: row.get(3)?,
-                line_start: row.get(4)?,
-                line_end: row.get(5)?,
-            })
-        })?;
+        let rows = stmt.query_map(refs.as_slice(), related_from_row)?;
         Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
     }
 
