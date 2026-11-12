@@ -1,48 +1,34 @@
 use tree_sitter::Node;
 
-use super::super::super::super::languages::Grammar;
 use super::{quoted_literal, quoted_prefix};
 
-pub(super) fn extract(
-    grammar: Grammar,
-    node: Node<'_>,
-    content: &str,
-) -> Vec<(&'static str, String)> {
+pub(super) fn extract(node: Node<'_>, content: &str) -> Vec<(&'static str, String)> {
     let Some(text) = node.utf8_text(content.as_bytes()).ok().map(str::trim) else {
         return Vec::new();
     };
-    let specifier = match grammar {
-        Grammar::Html if node.kind() == "attribute" => {
-            let Some(name) = node.named_child(0) else {
-                return Vec::new();
-            };
-            let Some(name) = name.utf8_text(content.as_bytes()).ok() else {
-                return Vec::new();
-            };
-            if !matches!(name.to_ascii_lowercase().as_str(), "src" | "href") {
-                return Vec::new();
-            }
-            let Some(value) = node.named_child(1) else {
-                return Vec::new();
-            };
-            let Some(value) = value.utf8_text(content.as_bytes()).ok() else {
-                return Vec::new();
-            };
-            quoted_literal(value).unwrap_or_else(|| value.trim().to_string())
-        }
-        Grammar::Css if node.kind() == "import_statement" => {
-            let Some(path) = quoted_prefix(text).or_else(|| css_import_url(text)) else {
-                return Vec::new();
-            };
-            path
-        }
-        _ => return Vec::new(),
+    let Some(specifier) = (match node.kind() {
+        "attribute" => html_attribute(node, content),
+        "import_statement" => quoted_prefix(text).or_else(|| css_import_url(text)),
+        _ => None,
+    }) else {
+        return Vec::new();
     };
     let specifier = local_path(&specifier);
     specifier
         .filter(|path| !path.is_empty())
         .map(|path| vec![("include", path)])
         .unwrap_or_default()
+}
+
+fn html_attribute(node: Node<'_>, content: &str) -> Option<String> {
+    let name = node.named_child(0)?;
+    let name = name.utf8_text(content.as_bytes()).ok()?;
+    if !matches!(name.to_ascii_lowercase().as_str(), "src" | "href") {
+        return None;
+    }
+    let value = node.named_child(1)?;
+    let value = value.utf8_text(content.as_bytes()).ok()?;
+    Some(quoted_literal(value).unwrap_or_else(|| value.trim().to_string()))
 }
 
 fn css_import_url(text: &str) -> Option<String> {
