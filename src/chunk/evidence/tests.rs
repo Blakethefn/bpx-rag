@@ -3,6 +3,7 @@ use std::path::Path;
 
 use crate::chunk::chunk_content_for_path;
 
+mod names;
 mod rust;
 
 fn specifiers(path: &str, content: &str, kind: &str) -> Vec<String> {
