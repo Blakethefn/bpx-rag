@@ -1,9 +1,3 @@
-//! One resolution per stored reference.
-//!
-//! Resolutions are derived from `knowledge_symbols` and `knowledge_references`. This pass does
-//! not read source files. Symbol ids are deleted and reinserted by evidence replacement, so the
-//! caller rewrites resolutions after that replacement and before commit.
-
 use anyhow::Result;
 use rusqlite::{params, Connection};
 use std::collections::HashMap;
@@ -75,7 +69,6 @@ pub(crate) fn rebuild(conn: &Connection, source_id: i64) -> Result<()> {
                 &files_by_path,
                 reference.file_id,
             );
-            // The outcome only selects the status. This branch stores a file, not a symbol.
             let outcome = match file_id {
                 Some(_) => rust::Outcome::Resolved(0),
                 None => rust::Outcome::Unresolved,
@@ -90,8 +83,6 @@ pub(crate) fn rebuild(conn: &Connection, source_id: i64) -> Result<()> {
             continue;
         }
 
-        // Rust names resolve in the referring file's module. Other languages have no resolver,
-        // so a same-named symbol in another file is not a candidate.
         let outcome = if is_rust_name(reference) {
             rust_outcomes
                 .get(&reference.id)

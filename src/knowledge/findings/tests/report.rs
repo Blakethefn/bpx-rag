@@ -8,7 +8,6 @@ use tempfile::tempdir;
 fn the_reader_returns_the_analysis_row_and_hides_findings_that_do_not_match_it() {
     let store = make_store();
     let dir = tempdir().unwrap();
-    // Private, so the symbol is a finding. `pub` on neither root is withheld.
     fs::write(dir.path().join("lib.rs"), "fn alpha() {}\n").unwrap();
     add_source(&store, "demo", dir.path());
     sync(&store, "demo");

@@ -1,22 +1,12 @@
-//! Comparisons among stored relative paths.
-//!
-//! These functions compare paths already stored on file rows. They do not read source files.
-
 use std::collections::HashMap;
 
-/// A Rust path keyword. `single_segment` is the only match for what each one resolves to.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum PathKeyword {
     Crate,
-    /// The `self` keyword.
     SelfModule,
     Super,
 }
 
-/// `crate`, `self`, and `super`. These are path keywords, not module files.
-///
-/// Choosing Failed or External, whether a path entered a module, and module-file
-/// candidates all read this set.
 pub(super) const PATH_KEYWORDS: &[(&str, PathKeyword)] = &[
     ("crate", PathKeyword::Crate),
     ("self", PathKeyword::SelfModule),
@@ -33,14 +23,10 @@ pub(super) fn is_path_keyword(name: &str) -> bool {
     path_keyword(name).is_some()
 }
 
-/// `lib`, `main`, and `mod` keep child modules beside the file. Every other stem keeps
-/// them in a directory of that name.
 pub(super) fn is_directory_module_stem(stem: &str) -> bool {
     matches!(stem, "lib" | "main" | "mod")
 }
 
-/// The first indexed file named by a module or path specifier, skipping the file that
-/// contains the reference.
 pub(super) fn module_file(
     from_rel: &str,
     specifier: &str,

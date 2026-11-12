@@ -1,11 +1,3 @@
-//! Latency and memory benchmark for fuzzy correction. Ignored by default.
-//!
-//! Run with:
-//! `cargo test --bin bpx-rag fuzzy_latency_benchmark -- --ignored --nocapture`
-//!
-//! The vocabulary comes from a fixed-seed generator and the misspelling set is
-//! derived from it, so every run measures the same workload.
-
 use super::super::fuzzy::{fuzzy_correct, knowledge_fuzzy_search};
 use super::super::*;
 use crate::knowledge;
@@ -21,7 +13,6 @@ const MAX_WORD_LEN: usize = 12;
 const TIMED_RUNS_FULL_SCAN: usize = 20;
 const SEED: u64 = 0x9E37_79B9_7F4A_7C15;
 
-/// xorshift64. A fixed seed keeps the vocabulary identical across runs.
 struct Xorshift(u64);
 
 impl Xorshift {
@@ -39,7 +30,6 @@ impl Xorshift {
     }
 }
 
-/// `size` distinct lowercase words with lengths from 4 to 12.
 fn synthetic_vocabulary(size: usize) -> Vec<String> {
     let mut rng = Xorshift(SEED);
     let mut seen = HashSet::with_capacity(size);
@@ -56,7 +46,6 @@ fn synthetic_vocabulary(size: usize) -> Vec<String> {
     words
 }
 
-/// One edit away from `word`. The edit kind cycles: delete, substitute, insert.
 fn typo(word: &str, kind: usize) -> String {
     let mut chars: Vec<char> = word.chars().collect();
     match kind % 3 {
@@ -72,8 +61,6 @@ fn typo(word: &str, kind: usize) -> String {
     chars.into_iter().collect()
 }
 
-/// Single-word typos spread across the vocabulary, plus three-word queries with
-/// one typo and two correct words.
 fn misspelling_queries(vocabulary: &[String]) -> (Vec<String>, Vec<String>) {
     let single = (0..QUERY_COUNT)
         .map(|k| typo(&vocabulary[k * vocabulary.len() / QUERY_COUNT], k))
@@ -89,7 +76,6 @@ fn misspelling_queries(vocabulary: &[String]) -> (Vec<String>, Vec<String>) {
     (single, multi)
 }
 
-/// Insert the vocabulary as chunks so that the content vocab holds every word.
 fn build_store(vocabulary: &[String]) -> KnowledgeStore {
     let store = knowledge::open_in_memory().expect("in-memory knowledge store");
     let conn = store.conn();
@@ -105,7 +91,6 @@ fn build_store(vocabulary: &[String]) -> KnowledgeStore {
     store
 }
 
-/// Resident set size in kilobytes from `/proc/self/status` (Linux only).
 fn resident_kb() -> u64 {
     let status = std::fs::read_to_string("/proc/self/status").unwrap_or_default();
     status
@@ -134,7 +119,6 @@ fn percentile(sorted: &[Duration], fraction: f64) -> Duration {
     sorted[rank - 1]
 }
 
-/// Mean Levenshtein computations per query. Counted outside the timed loop.
 fn mean_levenshtein_calls(store: &KnowledgeStore, queries: &[String]) -> f64 {
     let total: usize = queries
         .iter()
@@ -143,7 +127,6 @@ fn mean_levenshtein_calls(store: &KnowledgeStore, queries: &[String]) -> f64 {
     total as f64 / queries.len() as f64
 }
 
-/// Median time of the full content-vocabulary read used by the fuzzy layer.
 fn full_vocabulary_read(store: &KnowledgeStore) -> (Duration, usize) {
     let conn = store.conn();
     conn.execute_batch(
@@ -186,13 +169,11 @@ fn fuzzy_latency_benchmark() {
         let rss_after_build = resident_kb();
         let (full_read, indexed_terms) = full_vocabulary_read(&store);
 
-        // The first query pays for the vocabulary load. Time it on its own.
         let cold_start = Instant::now();
         knowledge_fuzzy_search(&store, &single[0], 10, "", &[]).unwrap();
         let cold_first_query = cold_start.elapsed();
         let rss_after_cold = resident_kb();
 
-        // Warm the page cache and the statement cache before timing.
         time_queries(&store, &single);
         time_queries(&store, &multi);
 

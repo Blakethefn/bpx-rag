@@ -11,25 +11,18 @@ use super::files::{sha256_hex, stat_before_read, DbFile, StatRecord};
 use super::policy::contains_google_api_key;
 use super::SkippedFile;
 
-/// What the walk saw, reported in the sync result.
 pub(super) struct ScanCounts {
     pub(super) files_scanned: usize,
     pub(super) sensitive_files_skipped: usize,
     pub(super) skipped: Vec<SkippedFile>,
 }
 
-/// Changes decided by classification, applied in one transaction.
 #[derive(Default)]
 pub(super) struct ChangePlan {
-    /// (relative path, absolute path, content hash, stat)
     pub(super) to_add: Vec<(String, PathBuf, String, StatRecord)>,
-    /// (file id, absolute path, content hash, stat)
     pub(super) to_update: Vec<(i64, PathBuf, String, StatRecord)>,
     pub(super) to_remove: Vec<i64>,
-    /// Unchanged files whose symbol or reference stamp is stale. Evidence comes from the content
-    /// read during classification, not from a later disk read.
     pub(super) backfill: Vec<BackfillEvidence>,
-    /// Unchanged files whose modification time was never recorded.
     pub(super) backfill_stat: Vec<(i64, StatRecord)>,
     pub(super) unchanged: usize,
 }
@@ -47,11 +40,9 @@ pub(super) struct BackfillEvidence {
 pub(super) enum Classification {
     Indexed,
     Sensitive,
-    /// Not valid UTF-8. The file is skipped with this reason, and any rows it had are removed.
     Skipped(String),
 }
 
-/// Record a file that was not indexed and must lose any rows it had.
 pub(super) fn mark_excluded(
     db_files: &HashMap<String, DbFile>,
     rel_path: &str,
@@ -62,18 +53,12 @@ pub(super) fn mark_excluded(
     }
 }
 
-/// Read one included file, decide whether it is new, changed, or unchanged, and record any
-/// backfill it needs. The stat is taken before the content is read.
 pub(super) fn classify_file(
     rel_path: &str,
     abs_path: &Path,
     db_files: &HashMap<String, DbFile>,
     plan: &mut ChangePlan,
 ) -> Result<Classification> {
-    // A file that cannot be inspected or read (permission denied, an I/O error, or removed
-    // since the walk) is a skip with a reason, like invalid UTF-8, so one bad file cannot stop
-    // the other files from syncing. Its indexed rows are removed, because the index could no
-    // longer be checked against the file.
     let stat = match stat_before_read(abs_path) {
         Ok(stat) => stat,
         Err(error) => {
@@ -105,8 +90,6 @@ pub(super) fn classify_file(
         }
         Some(db_file) => {
             plan.unchanged += 1;
-            // The content matches, but its symbol or reference rows may come from an older
-            // writer. `evidence_current` compares both stamps with the stored hash.
             if !db_file.evidence_current {
                 let evidence = chunk_content_for_path(Path::new(rel_path), &content);
                 plan.backfill.push(BackfillEvidence {

@@ -149,7 +149,6 @@ fn explain_warns_first_when_vector_retrieval_is_not_running() {
     );
     assert!(explained.contains("file: lib.rs"), "results still return");
 
-    // Without --explain, and when vectors run, the output carries no such warning.
     let plain = run_query(
         QueryRequest {
             vector_unavailable: Some(reason),

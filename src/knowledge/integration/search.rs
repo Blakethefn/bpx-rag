@@ -30,8 +30,6 @@ pub(super) fn empty_knowledge_filtered_search_returns_empty() {
     assert!(results.is_empty());
 }
 
-// ── All three enrichments + search ─────────────────────────────────────
-
 #[test]
 pub(super) fn multi_source_with_source_filter() {
     let store = make_store();
@@ -63,7 +61,6 @@ pub(super) fn multi_source_with_source_filter() {
 
     let weights = SearchWeights::default();
 
-    // Unfiltered → both sources
     let results = query::knowledge_search(
         &store,
         "holographic rendering",
@@ -80,7 +77,6 @@ pub(super) fn multi_source_with_source_filter() {
         "unfiltered should return from both sources"
     );
 
-    // Source filter → only vault
     let results = query::knowledge_search(
         &store,
         "holographic rendering",
@@ -94,7 +90,6 @@ pub(super) fn multi_source_with_source_filter() {
     assert_eq!(results.len(), 1);
     assert_eq!(results[0].source_label, "vault");
 
-    // Source label param → only docs
     let results = query::knowledge_search(
         &store,
         "holographic rendering",
@@ -109,15 +104,11 @@ pub(super) fn multi_source_with_source_filter() {
     assert_eq!(results[0].source_label, "docs");
 }
 
-// ── Invariant 5: Filter correctness ────────────────────────────────────
-// "A metadata filter never returns chunks whose metadata doesn't match."
-
 #[test]
 pub(super) fn filter_never_returns_non_matching_chunks() {
     let store = make_store();
     let dir = tempdir().unwrap();
 
-    // Create 5 files with different types
     for (i, ftype) in ["task", "note", "spec", "output", "log"].iter().enumerate() {
         std::fs::write(
             dir.path().join(format!("{ftype}.md")),
@@ -141,7 +132,6 @@ pub(super) fn filter_never_returns_non_matching_chunks() {
 
     let weights = SearchWeights::default();
 
-    // Filter for type:task — every result must have type=task
     let results = query::knowledge_search(
         &store,
         "electron microscope",
@@ -160,9 +150,6 @@ pub(super) fn filter_never_returns_non_matching_chunks() {
     }
     assert_eq!(results.len(), 1, "exactly one task file should match");
 }
-
-// ── Invariant 6: Freshness after sync ───────────────────────────────
-// "After a sync, the next search returns updated content."
 
 #[test]
 pub(super) fn compound_filter_roundtrip() {
@@ -199,7 +186,6 @@ pub(super) fn compound_filter_roundtrip() {
 
     let weights = SearchWeights::default();
 
-    // Compound filter: type:task AND tag:urgent AND folder:tasks
     let results = query::knowledge_search(
         &store,
         "spectral analysis",
@@ -217,5 +203,3 @@ pub(super) fn compound_filter_roundtrip() {
     );
     assert_eq!(results[0].title, "Matching Task");
 }
-
-// ── Graph traversal integration ─────────────────────────────────────────

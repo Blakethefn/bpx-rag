@@ -17,51 +17,31 @@ use text::*;
 pub(crate) use evidence::{EntryObservation, Reference};
 pub use symbols::Symbol;
 
-/// Maximum chunk size in bytes
 const MAX_CHUNK_BYTES: usize = 4096;
 
-/// Minimum chunk size — avoid splitting too aggressively
 const MIN_CHUNK_BYTES: usize = 256;
 
-/// Avoid building syntax trees for generated or unusually large source files.
 const MAX_TREE_SITTER_FILE_BYTES: usize = 2 * 1024 * 1024;
 
-/// Bump when the structural chunking policy changes for supported source files.
 pub(crate) const TREE_SITTER_CHUNKER_VERSION: i64 = 2;
 
-/// A chunk of content ready for indexing
 #[derive(Debug)]
 pub struct Chunk {
     pub title: String,
     pub content: String,
-    /// 1-based line number where this chunk starts (0 if unknown)
     pub line_start: u32,
-    /// 1-based line number where this chunk ends, inclusive (0 if unknown)
     pub line_end: u32,
 }
 
-/// Chunks produced for a path, including whether Tree-sitter supplied boundaries.
 pub struct ChunkingResult {
     pub chunks: Vec<Chunk>,
     pub used_tree_sitter: bool,
-    /// Named declarations from the same parse. Empty unless the walk completed and found none,
-    /// or the file was unsupported, a parse error, or over the Tree-sitter cap.
     pub symbols: Vec<Symbol>,
-    /// `complete`, `unsupported`, `parse_error`, or `too_large`.
     pub(crate) symbol_status: &'static str,
-    /// Occurrences in this file. Empty for `parse_error` and `too_large`.
     pub(crate) references: Vec<Reference>,
-    /// Program, test, and manifest observations made from this file's bytes.
     pub(crate) entries: Vec<EntryObservation>,
 }
 
-/// Split content into indexable chunks
-///
-/// Strategy:
-/// - Markdown: split on headings, keep code blocks intact
-/// - Code: split on structural boundaries (functions, classes, tags)
-/// - Plain text: split on double newlines (paragraphs)
-/// - All paths enforce MAX_CHUNK_BYTES via newline fallback
 pub fn chunk_content(content: &str) -> Vec<Chunk> {
     match classify_content(content) {
         ContentType::Markdown => chunk_markdown(content),
@@ -70,12 +50,6 @@ pub fn chunk_content(content: &str) -> Vec<Chunk> {
     }
 }
 
-/// Chunk a source file using its bundled grammar when parsing succeeds.
-/// Markdown, unknown languages, malformed source, and large files keep the
-/// existing content-based chunker as a fallback.
-///
-/// Symbol status distinguishes a finished walk that declared nothing from a file that was not
-/// analyzed. References and manifest entries come from the same bytes as the symbols.
 pub fn chunk_content_for_path(path: &Path, content: &str) -> ChunkingResult {
     let supported = crate::relations::supports_tree_sitter_chunking(path);
     if supported && content.len() > MAX_TREE_SITTER_FILE_BYTES {
@@ -136,7 +110,6 @@ fn fallback(
     }
 }
 
-/// The stored per-file chunking version allows sync to rebuild stale chunks.
 pub(crate) fn chunker_version_for_path(path: &Path) -> i64 {
     if crate::relations::supports_tree_sitter_chunking(path) {
         TREE_SITTER_CHUNKER_VERSION

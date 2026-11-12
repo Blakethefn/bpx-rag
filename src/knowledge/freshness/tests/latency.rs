@@ -4,8 +4,6 @@ use crate::knowledge::open_in_memory;
 use crate::knowledge::query::{knowledge_search_report, SearchWeights};
 use tempfile::tempdir;
 
-/// Benchmark: time the freshness check for the results of real searches. Run with
-/// `cargo test --release freshness_check_latency -- --ignored --nocapture`.
 #[test]
 #[ignore = "benchmark"]
 fn freshness_check_latency_at_10_50_and_200_results() {

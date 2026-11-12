@@ -15,7 +15,6 @@ use super::files::{prepare_file, read_classified_file, sha256_hex, DbFile, Prepa
 use super::index::embed_pending_batch;
 use super::{EnrichmentFn, SyncResult};
 
-/// Prepare changed files, embed them, and apply the plan in one transaction.
 pub(super) fn apply_plan(
     store: &KnowledgeStore,
     source: &KnowledgeSourceInfo,
@@ -33,9 +32,6 @@ pub(super) fn apply_plan(
     let files_removed = plan.to_remove.len();
     let unchanged = plan.unchanged;
 
-    // Prepare changed files before acquiring SQLite's write lock. Re-read only
-    // files selected for indexing and verify they still match the classification
-    // hash, keeping source text out of the corpus-wide staging vectors.
     let mut prepared_files = Vec::with_capacity(files_added + files_updated);
     for (rel_path, abs_path, hash, stat) in &plan.to_add {
         let content = read_classified_file(abs_path, hash)?;
@@ -82,8 +78,6 @@ pub(super) fn apply_plan(
         .count();
     let existing_chunker_files_indexed = prepared_files.len() - tree_sitter_files_indexed;
 
-    // Avoid committing vectors for file contents that changed during a long
-    // embedding pass. The next sync can retry against the newer snapshot.
     for file in &prepared_files {
         let current_bytes = fs::read(&file.abs_path)
             .with_context(|| format!("failed to recheck {}", file.abs_path.display()))?;
@@ -140,7 +134,6 @@ pub(super) fn apply_plan(
     })
 }
 
-/// Embed every chunk of the prepared files in batches. Returns the number of model calls.
 fn embed_prepared(
     prepared_files: &mut [PreparedFile],
     embedder: Option<&dyn Embed>,

@@ -9,8 +9,6 @@ pub(in crate::knowledge::query) use identifier::{
     identifier_match_expression, knowledge_identifier_search,
 };
 
-/// Chunk-row columns in select and decode order.
-/// Lexical queries append rank. Vector search inserts the embedding after rowid.
 const CHUNK_COLUMNS: [ChunkColumn; 10] = [
     ChunkColumn::Rowid,
     ChunkColumn::FileId,
@@ -24,7 +22,6 @@ const CHUNK_COLUMNS: [ChunkColumn; 10] = [
     ChunkColumn::FilePath,
 ];
 
-/// A column from [`CHUNK_COLUMNS`]. Rank and embedding are added beside this list.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum ChunkColumn {
     Rowid,
@@ -39,7 +36,6 @@ pub(super) enum ChunkColumn {
     FilePath,
 }
 
-/// One selected output column. Chunk columns come from [`CHUNK_COLUMNS`].
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum Selected {
     Chunk(ChunkColumn),
@@ -47,14 +43,12 @@ pub(super) enum Selected {
     Embedding,
 }
 
-/// A selected column and the SQL expression that produces it.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(super) struct BoundColumn {
     pub(super) selected: Selected,
     pub(super) sql: String,
 }
 
-/// The shared chunk columns. `chunk` is the alias that owns rowid, title, and content.
 pub(super) fn chunk_columns(chunk: &str) -> Vec<BoundColumn> {
     CHUNK_COLUMNS
         .into_iter()
@@ -65,7 +59,6 @@ pub(super) fn chunk_columns(chunk: &str) -> Vec<BoundColumn> {
         .collect()
 }
 
-/// Chunk columns followed by the lexical rank column.
 fn lexical_columns(chunk: &str, rank_expr: &str) -> Vec<BoundColumn> {
     let mut columns = chunk_columns(chunk);
     columns.push(BoundColumn {
@@ -105,7 +98,6 @@ fn chunk_column_sql(column: ChunkColumn, chunk: &str) -> String {
     }
 }
 
-/// BM25 search on knowledge_chunks FTS5 table.
 pub(super) fn knowledge_bm25_search(
     conn: &Connection,
     query: &str,
@@ -120,7 +112,6 @@ pub(super) fn knowledge_bm25_search(
 
     let mut params: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
 
-    // Metadata filter params come first (they use ?1, ?2, ... from predicates_to_sql)
     for p in meta_params {
         params.push(Box::new(p.clone()));
     }
@@ -160,9 +151,6 @@ pub(super) fn knowledge_bm25_search(
     Ok(results)
 }
 
-/// Decode one result row from the shared chunk columns.
-/// A lexical row also carries rank. Any column that fails to decode fails the
-/// whole query, so a corrupt row is reported instead of disappearing.
 pub(super) fn ranked_result_from_row(
     row: &rusqlite::Row<'_>,
     columns: &[BoundColumn],
@@ -191,7 +179,6 @@ pub(super) fn ranked_result_from_row(
     })
 }
 
-/// Trigram search on knowledge_chunks_trigram FTS5 table.
 pub(super) fn knowledge_trigram_search(
     conn: &Connection,
     query: &str,
@@ -248,7 +235,6 @@ pub(super) fn knowledge_trigram_search(
     Ok(results)
 }
 
-/// Build an FTS5 MATCH expression: the whole query as a phrase, OR'd with each term.
 pub(super) fn sanitize_fts_query(query: &str) -> String {
     let cleaned = sanitize_fts_terms(query);
     let phrase = format!("\"{cleaned}\"");
@@ -284,7 +270,6 @@ pub(super) fn sanitize_fts_terms(query: &str) -> String {
     cleaned
 }
 
-/// Sanitize for trigram FTS5 MATCH (requires quoted phrase).
 pub(super) fn sanitize_trigram_query(query: &str) -> String {
     let cleaned = sanitize_fts_terms(query);
     if cleaned.is_empty() {

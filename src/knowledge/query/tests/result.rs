@@ -2,8 +2,6 @@ use super::super::vector::dot_product;
 use super::super::*;
 use super::{make_store, seed_chunk};
 
-// ── knowledge_search (no filter) ─────────────────────────────────────────
-
 #[test]
 fn search_empty_db_returns_empty() {
     let store = make_store();
@@ -76,12 +74,10 @@ fn search_metadata_in_result() {
     assert_eq!(fm["status"], "active");
 }
 
-// ── combined_search ──────────────────────────────────────────────────────
-
 #[test]
 fn search_snippet_truncated() {
     let store = make_store();
-    let long_content = "word ".repeat(500); // ~2500 chars
+    let long_content = "word ".repeat(500);
     seed_chunk(
         &store,
         "vault",
@@ -95,10 +91,8 @@ fn search_snippet_truncated() {
     let weights = SearchWeights::default();
     let results = knowledge_search(&store, "word", None, None, 10, &weights, 100).unwrap();
     assert!(!results.is_empty());
-    assert!(results[0].snippet.len() <= 104); // 100 + "..."
+    assert!(results[0].snippet.len() <= 104);
 }
-
-// ── dot_product ──────────────────────────────────────────────────────────
 
 #[test]
 fn test_dot_product_identical() {

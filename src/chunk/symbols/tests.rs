@@ -1,7 +1,6 @@
 use super::*;
 use std::path::Path;
 
-/// One line per symbol: `kind container::name start-end`, or `kind name start-end` without a container.
 fn describe(symbols: &[Symbol]) -> Vec<String> {
     symbols
         .iter()

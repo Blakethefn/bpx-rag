@@ -22,7 +22,6 @@ fn test_chunk_plain_text() {
 fn test_code_blocks_stay_intact() {
     let md = "# Example\n```rust\nfn main() {\n    // code\n}\n```\nSome text after.";
     let chunks = chunk_content(md);
-    // The code block should be in the same chunk as its heading
     assert!(chunks[0].content.contains("fn main()"));
 }
 
@@ -43,7 +42,6 @@ fn test_structural_boundary_detection() {
 
 #[test]
 fn test_code_chunking_produces_small_chunks() {
-    // Build a PHP-like file with multiple functions
     let mut content = String::from("<?php\nrequire 'config.php';\n\n");
     for i in 0..20 {
         content.push_str(&format!(
@@ -54,14 +52,12 @@ fn test_code_chunking_produces_small_chunks() {
 
     let chunks = chunk_content(&content);
 
-    // Should produce multiple chunks, not 1-3
     assert!(
         chunks.len() >= 5,
         "Expected >=5 chunks, got {}",
         chunks.len()
     );
 
-    // Every chunk must respect MAX_CHUNK_BYTES
     for chunk in &chunks {
         assert!(
             chunk.content.len() <= MAX_CHUNK_BYTES,
@@ -75,7 +71,6 @@ fn test_code_chunking_produces_small_chunks() {
 
 #[test]
 fn test_no_chunk_exceeds_max_bytes_dense_content() {
-    // Dense content with no blank lines — simulates minified-ish code
     let mut content = String::new();
     for i in 0..500 {
         content.push_str(&format!("var x_{i} = {i};\n"));
@@ -96,7 +91,6 @@ fn test_no_chunk_exceeds_max_bytes_dense_content() {
 
 #[test]
 fn test_no_chunk_exceeds_max_bytes_no_newlines() {
-    // Single long line with no newlines at all
     let content = "x".repeat(10000);
     let chunks = chunk_content(&content);
 

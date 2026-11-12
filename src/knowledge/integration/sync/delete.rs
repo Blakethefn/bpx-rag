@@ -2,9 +2,6 @@ use crate::knowledge::{enrichment, sync};
 use std::path::Path;
 use tempfile::tempdir;
 
-// ── Invariant 2: Cascading deletion ────────────────────────────────────
-// "Removing a source deletes all files, chunks, chunk_meta, embeddings."
-
 #[test]
 fn cascading_deletion_leaves_zero_orphans() {
     let store = super::super::make_store_with_embedder();
@@ -29,7 +26,6 @@ fn cascading_deletion_leaves_zero_orphans() {
         .map(|f| f.as_ref() as &dyn Fn(&str, &Path) -> serde_json::Value);
     sync::sync_source(&store, &source, enrich_ref).unwrap();
 
-    // Verify data exists before removal
     let source = store.get_source("doomed").unwrap().unwrap();
     assert!(source.file_count > 0);
     assert!(source.chunk_count > 0);
@@ -45,12 +41,10 @@ fn cascading_deletion_leaves_zero_orphans() {
         "embeddings should exist before removal"
     );
 
-    // Remove the source
     let result = store.remove_source("doomed").unwrap();
     assert!(result.files_removed > 0);
     assert!(result.chunks_removed > 0);
 
-    // Verify zero orphans in every table
     let orphaned_files: i64 = store
         .conn()
         .query_row("SELECT COUNT(*) FROM knowledge_files", [], |row| row.get(0))

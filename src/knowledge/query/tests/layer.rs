@@ -1,5 +1,3 @@
-//! Which layers run for each query shape, and what the diagnostics report.
-
 use super::super::layers::{LayerOutcome, LayerPolicy, LayerReport, SkipReason};
 use super::super::*;
 use super::seed_chunk;
@@ -49,7 +47,6 @@ fn skipped(reason: SkipReason) -> LayerOutcome {
     LayerOutcome::Skipped { reason }
 }
 
-/// Seed `count` chunks in source "repo" that all contain `word`.
 fn seed_repeated_word(store: &KnowledgeStore, count: usize, word: &str) {
     for index in 0..count {
         seed_chunk(

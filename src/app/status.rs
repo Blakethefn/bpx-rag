@@ -8,7 +8,6 @@ use crate::watch::{self, Holder};
 use super::RagApp;
 
 impl RagApp {
-    /// The watcher lease holder and each source's watch setting and last reported state.
     pub fn watch_status(&self) -> Result<String> {
         let db_path = knowledge::schema::knowledge_db_path()?;
         let holder = watch::holder(&db_path)?;
@@ -109,7 +108,6 @@ impl RagApp {
     }
 }
 
-/// One status line for files a watcher sync skipped, with each file's reason.
 fn skipped_note(skipped: &[knowledge::sync::SkippedFile]) -> String {
     if skipped.is_empty() {
         return String::new();

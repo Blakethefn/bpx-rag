@@ -1,10 +1,8 @@
 use super::*;
 
-/// Check if a line is a structural boundary in code
 pub(super) fn is_structural_boundary(line: &str) -> bool {
     let trimmed = line.trim();
 
-    // PHP / JS functions
     trimmed.starts_with("function ")
         || trimmed.starts_with("function(")
         || trimmed.starts_with("public function ")
@@ -12,38 +10,32 @@ pub(super) fn is_structural_boundary(line: &str) -> bool {
         || trimmed.starts_with("protected function ")
         || trimmed.starts_with("static function ")
         || trimmed.starts_with("async function ")
-        // Classes, traits, interfaces
         || trimmed.starts_with("class ")
         || trimmed.starts_with("abstract class ")
         || trimmed.starts_with("trait ")
         || trimmed.starts_with("interface ")
-        // Python
         || trimmed.starts_with("def ")
         || trimmed.starts_with("async def ")
-        // Rust
         || trimmed.starts_with("fn ")
         || trimmed.starts_with("pub fn ")
         || trimmed.starts_with("pub(crate) fn ")
         || trimmed.starts_with("impl ")
         || trimmed.starts_with("pub struct ")
         || trimmed.starts_with("pub enum ")
-        // HTML embedded sections
         || trimmed.starts_with("<script")
         || trimmed.starts_with("<style")
         || trimmed.starts_with("</script>")
         || trimmed.starts_with("</style>")
-        // PHP tags
         || trimmed.starts_with("<?php")
         || trimmed == "?>"
-        // CSS at-rules
         || trimmed.starts_with("@media")
         || trimmed.starts_with("@keyframes")
-        // JS arrow/const functions (common pattern)
-        || (trimmed.starts_with("const ") && (trimmed.contains("=> {") || trimmed.contains("= function")))
-        || (trimmed.starts_with("let ") && (trimmed.contains("=> {") || trimmed.contains("= function")))
+        || (trimmed.starts_with("const ")
+            && (trimmed.contains("=> {") || trimmed.contains("= function")))
+        || (trimmed.starts_with("let ")
+            && (trimmed.contains("=> {") || trimmed.contains("= function")))
 }
 
-/// Chunk source code by structural boundaries
 pub(super) fn chunk_code(content: &str) -> Vec<Chunk> {
     let mut chunks = Vec::new();
     let mut current_lines: Vec<&str> = Vec::new();
@@ -54,10 +46,9 @@ pub(super) fn chunk_code(content: &str) -> Vec<Chunk> {
 
     for line in content.lines() {
         line_number += 1;
-        let line_bytes = line.len() + 1; // +1 for newline
+        let line_bytes = line.len() + 1;
 
         if is_structural_boundary(line) && current_bytes >= MIN_CHUNK_BYTES {
-            // Flush current buffer
             let body = current_lines.join("\n");
             let title = current_title
                 .take()
@@ -69,7 +60,6 @@ pub(super) fn chunk_code(content: &str) -> Vec<Chunk> {
             chunk_line_start = line_number;
         }
 
-        // Set title from first structural boundary in this chunk
         if current_title.is_none() && is_structural_boundary(line) {
             let trimmed = line.trim();
             let label = if trimmed.len() > 60 {
@@ -84,7 +74,6 @@ pub(super) fn chunk_code(content: &str) -> Vec<Chunk> {
         current_bytes += line_bytes;
     }
 
-    // Flush remaining
     if !current_lines.is_empty() {
         let body = current_lines.join("\n");
         let title = current_title.unwrap_or_else(|| make_code_title(&current_lines));
@@ -103,7 +92,6 @@ pub(super) fn chunk_code(content: &str) -> Vec<Chunk> {
     chunks
 }
 
-/// Generate a title from the first meaningful line of a code chunk
 pub(super) fn make_code_title(lines: &[&str]) -> String {
     for line in lines.iter().take(5) {
         let trimmed = line.trim();

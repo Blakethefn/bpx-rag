@@ -1,10 +1,3 @@
-//! Entry paths named by a manifest this repository already recognizes.
-//!
-//! A manifest the extractor cannot parse as source is still evidence for these rows.
-//! Explicit targets are written when the manifest is chunked. Implicit Cargo roots are chosen
-//! later from the paths the sync has indexed, so a file added after that chunk still becomes
-//! a root.
-
 use std::collections::HashSet;
 use std::path::{Component, Path};
 
@@ -27,10 +20,6 @@ pub(super) fn manifest_entries(path: &Path, content: &str) -> Vec<EntryObservati
     }
 }
 
-/// Implicit layout roots whose paths are in `indexed`. `indexed` holds source-relative paths.
-/// A `[lib]` table suppresses the implicit library. An explicit target suppresses the implicit
-/// entry for that same path. A catalog row's auto flag set false omits that kind. The package
-/// binary `src/main.rs` follows the `bin` row. A manifest without `[package]` has no implicit roots.
 pub(crate) fn implicit_cargo_entries(
     manifest_rel: &str,
     content: &str,
@@ -111,7 +100,6 @@ fn push_indexed(
     push_entry(entries, manifest_entry(manifest, relative, kind, reason));
 }
 
-/// Package-relative `dir/*.rs` paths that are indexed directly under that directory.
 fn indexed_direct(prefix: &str, indexed: &HashSet<String>, dir: &str) -> Vec<String> {
     let root = source_join(prefix, dir);
     let mut relatives = Vec::new();

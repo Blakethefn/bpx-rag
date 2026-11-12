@@ -3,8 +3,6 @@ use super::fuzzy::fuzzy_hits;
 use super::{make_store, seed_chunk};
 use rusqlite::params;
 
-/// Wrap a connection the way `open_in_memory` does, for tests that need two
-/// connections to one file.
 fn store_over(conn: rusqlite::Connection) -> KnowledgeStore {
     KnowledgeStore {
         conn,
@@ -99,7 +97,6 @@ fn fuzzy_repeated_runs_return_identical_corrections_for_tied_candidates() {
     let bag = seed_chunk(&store, "repo", "/repo", "bag.md", "Bag", "bag", "{}");
     seed_chunk(&store, "repo", "/repo", "bar.md", "Bar", "bar", "{}");
 
-    // "bag" and "bar" are both distance 1 from "bat". The smaller term wins.
     let first = fuzzy_hits(&store, "bat");
     assert_eq!(first, vec![(bag, "bag.md".to_string())]);
     for _ in 0..20 {

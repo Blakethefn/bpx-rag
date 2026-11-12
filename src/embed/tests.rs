@@ -1,6 +1,5 @@
 use super::*;
 
-/// Mock embedder for unit tests — returns deterministic vectors.
 pub(crate) struct MockEmbedder {
     pub dim: usize,
 }
@@ -25,14 +24,11 @@ impl Embed for MockEmbedder {
     }
 }
 
-/// Generate a deterministic mock embedding from text.
-/// Uses a simple hash-based approach so similar inputs get different vectors.
 fn mock_embedding(text: &str, dim: usize) -> Vec<f32> {
     let mut vec = vec![0.0f32; dim];
     for (i, byte) in text.bytes().enumerate() {
         vec[i % dim] += byte as f32;
     }
-    // L2 normalize
     let norm: f32 = vec.iter().map(|x| x * x).sum::<f32>().sqrt().max(1e-12);
     for val in &mut vec {
         *val /= norm;

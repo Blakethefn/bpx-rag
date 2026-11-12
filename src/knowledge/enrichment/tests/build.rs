@@ -1,8 +1,6 @@
 use super::super::*;
 use serde_json::json;
 
-// ── build_enrichment_fn ──────────────────────────────────────────────────
-
 #[test]
 fn build_empty_list_returns_none() {
     let result = build_enrichment_fn(&[], Path::new("/base"));
@@ -77,7 +75,6 @@ fn build_folder_tags_only() {
 
 #[test]
 fn build_unknown_enrichment_ignored() {
-    // Unknown enrichments are ignored; valid ones still work
     let enrichments = vec!["frontmatter".to_string(), "nonexistent".to_string()];
     let func = build_enrichment_fn(&enrichments, Path::new("/base")).expect("should return Some");
 
@@ -102,8 +99,6 @@ fn build_only_unknown_returns_empty_object() {
 
 #[test]
 fn build_omits_empty_enrichment_keys() {
-    // When content has no frontmatter and no wikilinks, those keys
-    // should be absent from the output (not present with empty values).
     let enrichments = vec![
         "frontmatter".to_string(),
         "wikilinks".to_string(),
@@ -116,11 +111,8 @@ fn build_omits_empty_enrichment_keys() {
     let result = func(content, path);
 
     let obj = result.as_object().expect("should be object");
-    // No frontmatter → key absent
     assert!(!obj.contains_key("frontmatter"));
-    // No wikilinks → key absent
     assert!(!obj.contains_key("wikilinks"));
-    // Root file → no folder tags → key absent
     assert!(!obj.contains_key("folder_tags"));
 }
 

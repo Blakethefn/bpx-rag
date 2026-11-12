@@ -97,5 +97,3 @@ pub(super) fn include_and_exclude_scope_index_only_the_chosen_parts() {
     assert_eq!(results.len(), 1);
     assert_eq!(results[0].file_path, "docs/guide.md");
 }
-
-// ── Multiple sources with source filter ────────────────────────────────

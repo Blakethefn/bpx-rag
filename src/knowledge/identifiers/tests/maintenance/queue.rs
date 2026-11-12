@@ -72,7 +72,6 @@ fn reused_rowid_does_not_inherit_the_words_of_a_deleted_chunk() {
     ensure_identifier_index(&conn).unwrap();
     legacy::delete_file(&conn, 1);
 
-    // The table is empty, so the next insert reuses the deleted rowid.
     let reused = legacy::insert_chunk(&conn, 2, 1, "notes.md", "pizza dough and a hot oven");
     assert_eq!(reused, old, "test requires a reused rowid");
     ensure_identifier_index(&conn).unwrap();

@@ -20,8 +20,6 @@ use super::super::{SourceState, EVENT_POLL};
 use super::{fail, Engine, Event, Watched};
 
 impl Engine {
-    /// Move queued events into each source's pending set. A notify error or an overflow asks for a
-    /// full reconcile instead, because the lost events cannot be recovered.
     pub(super) fn drain_events(&mut self) {
         let first = self.events_rx.recv_timeout(EVENT_POLL).ok();
         let rest = std::iter::from_fn(|| self.events_rx.try_recv().ok());
@@ -33,7 +31,6 @@ impl Engine {
             match outcome {
                 Ok(event) => {
                     if matches!(event.kind, EventKind::Access(_)) {
-                        // Reads (our own included) are not changes.
                         continue;
                     }
                     if event.need_rescan() {
@@ -133,14 +130,9 @@ pub(super) fn register(
     Ok(watcher)
 }
 
-// Test hook: fail the next registrations without touching host inotify resources. A test
-// installs a probe on the thread that runs the engine. Like `REBUILD_FAILPOINT` in
-// `knowledge/identifiers.rs`, the hook is thread-local, so parallel tests do not interfere.
 #[cfg(test)]
 pub(crate) struct RegisterProbe {
-    /// How many upcoming registrations fail.
     pub(crate) fail_first: std::sync::atomic::AtomicU32,
-    /// When each registration was attempted.
     pub(crate) attempts: std::sync::Mutex<Vec<Instant>>,
 }
 
@@ -173,7 +165,6 @@ fn register_failpoint() -> Result<()> {
     Ok(())
 }
 
-/// Run `operation` while holding the writer lock. Manual sync takes the same lock.
 pub(super) fn locked_sync(
     db_path: &Path,
     store: &KnowledgeStore,
@@ -192,7 +183,6 @@ pub(super) fn locked_sync(
     operation(store, source, enrichment_ref)
 }
 
-/// Directory-level events, and paths whose indexed children disappeared, need a full reconcile.
 fn needs_full_scan(
     store: &KnowledgeStore,
     source: &KnowledgeSourceInfo,
@@ -228,8 +218,6 @@ fn changed_files(result: &SyncResult) -> u64 {
     (result.files_added + result.files_updated + result.files_removed) as u64
 }
 
-/// Queue a changed path as a root-relative pending path. The root itself, or a path outside it,
-/// cannot be mapped to one entry, so it asks for a full reconcile.
 fn note_path(entry: &mut Watched, path: &Path) {
     match path.strip_prefix(&entry.root) {
         Ok(relative) if !relative.as_os_str().is_empty() => {
@@ -241,8 +229,6 @@ fn note_path(entry: &mut Watched, path: &Path) {
     }
 }
 
-/// `notify` reports backslash-separated paths on Windows only. On other platforms a backslash is
-/// a legal filename byte, so the path is kept as is.
 fn normalize_separators(relative: String) -> String {
     if cfg!(windows) {
         relative.replace('\\', "/")
@@ -265,8 +251,6 @@ mod tests {
 
     const LABEL: &str = "docs";
 
-    /// An engine whose store lives in a temp database, with one watched source rooted at `root`.
-    /// No `notify` watcher is registered, so events are injected straight into the queue.
     fn engine_watching(root: &Path) -> (TempDir, Engine) {
         let data = tempdir().unwrap();
         let mut engine = Engine::new(

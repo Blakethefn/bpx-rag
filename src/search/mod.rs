@@ -11,7 +11,6 @@ use rerank::{apply_graph_rerank, apply_knowledge_bias};
 
 pub(crate) use rerank::attach_relation_neighbors;
 
-/// Linked files listed under each top result.
 const RELATED_FILES_PER_RESULT: usize = 5;
 
 use anyhow::Result;
@@ -33,21 +32,13 @@ pub struct QueryRequest<'a> {
     pub source: Option<&'a str>,
     pub knowledge_filter: Option<&'a str>,
     pub limit: u32,
-    /// Most passages kept from one file before other files fill the limit. Must be at least 1.
     pub max_per_file: u32,
     pub snippet_bytes: usize,
     pub profile: SearchProfile,
     pub explain: bool,
-    /// Why vector retrieval is not running for this search (for example, the model could not
-    /// load, or CUDA was configured on a CPU-only build). `--explain` shows it first, as a
-    /// warning, because ranking then uses the keyword layers only. `None` when vectors run.
     pub vector_unavailable: Option<&'a str>,
 }
 
-/// Run a hybrid knowledge search and render the result text.
-///
-/// With `count_only`, returns a JSON summary (result count, byte estimate,
-/// matched sources) instead of result snippets.
 pub fn run_query(
     request: QueryRequest<'_>,
     config: &Config,
@@ -156,7 +147,6 @@ pub fn run_query(
     }))
 }
 
-/// Linked files to list under each top result, aligned by index with `results`.
 fn related_files_for(
     knowledge: &KnowledgeStore,
     results: &[KnowledgeSearchResult],

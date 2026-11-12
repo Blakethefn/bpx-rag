@@ -12,17 +12,12 @@ use std::{fs, io};
 
 use super::EnrichmentFn;
 
-/// File metadata read before the content, so a later metadata check can never mistake
-/// a newer file for the one that was indexed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) struct StatRecord {
-    /// Modification time in nanoseconds since the epoch, when the platform reports one.
     pub(super) mtime_ns: Option<i64>,
-    /// When this sync took the stat, in nanoseconds since the epoch.
     pub(super) checked_ns: i64,
 }
 
-/// Read a file's metadata. Call this before reading the content it describes.
 pub(super) fn stat_before_read(abs_path: &Path) -> Result<StatRecord> {
     let metadata = fs::metadata(abs_path)
         .with_context(|| format!("failed to inspect {}", abs_path.display()))?;
@@ -53,26 +48,21 @@ pub(super) struct PreparedFile {
     pub(super) vectors: Vec<Vec<f32>>,
 }
 
-/// Compute SHA-256 hex digest of bytes.
 pub(super) fn sha256_hex(bytes: &[u8]) -> String {
     let mut hasher = Sha256::new();
     hasher.update(bytes);
     format!("{:x}", hasher.finalize())
 }
 
-/// An existing file record as the sync sees it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct DbFile {
     pub(super) id: i64,
     pub(super) hash: String,
     pub(super) chunker_version: i64,
-    /// Whether the file's symbol and reference rows are current for its content hash.
     pub(super) evidence_current: bool,
-    /// Whether the file's modification time has been recorded.
     pub(super) stat_recorded: bool,
 }
 
-/// Load existing file records from the knowledge DB for a source.
 pub(super) fn load_db_files(
     conn: &rusqlite::Connection,
     source_id: i64,
@@ -129,7 +119,6 @@ pub(super) fn prepare_file(
         Some(f) => f(&content, &abs_path),
         None => serde_json::json!({}),
     };
-    // The relative path keeps manifest targets inside the source. The extension selects the grammar.
     let chunking = chunk_content_for_path(Path::new(&rel_path), &content);
     let chunker_version = chunker_version_for_path(Path::new(&rel_path));
     PreparedFile {
@@ -165,12 +154,9 @@ pub(super) fn read_classified_file(abs_path: &Path, expected_hash: &str) -> Resu
     Ok(content)
 }
 
-/// Check if a file is binary by looking for null bytes in the first 1KB.
 pub(super) fn is_binary(path: &Path) -> io::Result<bool> {
     let mut file = fs::File::open(path)?;
     let mut buf = [0u8; 1024];
     let bytes_read = file.read(&mut buf)?;
     Ok(buf[..bytes_read].contains(&0u8))
 }
-
-// ── Wikilink graph resolution ──────────────────────────────────────────────

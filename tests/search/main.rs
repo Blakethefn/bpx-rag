@@ -27,8 +27,6 @@ fn stdout(output: &Output) -> String {
     String::from_utf8(output.stdout.clone()).unwrap()
 }
 
-/// `big.md` spans several chunks that all match "kestrel" densely. `small.md` is one chunk
-/// with a single, low-density match, so it ranks below every chunk of `big.md`.
 fn write_corpus(source: &Path) {
     let filler = "lorem ipsum dolor sit amet ".repeat(35);
     let big: String = (0..16)

@@ -2,11 +2,8 @@ use crate::support::make_store;
 
 mod remove;
 
-// ── Schema / open ────────────────────────────────────────────────────────
-
 #[test]
 fn open_is_idempotent() {
-    // Opening twice should not error.
     let _a = make_store();
     let _b = make_store();
 }
@@ -36,8 +33,6 @@ fn schema_tables_exist() {
         assert!(count > 0, "table '{table}' should exist in schema");
     }
 }
-
-// ── add_source ───────────────────────────────────────────────────────────
 
 #[test]
 fn add_source_returns_id() {
@@ -69,8 +64,6 @@ fn add_source_stores_enrichments_as_json() {
     assert_eq!(src.enrichments, enrichments);
 }
 
-// ── list_sources / get_source ─────────────────────────────────────────────
-
 #[test]
 fn list_sources_empty() {
     let store = make_store();
@@ -86,7 +79,6 @@ fn list_sources_returns_added() {
         .unwrap();
     let sources = store.list_sources().unwrap();
     assert_eq!(sources.len(), 2);
-    // Ordered by label
     assert_eq!(sources[0].label, "alpha");
     assert_eq!(sources[1].label, "beta");
     assert_eq!(sources[1].patterns, vec!["**/*.md".to_string()]);
@@ -132,8 +124,6 @@ fn malformed_enrichments_are_reported_instead_of_read_as_none() {
     assert!(store.list_sources().is_err());
 }
 
-// ── remove_source ─────────────────────────────────────────────────────────
-
 #[test]
 fn remove_source_deletes_record() {
     let store = make_store();
@@ -156,12 +146,6 @@ fn remove_source_nonexistent_errors() {
     let store = make_store();
     assert!(store.remove_source("nosuchsource").is_err());
 }
-
-// ── source_for_path ───────────────────────────────────────────────────────
-
-// ── embedder ──────────────────────────────────────────────────────────────
-
-// ── get_related_chunks ───────────────────────────────────────────────────
 
 #[test]
 fn get_related_chunks_unknown_file_is_empty() {

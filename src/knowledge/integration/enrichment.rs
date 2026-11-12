@@ -9,7 +9,6 @@ pub(super) fn enrichment_to_filtered_search_pipeline() {
     let store = make_store();
     let dir = tempdir().unwrap();
 
-    // Create files with different frontmatter
     std::fs::write(
         dir.path().join("task.md"),
         "---\ntype: task\nstatus: active\ntags:\n  - implementation\n  - system3\n---\n# Active Task\n\nThis task involves building the prediction engine.",
@@ -39,7 +38,6 @@ pub(super) fn enrichment_to_filtered_search_pipeline() {
 
     let weights = SearchWeights::default();
 
-    // Filter type:task → should find only the task
     let results = query::knowledge_search(
         &store,
         "prediction engine",
@@ -53,7 +51,6 @@ pub(super) fn enrichment_to_filtered_search_pipeline() {
     assert_eq!(results.len(), 1, "type:task should match exactly one file");
     assert_eq!(results[0].metadata["frontmatter"]["type"], "task");
 
-    // Filter type:project → should find nothing
     let results = query::knowledge_search(
         &store,
         "prediction engine",
@@ -66,7 +63,6 @@ pub(super) fn enrichment_to_filtered_search_pipeline() {
     .unwrap();
     assert!(results.is_empty(), "type:project should match nothing");
 
-    // Filter tag:implementation → should find only the task
     let results = query::knowledge_search(
         &store,
         "prediction engine",
@@ -84,7 +80,6 @@ pub(super) fn enrichment_to_filtered_search_pipeline() {
     );
     assert_eq!(results[0].metadata["frontmatter"]["type"], "task");
 
-    // Filter status:active → should find only the task
     let results = query::knowledge_search(
         &store,
         "prediction engine",
@@ -98,7 +93,6 @@ pub(super) fn enrichment_to_filtered_search_pipeline() {
     assert_eq!(results.len(), 1);
     assert_eq!(results[0].metadata["frontmatter"]["status"], "active");
 
-    // No filter → should find all three
     let results =
         query::knowledge_search(&store, "prediction engine", None, None, 10, &weights, 2000)
             .unwrap();
@@ -109,15 +103,11 @@ pub(super) fn enrichment_to_filtered_search_pipeline() {
     );
 }
 
-// ── Test Anchor 3: Re-sync after a new file + immediate search ──────────
-// "Register source. Sync. Write new file. sync. Search for it."
-
 #[test]
 pub(super) fn all_enrichments_indexed_and_searchable() {
     let store = make_store();
     let dir = tempdir().unwrap();
 
-    // Create nested structure for folder_tags
     std::fs::create_dir_all(dir.path().join("01-projects/myapp")).unwrap();
     std::fs::write(
         dir.path().join("01-projects/myapp/spec.md"),
@@ -142,7 +132,6 @@ pub(super) fn all_enrichments_indexed_and_searchable() {
 
     let weights = SearchWeights::default();
 
-    // Verify frontmatter filter works
     let results = query::knowledge_search(
         &store,
         "waveform analyzer",
@@ -155,7 +144,6 @@ pub(super) fn all_enrichments_indexed_and_searchable() {
     .unwrap();
     assert_eq!(results.len(), 1);
 
-    // Verify folder filter works
     let results = query::knowledge_search(
         &store,
         "waveform analyzer",
@@ -168,7 +156,6 @@ pub(super) fn all_enrichments_indexed_and_searchable() {
     .unwrap();
     assert_eq!(results.len(), 1);
 
-    // Verify tag filter works
     let results = query::knowledge_search(
         &store,
         "waveform analyzer",
@@ -181,7 +168,6 @@ pub(super) fn all_enrichments_indexed_and_searchable() {
     .unwrap();
     assert_eq!(results.len(), 1);
 
-    // Verify metadata contains all three enrichment types
     let metadata = &results[0].metadata;
     assert!(
         metadata.get("frontmatter").is_some(),
@@ -196,14 +182,12 @@ pub(super) fn all_enrichments_indexed_and_searchable() {
         "metadata should contain folder_tags"
     );
 
-    // Verify wikilinks extracted correctly
     let wikilinks = metadata["wikilinks"].as_array().unwrap();
     assert!(
         wikilinks.iter().any(|l| l.as_str() == Some("other-note")),
         "wikilinks should contain 'other-note'"
     );
 
-    // Verify folder_tags extracted correctly
     let folder_tags = metadata["folder_tags"].as_array().unwrap();
     assert!(
         folder_tags
@@ -216,8 +200,6 @@ pub(super) fn all_enrichments_indexed_and_searchable() {
         "folder_tags should contain 'myapp'"
     );
 }
-
-// ── Boundary probe: file with no frontmatter still searchable ──────────
 
 #[test]
 pub(super) fn no_frontmatter_still_searchable() {
@@ -249,5 +231,3 @@ pub(super) fn no_frontmatter_still_searchable() {
         "file without frontmatter should still be searchable by content"
     );
 }
-
-// ── Boundary probe: glob filter restricts sync ─────────────────────────

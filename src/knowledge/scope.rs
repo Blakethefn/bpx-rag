@@ -1,15 +1,7 @@
-//! Which parts of a directory a source covers.
-//!
-//! A scope is a list of glob patterns. A plain pattern includes matching paths,
-//! and a pattern prefixed with `!` excludes them. Scopes are stored as a JSON
-//! array in the source's `glob` column. A single plain pattern written before
-//! scopes existed is read as a one-element include list.
-
 use anyhow::{Context, Result};
 use ignore::overrides::{Override, OverrideBuilder};
 use std::path::Path;
 
-/// Combine include and exclude globs into one scope. Excludes get a `!` prefix.
 pub fn patterns_from(include: &[String], exclude: &[String]) -> Vec<String> {
     include
         .iter()
@@ -18,12 +10,10 @@ pub fn patterns_from(include: &[String], exclude: &[String]) -> Vec<String> {
         .collect()
 }
 
-/// Reject patterns the walker cannot compile, so a bad glob fails at `add`.
 pub fn validate(base: &Path, patterns: &[String]) -> Result<()> {
     build_overrides(base, patterns).map(|_| ())
 }
 
-/// Build walker overrides for a scope. An empty scope covers every file.
 pub fn build_overrides(base: &Path, patterns: &[String]) -> Result<Option<Override>> {
     if patterns.is_empty() {
         return Ok(None);
@@ -38,7 +28,6 @@ pub fn build_overrides(base: &Path, patterns: &[String]) -> Result<Option<Overri
     Ok(Some(overrides))
 }
 
-/// Encode a scope for the `glob` column. An empty scope is stored as NULL.
 pub fn encode(patterns: &[String]) -> Option<String> {
     if patterns.is_empty() {
         return None;
@@ -46,7 +35,6 @@ pub fn encode(patterns: &[String]) -> Option<String> {
     serde_json::to_string(patterns).ok()
 }
 
-/// Decode the `glob` column, including the single-pattern form written earlier.
 pub fn decode(stored: Option<&str>) -> Vec<String> {
     match stored {
         None => Vec::new(),

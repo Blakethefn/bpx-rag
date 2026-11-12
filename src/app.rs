@@ -20,7 +20,6 @@ use sources::validate_label;
 pub use embed::{embedding_model_status, load_watch_embedder, model_directory};
 pub use sources::format_sync_result;
 
-/// Largest number of symbol matches one lookup returns.
 pub const MAX_SYMBOL_LIMIT: usize = 100;
 
 pub struct RagApp {
@@ -119,8 +118,6 @@ impl RagApp {
         knowledge::findings::report(&self.knowledge, source)
     }
 
-    /// Turn watch mode on or off for a source. A running watcher picks the change up within a
-    /// second or two.
     pub fn set_watch(&self, label: &str, enabled: bool) -> Result<String> {
         validate_label(label)?;
         let _writer = self.writer_lock()?;
@@ -131,8 +128,6 @@ impl RagApp {
         ))
     }
 
-    /// Run the watcher in this process until it is stopped. Returns `AlreadyRunning` when another
-    /// process holds the watcher lease.
     pub fn run_watch(&self) -> Result<RunOutcome> {
         let db_path = knowledge::schema::knowledge_db_path()?;
         let stop = std::sync::atomic::AtomicBool::new(false);
@@ -144,8 +139,6 @@ impl RagApp {
         )
     }
 
-    /// Lock beside the database this store writes. In-memory stores report an empty path, so
-    /// they fall back to the user database path.
     pub(in crate::app) fn writer_lock(&self) -> Result<FileLock> {
         let db_path = match self.knowledge.conn().path().filter(|path| !path.is_empty()) {
             Some(path) => std::path::PathBuf::from(path),

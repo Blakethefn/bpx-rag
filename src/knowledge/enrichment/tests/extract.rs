@@ -1,8 +1,6 @@
 use super::super::*;
 use serde_json::json;
 
-// ── extract_frontmatter ──────────────────────────────────────────────────
-
 #[test]
 fn frontmatter_standard_fields() {
     let content = "---\ntype: task\nstatus: active\n---\nBody text";
@@ -73,8 +71,6 @@ fn frontmatter_multiple_types() {
     assert_eq!(result, json!({"count": 42, "active": true, "name": "test"}));
 }
 
-// ── extract_wikilinks ────────────────────────────────────────────────────
-
 #[test]
 fn wikilinks_simple() {
     let content = "See [[projects/foo]]";
@@ -98,7 +94,6 @@ fn wikilinks_multiple() {
 
 #[test]
 fn wikilinks_nested_brackets() {
-    // First ]] closes the link — inner [[ is just content
     let content = "Nested [[a|[[b]]]]";
     let result = extract_wikilinks(content);
     assert_eq!(result, json!(["a"]));
@@ -141,13 +136,10 @@ fn wikilinks_adjacent() {
 
 #[test]
 fn wikilinks_in_frontmatter() {
-    // Wikilinks inside frontmatter are still extracted (by design)
     let content = "---\nproject: \"[[myproject]]\"\n---\nSee [[other]]";
     let result = extract_wikilinks(content);
     assert_eq!(result, json!(["myproject", "other"]));
 }
-
-// ── extract_folder_tags ──────────────────────────────────────────────────
 
 #[test]
 fn folder_tags_multi_level() {

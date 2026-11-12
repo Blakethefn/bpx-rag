@@ -17,7 +17,6 @@ fn hit(rowid: i64) -> RankedResult {
     }
 }
 
-/// Rank 0 of a weight-1 layer. K is 60, so the term is 1/61.
 fn first_term() -> f64 {
     1.0 / 61.0
 }

@@ -3,8 +3,6 @@ use rusqlite::Connection;
 use sha2::{Digest, Sha256};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-/// `CREATE TABLE IF NOT EXISTS` does not widen a check on a database that already exists.
-/// Rebuild the table when its status check predates `partial`.
 pub(super) fn ensure_analysis_status(conn: &Connection) -> Result<()> {
     let sql: String = conn.query_row(
         "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'knowledge_analysis'",
@@ -46,9 +44,6 @@ pub(super) fn ensure_analysis_status(conn: &Connection) -> Result<()> {
     Ok(())
 }
 
-/// Create the single embedding-state row. It is checked first, because even an `INSERT OR
-/// IGNORE` that inserts nothing takes SQLite's write lock. An up-to-date database must open
-/// without it, so a search is not blocked by a sync or the watcher.
 pub(super) fn ensure_embedding_state_row(conn: &Connection) -> Result<()> {
     let exists: bool = conn.query_row(
         "SELECT EXISTS(SELECT 1 FROM knowledge_embedding_state WHERE state_id = 1)",
@@ -79,8 +74,6 @@ pub(super) fn ensure_chunker_version(conn: &Connection) -> Result<()> {
     Ok(())
 }
 
-/// Stage 7 metadata and watch controls. Rows indexed earlier keep NULL metadata until a sync
-/// records it, and sources default to watch disabled.
 pub(super) fn ensure_freshness_and_watch_columns(conn: &Connection) -> Result<()> {
     add_column_if_missing(conn, "knowledge_files", "mtime_ns", "INTEGER")?;
     add_column_if_missing(conn, "knowledge_files", "stat_checked_ns", "INTEGER")?;
@@ -112,12 +105,6 @@ fn add_column_if_missing(
     Ok(())
 }
 
-/// Files indexed before symbols existed have version 0. Sync backfills them.
-///
-/// `symbol_version` records the parser version the file's symbol rows were extracted with.
-/// `symbols_hash` records the content hash those rows were extracted from. A writer that
-/// predates symbols updates `content_hash` but never `symbols_hash`, so the mismatch marks
-/// the rows stale. Symbol lookup then skips them until the next sync rebuilds them.
 pub(super) fn ensure_symbol_version(conn: &Connection) -> Result<()> {
     add_column_if_missing(
         conn,
@@ -130,8 +117,6 @@ pub(super) fn ensure_symbol_version(conn: &Connection) -> Result<()> {
     add_column_if_missing(conn, "knowledge_symbols", "visibility", "TEXT")
 }
 
-/// Reference rows use the same stamp as symbols: a version and the content hash they were read
-/// from. Files indexed before references existed have version 0.
 pub(super) fn ensure_reference_columns(conn: &Connection) -> Result<()> {
     add_column_if_missing(
         conn,

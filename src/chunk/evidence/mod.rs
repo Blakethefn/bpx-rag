@@ -1,11 +1,3 @@
-//! Occurrences and entry observations taken from one file's bytes.
-//!
-//! A reference records what was written. It does not name a target. Callers store the rows and
-//! resolve them later from the indexed symbols and files.
-//!
-//! Each language owns the imports and entry points that grammar writes. This module owns the
-//! shared name walk and the types those files record.
-
 mod go;
 mod javascript;
 mod manifest;
@@ -36,7 +28,6 @@ pub(crate) const ENTRY_PROGRAM: &str = "program";
 pub(crate) const ENTRY_TEST: &str = "test";
 pub(crate) const ENTRY_LIBRARY: &str = "library_root";
 
-/// One occurrence in the file that contains it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct Reference {
     pub kind: &'static str,
@@ -46,8 +37,6 @@ pub(crate) struct Reference {
     pub line_end: u32,
 }
 
-/// A program, test, or library-root observation. `target_rel_path` is source-relative.
-/// `None` means the file that contains the observation.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct EntryObservation {
     pub target_rel_path: Option<String>,
@@ -55,7 +44,6 @@ pub(crate) struct EntryObservation {
     pub reason: String,
 }
 
-/// `Stop` means the language claimed the node and its children are not walked again.
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(super) enum Walk {
     Skip,
@@ -90,7 +78,6 @@ pub(super) fn manifest_entries(path: &Path, content: &str) -> Vec<EntryObservati
 
 pub(crate) use manifest::implicit_cargo_entries;
 
-/// Returns whether the walk should enter the node's children.
 fn visit(
     grammar: Grammar,
     path: &Path,

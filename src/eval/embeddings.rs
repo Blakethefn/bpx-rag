@@ -40,8 +40,6 @@ pub struct EmbeddingBenchmarkRun {
     pub milliseconds_per_chunk: f64,
 }
 
-/// Compare cached ONNX model throughput over a deterministic sample produced by
-/// the same ignore rules and chunker used by persistent knowledge indexing.
 pub fn run_embedding_benchmark(
     corpus_root: &Path,
     glob_pattern: Option<&str>,

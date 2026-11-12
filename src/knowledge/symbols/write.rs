@@ -4,12 +4,6 @@ use rusqlite::{params, Connection};
 use super::SYMBOL_INDEX_VERSION;
 use crate::chunk::Symbol;
 
-/// Replace a file's symbol rows and mark the file as current. Runs inside the sync transaction.
-///
-/// The file's `content_hash` must already hold the content the symbols came from. The rows
-/// are stamped with that hash, so a later content change by an older writer marks them stale.
-/// `status` is written in the same update. Only `complete` stores symbol rows: an empty list
-/// then means the walk finished and the file declared nothing.
 pub(crate) fn replace_file_symbols(
     conn: &Connection,
     source_id: i64,
@@ -48,7 +42,6 @@ pub(crate) fn replace_file_symbols(
     Ok(())
 }
 
-/// Remove one file's symbol rows. Called wherever the file's chunks are removed.
 pub(crate) fn delete_file_symbols(conn: &Connection, file_id: i64) -> Result<()> {
     conn.execute(
         "DELETE FROM knowledge_symbols WHERE file_id = ?1",

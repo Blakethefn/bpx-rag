@@ -1,5 +1,3 @@
-//! Invalid UTF-8 files are skipped with a reason. Unreadable files are covered in `unreadable`.
-
 use super::super::*;
 use tempfile::tempdir;
 
@@ -30,7 +28,6 @@ fn chunk_count_for(store: &KnowledgeStore, rel_path: &str) -> i64 {
         .unwrap()
 }
 
-/// Latin-1 text: `é` is the single byte 0xE9, which is not valid UTF-8 on its own.
 const LATIN1: &[u8] = b"caf\xe9 menu: espresso and tea\n";
 
 #[test]
@@ -96,7 +93,6 @@ fn file_is_indexed_again_once_its_content_is_valid() {
 
 #[test]
 fn event_driven_sync_skips_then_recovers_the_same_way() {
-    // Watch mode reindexes only the paths that events name, so it needs the same behavior.
     let store = make_store();
     let dir = tempdir().unwrap();
     fs::write(dir.path().join("notes.txt"), "alpha beta gamma\n").unwrap();

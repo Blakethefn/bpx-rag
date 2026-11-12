@@ -158,7 +158,6 @@ fn validate_run_options(repetitions: usize, hybrid_weights: &SearchWeights) -> R
     Ok(())
 }
 
-/// Embedder and its cache facts, loaded from the configured model directory.
 struct LoadedModel {
     embedder: Embedder,
     model_id: String,
@@ -197,7 +196,6 @@ fn load_model(config: &Config) -> Result<LoadedModel> {
     })
 }
 
-/// Dataset and corpus locations, with the dataset directories checked to exist.
 struct EvalPaths {
     data_dir: PathBuf,
     corpus_dir: PathBuf,
@@ -233,7 +231,6 @@ fn resolve_eval_paths(dataset: Option<&Path>, corpus_root: Option<&Path>) -> Res
     })
 }
 
-/// Validated judgments plus the fingerprints and counts reported with them.
 struct EvalData {
     queries: Vec<EvalQuery>,
     qrels: HashMap<String, BTreeMap<String, u8>>,
@@ -295,7 +292,6 @@ fn judgment_source_labels(queries: &[EvalQuery]) -> Vec<String> {
     }
 }
 
-/// The in-memory index of the corpus and the timings recorded while building it.
 struct IndexedCorpus {
     store: KnowledgeStore,
     sync: SyncResult,
@@ -329,7 +325,6 @@ fn index_corpus(embedder: Embedder, corpus_dir: &Path) -> Result<IndexedCorpus> 
     })
 }
 
-/// Settings shared by every query in one evaluation run.
 struct RunContext<'a> {
     store: &'a KnowledgeStore,
     corpus_dir: &'a Path,
@@ -338,7 +333,6 @@ struct RunContext<'a> {
     repetitions: usize,
 }
 
-/// Raw search output for one query, before any scoring.
 struct QuerySearches {
     layers: Vec<LayerReport>,
     results: Vec<KnowledgeSearchResult>,
@@ -347,7 +341,6 @@ struct QuerySearches {
     query_times: Vec<Duration>,
 }
 
-/// Ranked file paths and quality metrics for one query under each channel.
 struct QueryScores {
     hybrid_paths: Vec<String>,
     lexical_paths: Vec<String>,
@@ -357,7 +350,6 @@ struct QueryScores {
     vector: QualityMetrics,
 }
 
-/// Citation checks accumulated across every returned result.
 #[derive(Default)]
 struct CitationTally {
     checked: usize,
@@ -381,7 +373,6 @@ impl CitationTally {
     }
 }
 
-/// Run-wide totals, updated once per query.
 #[derive(Default)]
 struct RetrievalTally {
     overall: MetricSums,
@@ -472,7 +463,6 @@ fn search_report(
     )
 }
 
-/// Runs the warm-up, lexical, vector, and timed hybrid searches, in that order.
 fn run_searches(
     run: &RunContext<'_>,
     query: &EvalQuery,
@@ -535,7 +525,6 @@ fn score_query(
     }
 }
 
-/// Measures the shipped rule: linked files of the top hit are merged into the ranking.
 fn record_relation_neighbors(
     store: &KnowledgeStore,
     results: &[KnowledgeSearchResult],
@@ -557,8 +546,6 @@ fn record_relation_neighbors(
     Ok(())
 }
 
-/// Adds the query to the answerable or unanswerable totals. Returns the
-/// unanswerable metrics for an unanswerable query.
 fn record_query_totals(
     tally: &mut RetrievalTally,
     query: &EvalQuery,
@@ -594,7 +581,6 @@ fn record_query_totals(
     }
 }
 
-/// Hybrid ranking to a deeper cutoff, from the same candidate pool as the TOP_K search.
 fn search_deep_paths(
     run: &RunContext<'_>,
     query: &EvalQuery,
@@ -690,7 +676,6 @@ fn record_citations(
     Ok(())
 }
 
-/// Fails if the dataset or corpus changed while the evaluation was running.
 fn verify_inputs_unchanged(paths: &EvalPaths, data: &EvalData) -> Result<()> {
     if sha256_file(&paths.query_path)? != data.queries_sha256
         || sha256_file(&paths.qrels_path)? != data.qrels_sha256

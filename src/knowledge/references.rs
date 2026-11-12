@@ -1,23 +1,10 @@
-//! Stored reference rows.
-//!
-//! A reference has no target id.
-
 use anyhow::Result;
 use rusqlite::{params, Connection};
 
 use crate::chunk::evidence::{Reference, STATUS_COMPLETE};
 
-/// Version of the reference index. A bump backfills references and entries on the next sync.
-///
-/// Version 3 puts the function name in a `#[test]` entry reason so two tests in one file stay
-/// distinct, and so unused-symbol analysis can see which function the attribute names.
-/// Version 4 adds implicit Cargo layout roots as entry rows on the manifest.
 pub(crate) const REFERENCE_INDEX_VERSION: i64 = 4;
 
-/// Replace one file's reference rows and stamp the file in the same way as symbols.
-///
-/// A parse error or a file over the tree-sitter cap stores no reference rows. The hash still
-/// records which bytes were considered.
 pub(crate) fn replace_file_references(
     conn: &Connection,
     source_id: i64,
@@ -26,8 +13,6 @@ pub(crate) fn replace_file_references(
     references: &[Reference],
 ) -> Result<()> {
     delete_file_references(conn, file_id)?;
-    // Only a finished walk stores occurrences. Unsupported, parse_error, and too_large files
-    // keep the stamp and no rows, so a previous file's occurrences cannot survive.
     if status == STATUS_COMPLETE {
         let mut insert = conn.prepare_cached(
             "INSERT INTO knowledge_references

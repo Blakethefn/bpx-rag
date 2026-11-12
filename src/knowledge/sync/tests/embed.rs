@@ -140,7 +140,7 @@ fn changed_file_during_embedding_aborts_before_stale_content_is_committed() {
 
 #[test]
 fn sync_works_without_embedder() {
-    let store = make_store(); // no embedder
+    let store = make_store();
     let dir = tempdir().unwrap();
     fs::write(dir.path().join("test.md"), "# No Embed\nStill works").unwrap();
 

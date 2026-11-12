@@ -2,9 +2,6 @@ use crate::knowledge::sync;
 use rusqlite::params;
 use tempfile::tempdir;
 
-// ── Invariant 4: Idempotent sync ───────────────────────────────────────
-// "Running sync twice with no changes produces identical state."
-
 #[test]
 fn idempotent_sync_no_changes() {
     let store = super::super::make_store();
@@ -34,7 +31,6 @@ fn idempotent_sync_no_changes() {
         )
         .unwrap();
 
-    // Second sync — no file changes
     let r2 = sync::sync_source(&store, &source, None).unwrap();
     assert_eq!(r2.files_unchanged, 5);
     assert_eq!(r2.files_added, 0);

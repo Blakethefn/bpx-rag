@@ -1,5 +1,3 @@
-//! JavaScript and TypeScript import paths and named imports.
-
 use tree_sitter::Node;
 
 use super::{is_literal, push_reference, reference, Walk, KIND_IMPORT, KIND_PATH};

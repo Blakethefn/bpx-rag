@@ -1,8 +1,3 @@
-//! Knowledge database schema and connection management.
-//!
-//! The knowledge database is a single, global SQLite file at
-//! `~/.local/share/bpx-rag/knowledge.db`.
-
 use anyhow::Result;
 use rusqlite::Connection;
 use std::path::PathBuf;
@@ -17,7 +12,6 @@ use migrate::{
     ensure_reference_columns, ensure_symbol_version,
 };
 
-/// `knowledge_analysis.status`. Fresh creates and the partial migration share this check.
 pub(super) const ANALYSIS_STATUS_CHECK: &str =
     "CHECK (status IN ('complete', 'partial', 'incomplete'))";
 
@@ -30,18 +24,12 @@ pub(super) fn check_in(column: &str, values: &[&str]) -> String {
     format!("CHECK ({column} IN ({list}))")
 }
 
-/// Returns the path to the knowledge database.
-/// `~/.local/share/bpx-rag/knowledge.db`
 pub fn knowledge_db_path() -> Result<PathBuf> {
     let dir = data_dir()?;
     crate::db::create_private_dir(&dir)?;
     Ok(dir.join("knowledge.db"))
 }
 
-/// Runs schema DDL. Called by `open_knowledge_db` on every open.
-/// All statements use `IF NOT EXISTS` so repeated calls are idempotent.
-///
-/// Exposed as `pub(crate)` so tests can apply the schema to in-memory connections.
 pub(crate) fn apply_schema(conn: &Connection) -> Result<()> {
     ensure_schema(conn)
 }

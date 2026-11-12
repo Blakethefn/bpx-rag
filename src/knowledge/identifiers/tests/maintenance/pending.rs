@@ -39,8 +39,6 @@ fn pending_entry_without_metadata_is_dropped_not_indexed() {
 
 #[test]
 fn deleted_chunk_leaves_no_identifier_row_for_its_rowid_before_any_reopen() {
-    // A long-running process does not reopen the database, so nothing reprocesses the queue
-    // while it runs. The identifier table itself must be clean right after a legacy delete.
     let conn = Connection::open_in_memory().unwrap();
     apply_schema(&conn).unwrap();
     let old = legacy::insert_chunk(&conn, 1, 1, "billing.ts", "function buildInvoiceTotal() {}");

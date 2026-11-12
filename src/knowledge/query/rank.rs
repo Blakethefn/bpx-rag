@@ -3,13 +3,6 @@ use crate::search::profile::SearchWhy;
 use anyhow::Context;
 use std::collections::HashMap;
 
-/// Keep up to `max_per_file` passages from each file, taken in score order,
-/// until `limit` passages are selected. Passages past that cap are used only
-/// to fill slots that the capped passages cannot, again in score order, so a
-/// corpus with few files still returns `limit` results. With
-/// `max_per_file = 1` this is one passage per file first, then repeats in
-/// score order, and the output order is file-diversity-first. The caller
-/// must reject `max_per_file = 0`.
 pub(super) fn diversify_by_file(
     results: Vec<KnowledgeSearchResult>,
     limit: usize,
@@ -37,7 +30,6 @@ pub(super) fn diversify_by_file(
     selected
 }
 
-/// A chunk row returned by one retrieval layer, before RRF fusion.
 #[derive(Debug)]
 pub(super) struct RankedResult {
     pub(super) rowid: i64,
@@ -68,8 +60,6 @@ pub(super) struct ScoredResult {
 }
 
 impl ScoredResult {
-    /// Build the output row. Chunk metadata is written by sync as JSON, so
-    /// unparseable metadata is reported rather than shown as empty metadata.
     pub(super) fn into_knowledge_result(
         self,
         snippet_bytes: usize,
@@ -92,11 +82,6 @@ impl ScoredResult {
     }
 }
 
-/// One retrieval layer: the name that flows through the ranker, the
-/// [`SearchWhy`] field it writes, and whether a zero keyword weight skips it.
-///
-/// First-hit and later-hit scoring both call [`RetrievalLayer::add`], and the
-/// zero-weight skip list is [`keyword_layers`]. A new layer is one record.
 #[derive(Clone, Copy, Debug)]
 pub(super) struct RetrievalLayer {
     pub(super) name: &'static str,
@@ -145,15 +130,12 @@ pub(super) const IDENTIFIER: RetrievalLayer =
     RetrievalLayer::new("identifier", true, add_identifier);
 pub(super) const VECTOR: RetrievalLayer = RetrievalLayer::new("vector", false, add_vector);
 
-/// Pipeline order. Score routing and the zero-weight keyword skip list both read this.
 pub(super) const LAYERS: &[RetrievalLayer] = &[BM25, TRIGRAM, FUZZY, IDENTIFIER, VECTOR];
 
-/// Layers skipped together when the keyword weight is zero. Vector is absent.
 pub(super) fn keyword_layers() -> impl Iterator<Item = RetrievalLayer> {
     LAYERS.iter().copied().filter(|layer| layer.keyword)
 }
 
-/// RRF merge with K=60.
 pub(super) fn merge_results(
     acc: &mut HashMap<i64, ScoredResult>,
     results: &[RankedResult],
@@ -190,12 +172,10 @@ pub(super) fn merge_results(
     }
 }
 
-/// Truncate content to a snippet at word boundaries.
 pub(super) fn truncate_snippet(content: &str, max_bytes: usize) -> String {
     if content.len() <= max_bytes {
         return content.to_string();
     }
-    // Keep the byte limit while always slicing on a valid UTF-8 boundary.
     let boundary = content
         .char_indices()
         .take_while(|(index, _)| *index <= max_bytes)

@@ -1,9 +1,3 @@
-//! Freshness of retrieved results against the files they were indexed from.
-//!
-//! Metadata (size and mtime) is the cheap first check. A content hash is taken only when the
-//! metadata differs, when it is too close to the stat time to be trusted (a racy record), or when
-//! the mtime lies in the future. A query never writes.
-
 use std::collections::HashMap;
 use std::fs;
 use std::io;
@@ -17,8 +11,6 @@ use sha2::{Digest, Sha256};
 use super::query::KnowledgeSearchResult;
 use super::KnowledgeStore;
 
-/// Filesystems can store mtimes with coarse granularity (FAT: 2 s). A record taken within this
-/// margin of the mtime cannot prove that a later write changed nothing.
 const RACY_MARGIN_NS: i64 = 2_000_000_000;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -30,19 +22,12 @@ pub enum FreshnessState {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FreshnessBasis {
-    /// Size and mtime matched the index, and the record was not racy.
     Metadata,
-    /// The content hash was compared.
     Hash,
-    /// The indexed file no longer exists.
     Missing,
-    /// The content hash differs from the index.
     Changed,
-    /// The file exists but could not be read.
     Unreadable,
-    /// The source directory cannot be read.
     SourceUnavailable,
-    /// The index has no metadata for this file. A sync records it.
     NotRecorded,
 }
 
@@ -60,7 +45,6 @@ impl Freshness {
             FreshnessState::Unknown => "unknown",
         };
         let basis = match self.basis {
-            // Not a content check: size and mtime agree, but edits that keep both are missed.
             FreshnessBasis::Metadata => "metadata match, content not hashed",
             FreshnessBasis::Hash => "hash",
             FreshnessBasis::Missing => "missing",
@@ -73,7 +57,6 @@ impl Freshness {
     }
 }
 
-/// What the index recorded for one file.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct IndexedFile {
     pub rel_path: String,
@@ -126,7 +109,6 @@ fn verify_by_hash(absolute: &Path, record: &IndexedFile) -> Freshness {
     }
 }
 
-/// Check the files behind the returned results, in result order. Each result is checked once.
 pub fn check_results(
     store: &KnowledgeStore,
     results: &[KnowledgeSearchResult],
@@ -184,7 +166,6 @@ fn indexed_file(store: &KnowledgeStore, file_id: i64) -> Result<Option<IndexedFi
     Ok(record)
 }
 
-/// Nanoseconds since the Unix epoch. Times before the epoch are negative.
 pub(crate) fn system_time_ns(time: SystemTime) -> i64 {
     match time.duration_since(UNIX_EPOCH) {
         Ok(after) => after.as_nanos() as i64,

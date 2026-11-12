@@ -1,13 +1,3 @@
-//! Rust name, import, and type resolution inside one file's module.
-//!
-//! A bare name sees local items and `use` bindings in that file. A path walks `crate`, `self`,
-//! `super`, and child modules. External paths and prelude names that the file does not define
-//! or import stay unresolved, with no candidates in other files.
-//!
-//! Alias rows and plain imports share columns. The appended path is the plain import. When that
-//! path names nothing and the qualifier names a non-module item, the row is an alias and the
-//! qualifier is the whole referred path.
-
 use std::collections::HashMap;
 
 use super::paths::is_path_keyword;
@@ -36,7 +26,6 @@ enum Space {
     Type,
 }
 
-/// Outcomes for Rust `name`, `import`, and `type` references. Other references are absent.
 pub(super) fn resolve(tree: &Tree, references: &[StoredReference]) -> HashMap<i64, Outcome> {
     let mut bindings: HashMap<i64, HashMap<String, Vec<Vec<i64>>>> = HashMap::new();
     let mut outcomes = HashMap::new();
@@ -92,8 +81,6 @@ fn import_targets(tree: &Tree, reference: &StoredReference) -> Vec<i64> {
     if let Some(ids) = symbols_of(find_path(tree, None, reference.file_id, &appended, None)) {
         return ids;
     }
-    // A plain import whose parent module exists would have resolved the appended path when the
-    // item exists. A qualifier that names a value or type is the alias's full path.
     symbols_of(find_path(tree, None, reference.file_id, qualifier, None))
         .unwrap_or_default()
         .into_iter()
@@ -149,7 +136,6 @@ fn resolve_bare(
             );
         }
     }
-    // Two `use` bindings of one local name do not pick one symbol, even when both name it.
     outcome(ids, sets.is_some_and(|sets| sets.len() >= 2))
 }
 

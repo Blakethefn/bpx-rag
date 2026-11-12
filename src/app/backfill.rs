@@ -95,7 +95,6 @@ impl RagApp {
     }
 }
 
-/// Chunks in scope that have no embedding for `model_id`, or one from another model.
 fn pending_batch(
     conn: &Connection,
     model_id: &str,
@@ -145,8 +144,6 @@ fn pending_batch(
     }
 }
 
-/// Writes the vectors whose rows still match what was selected. The caller owns the transaction
-/// and rolls back on any error. Returns `(written, skipped)`.
 fn write_batch(
     conn: &Connection,
     embedder: &dyn Embed,
@@ -198,7 +195,6 @@ fn write_batch(
     Ok((written, skipped))
 }
 
-/// Chunks in scope still lacking an embedding for `model_id`.
 fn count_remaining(conn: &Connection, model_id: &str, source_id: Option<i64>) -> Result<i64> {
     let count = match source_id {
         Some(source_id) => conn.query_row(
@@ -239,8 +235,6 @@ mod tests {
     use std::sync::Arc;
     use tempfile::{tempdir, TempDir};
 
-    /// A `RagApp` over a file-backed store. The writer lock sits beside this store's database,
-    /// so the fixture needs no environment changes.
     struct Fixture {
         app: RagApp,
         db_path: PathBuf,
@@ -271,7 +265,6 @@ mod tests {
         }
     }
 
-    /// Returns the normal vectors, but one of them has the wrong length.
     struct MisshapenEmbedder {
         inner: MockEmbedder,
         bad_index: usize,
@@ -295,8 +288,6 @@ mod tests {
         }
     }
 
-    /// Edits one chunk through a second connection during the first embedding call. That call
-    /// happens after the batch is selected and before its write transaction starts.
     struct EditingEmbedder {
         inner: MockEmbedder,
         db_path: PathBuf,

@@ -7,8 +7,6 @@ pub(super) struct SyntaxBoundary {
     pub(super) title: String,
 }
 
-/// Declaration nodes that begin a chunk boundary, in depth-first order. A declaration inside a
-/// wrapper is skipped, because the wrapper stands for it.
 pub(super) fn declaration_nodes<'t>(
     root: Node<'t>,
     content: &str,

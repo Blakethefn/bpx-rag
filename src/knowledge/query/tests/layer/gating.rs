@@ -58,7 +58,6 @@ fn full_pool_still_runs_trigram_under_unconditional_policy() {
 
     assert_eq!(layer(&report, "trigram").outcome, LayerOutcome::Ran);
     assert!(layer(&report, "trigram").candidates > 0);
-    // "alpha" is already an indexed word, so there is nothing to correct.
     assert_eq!(
         layer(&report, "fuzzy").outcome,
         skipped(SkipReason::NoCorrectedWord)
@@ -68,8 +67,6 @@ fn full_pool_still_runs_trigram_under_unconditional_policy() {
 #[test]
 fn own_pool_policy_runs_fuzzy_when_only_trigram_filled_the_pool() {
     let store = make_store();
-    // "alp" is not an indexed word, so BM25 finds nothing. Trigram finds three chunks,
-    // which fill the combined pool of three.
     for index in 0..3 {
         seed_chunk(
             &store,

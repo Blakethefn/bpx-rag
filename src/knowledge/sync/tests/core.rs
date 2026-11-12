@@ -3,8 +3,6 @@ use super::{chunk_count_for_source, file_count_for_source, register_source_glob}
 use crate::support::{add_source, make_store};
 use tempfile::tempdir;
 
-// ── sync_source ─────────────────────────────────────────────────────────
-
 #[test]
 fn sync_new_source_indexes_all_files() {
     let store = make_store();
@@ -29,8 +27,6 @@ fn sync_new_source_indexes_all_files() {
 
 #[test]
 fn sync_assigns_file_ids_in_path_order() {
-    // Rowids break ties in search results, so insert order must not depend on
-    // the directory walk or on hash-map iteration.
     let store = make_store();
     let dir = tempdir().unwrap();
     for name in ["zeta.md", "alpha.md", "mid.md", "beta.md"] {
@@ -84,7 +80,6 @@ fn sync_detects_add_update_remove() {
     let source = add_source(&store, "test", dir.path());
     sync_source(&store, &source, None).unwrap();
 
-    // Modify 2, delete 1, add 1
     fs::write(dir.path().join("f0.md"), "# F0\nModified content").unwrap();
     fs::write(dir.path().join("f1.md"), "# F1\nAlso modified").unwrap();
     fs::remove_file(dir.path().join("f4.md")).unwrap();
@@ -97,7 +92,7 @@ fn sync_detects_add_update_remove() {
     assert_eq!(result.files_updated, 2);
     assert_eq!(result.files_removed, 1);
     assert_eq!(result.files_unchanged, 2);
-    assert_eq!(file_count_for_source(&store, source.id), 5); // 5-1+1 = 5
+    assert_eq!(file_count_for_source(&store, source.id), 5);
 }
 
 #[test]
@@ -127,8 +122,6 @@ fn sync_skips_binary_files() {
 
 #[test]
 fn sync_invalid_utf8_skips_the_file_and_removes_its_stale_rows() {
-    // Invalid UTF-8 is a reported skip. The other files still sync, and the file's old rows go
-    // so the index never serves content the file no longer has.
     let store = make_store();
     let dir = tempdir().unwrap();
     let file_path = dir.path().join("keep.md");

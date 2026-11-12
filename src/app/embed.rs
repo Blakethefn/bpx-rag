@@ -95,8 +95,6 @@ impl RagApp {
     }
 }
 
-/// Load the configured embedder for the watcher. Failure means changed chunks are indexed without
-/// vectors, and the reason is reported on stderr.
 pub fn load_watch_embedder() -> Option<Arc<dyn Embed>> {
     let config = match Config::load() {
         Ok(config) => config,

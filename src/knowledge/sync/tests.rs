@@ -104,8 +104,6 @@ fn file_count_for_source(store: &KnowledgeStore, source_id: i64) -> i64 {
         .unwrap()
 }
 
-// ── enrichment_fn ───────────────────────────────────────────────────────
-
 #[test]
 fn enrichment_fn_metadata_stored() {
     let store = make_store();
@@ -132,8 +130,6 @@ fn enrichment_fn_metadata_stored() {
     assert_eq!(parsed["frontmatter"]["status"], "active");
 }
 
-// ── walk_source_dir ─────────────────────────────────────────────────────
-
 #[test]
 fn walk_skips_empty_files() {
     let dir = tempdir().unwrap();
@@ -150,8 +146,6 @@ fn walk_errors_on_nonexistent_path() {
     let result = walk_source_dir(Path::new("/tmp/surely_nonexistent_dir_abc123"), &[]);
     assert!(result.is_err());
 }
-
-// ── sha256_hex ──────────────────────────────────────────────────────────
 
 #[test]
 fn sha256_produces_hex_string() {

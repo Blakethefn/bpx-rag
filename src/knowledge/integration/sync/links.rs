@@ -2,14 +2,11 @@ use crate::knowledge::{enrichment, sync};
 use std::fs;
 use tempfile::tempdir;
 
-// ── Filter parser → SQL → search roundtrip ─────────────────────────────
-
 #[test]
 fn sync_and_traverse_wikilinks() {
     let store = super::super::make_store();
     let dir = tempdir().unwrap();
 
-    // a.md links to b.md and c.md; b.md links back to a.md
     fs::write(dir.path().join("a.md"), "# Note A\nSee [[b]] and [[c]]").unwrap();
     fs::write(dir.path().join("b.md"), "# Note B\nBack to [[a]]").unwrap();
     fs::write(dir.path().join("c.md"), "# Note C\nStandalone").unwrap();
@@ -27,11 +24,9 @@ fn sync_and_traverse_wikilinks() {
         .map(|f| f.as_ref() as &dyn Fn(&str, &std::path::Path) -> serde_json::Value);
     let result = sync::sync_source(&store, &source, enrich_ref).unwrap();
 
-    // Should have created links: a→b, a→c, b→a
     assert_eq!(result.links_created, 3, "a→b, a→c, b→a");
     assert_eq!(super::super::link_count(&store, source.id), 3);
 
-    // Find file_id for a.md
     let a_file_id: i64 = store
         .conn()
         .query_row(
@@ -41,8 +36,6 @@ fn sync_and_traverse_wikilinks() {
         )
         .unwrap();
 
-    // Both directions from a: chunks from b.md (a links to b, b links to a)
-    // and c.md (a links to c).
     let related = store.get_related_chunks(a_file_id, 50, None).unwrap();
     assert!(related.len() >= 2, "a links to b and c");
     assert!(related.iter().any(|c| c.rel_path == "c.md"));
@@ -72,7 +65,6 @@ fn remove_source_cleans_up_links() {
 
     store.remove_source("doomed").unwrap();
 
-    // Links should be gone (FK cascade)
     let orphaned: i64 = store
         .conn()
         .query_row("SELECT COUNT(*) FROM knowledge_links", [], |row| row.get(0))

@@ -1,9 +1,3 @@
-//! Which Rust files may publish conclusions.
-//!
-//! A `parse_error` or `too_large` file stores no `mod` edges. Its path still marks the child
-//! modules Rust would attach to it, and those files stay unsealed. An unsealed parent in the
-//! in-memory module tree unseals its children. `unsupported` and a missing entry target do not.
-
 use std::collections::HashSet;
 
 use crate::chunk::evidence::{

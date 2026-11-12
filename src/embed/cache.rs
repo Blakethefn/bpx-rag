@@ -1,19 +1,10 @@
-//! Bounded, thread-safe LRU cache for query embeddings.
-//!
-//! Entries are keyed by the embedding model id and the exact query text, so a vector is
-//! only reused for the same model and the same embedder input. The cache holds vectors
-//! that already passed normalization. Failed or invalid embeddings are never inserted.
-
 use std::collections::HashMap;
 use std::sync::{Mutex, MutexGuard, PoisonError};
 
-/// Default number of query embeddings kept per store.
 pub const DEFAULT_CAPACITY: usize = 256;
 
-/// Queries longer than this are not cached, which bounds the memory held by keys.
 pub const MAX_CACHED_QUERY_BYTES: usize = 4096;
 
-/// Counters for the query embedding cache.
 #[cfg(test)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct CacheStats {
@@ -48,7 +39,6 @@ impl Default for QueryEmbeddingCache {
 }
 
 impl QueryEmbeddingCache {
-    /// Create a cache holding at most `capacity` entries. Zero disables caching.
     pub fn new(capacity: usize) -> Self {
         Self {
             capacity,
@@ -56,7 +46,6 @@ impl QueryEmbeddingCache {
         }
     }
 
-    /// Return a copy of the cached vector for this model and query, if present.
     pub fn get(&self, model_id: &str, query: &str) -> Option<Vec<f32>> {
         if self.capacity == 0 {
             return None;
@@ -78,7 +67,6 @@ impl QueryEmbeddingCache {
         }
     }
 
-    /// Store a normalized vector. Evicts the least recently used entry when full.
     pub fn insert(&self, model_id: &str, query: &str, vector: Vec<f32>) {
         if self.capacity == 0 || query.len() > MAX_CACHED_QUERY_BYTES {
             return;
@@ -99,7 +87,6 @@ impl QueryEmbeddingCache {
         );
     }
 
-    /// Counters for tests and benchmarks. Search does not report them.
     #[cfg(test)]
     pub fn stats(&self) -> CacheStats {
         let inner = self.lock();
@@ -111,8 +98,6 @@ impl QueryEmbeddingCache {
         }
     }
 
-    /// Entries are only inserted or removed whole, so a panic on another thread cannot leave
-    /// one half-updated. Recover the guard rather than failing the search.
     fn lock(&self) -> MutexGuard<'_, Inner> {
         self.inner.lock().unwrap_or_else(PoisonError::into_inner)
     }

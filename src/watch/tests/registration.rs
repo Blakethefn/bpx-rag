@@ -1,10 +1,5 @@
 use super::*;
 
-// ── registration failure ────────────────────────────────────────────────────────────────────
-//
-// Registration can fail for real when the per-user inotify limits are used up. These tests
-// inject the failure instead, so they never consume host resources.
-
 fn install_probe(fail_first: u32) -> Arc<RegisterProbe> {
     let probe = Arc::new(RegisterProbe {
         fail_first: std::sync::atomic::AtomicU32::new(fail_first),
@@ -31,7 +26,6 @@ fn registration_failure_sets_error_retries_with_backoff_and_recovers() {
     let probe = install_probe(2);
     let mut engine = Engine::new(&fixture.db, fast_options(), Box::new(|| None)).unwrap();
 
-    // First attempt fails: error state, the reason is reported, and no reconcile ran.
     engine.refresh_sources().unwrap();
     let entry = &engine.watched["test"];
     assert_eq!(entry.state, SourceState::Error);
@@ -52,11 +46,9 @@ fn registration_failure_sets_error_retries_with_backoff_and_recovers() {
     assert_eq!(reported.state, SourceState::Error);
     assert_eq!(reported.last_error.as_deref(), Some(message.as_str()));
 
-    // Before the retry is due nothing is attempted.
     engine.retry_due();
     assert_eq!(attempt_count(&probe), 1);
 
-    // Second attempt fails too, and the delay doubles again.
     sleep_until(first_retry);
     engine.retry_due();
     assert_eq!(attempt_count(&probe), 2);
@@ -65,7 +57,6 @@ fn registration_failure_sets_error_retries_with_backoff_and_recovers() {
     assert_eq!(entry.backoff, Duration::from_millis(400));
     let second_retry = entry.retry_at.unwrap();
 
-    // Third attempt succeeds: registered, reconciled, and the error and backoff are cleared.
     sleep_until(second_retry);
     engine.retry_due();
     assert_eq!(attempt_count(&probe), 3);
@@ -78,7 +69,6 @@ fn registration_failure_sets_error_retries_with_backoff_and_recovers() {
     assert_eq!(entry.backoff, fast_options().retry_base);
     assert!(watching(&fixture.db));
 
-    // The delays between attempts follow the backoff (lower bounds only, so slow hosts pass).
     let attempts = probe.attempts.lock().unwrap().clone();
     assert!(attempts[1] - attempts[0] >= Duration::from_millis(100));
     assert!(attempts[2] - attempts[1] >= Duration::from_millis(200));
@@ -140,11 +130,6 @@ fn watcher_thread_recovers_from_registration_failures_and_then_follows_edits() {
         == vec!["after_recovery"]));
     assert_eq!(stop_and_join(stop, handle), RunOutcome::Stopped);
 }
-
-// ── lease probes ────────────────────────────────────────────────────────────────────────────
-//
-// `watch status` and `serve` probe the lease by taking it for an instant. A watcher that starts
-// at the same moment must not read that probe as another watcher and exit.
 
 #[test]
 fn watcher_starts_when_the_lease_is_only_held_briefly_by_a_probe() {

@@ -1,13 +1,3 @@
-//! Fuzzy correction of query words against the indexed content vocabulary.
-//!
-//! A query word that is not already an indexed term is replaced by the
-//! closest vocabulary term within `MAX_EDIT_DISTANCE`. The whole vocabulary is
-//! searched, not a prefix of it.
-//!
-//! The vocabulary is kept in memory, grouped by character count. It is read
-//! again only when the database has changed. Candidates are pruned by length,
-//! then by a letter-count bound, before any Levenshtein computation.
-
 use super::lexical::knowledge_bm25_search;
 use super::rank::RankedResult;
 use super::*;
@@ -15,10 +5,8 @@ use rusqlite::Connection;
 use std::cell::RefCell;
 use std::sync::Arc;
 
-/// Largest edit distance at which a vocabulary term replaces a query word.
 pub(super) const MAX_EDIT_DISTANCE: usize = 2;
 
-/// One slot per letter `a` to `z`, plus one slot shared by every other character.
 const LETTER_SLOTS: usize = 27;
 const OTHER_SLOT: usize = 26;
 
@@ -29,21 +17,16 @@ struct VocabTerm {
     letters: LetterCounts,
 }
 
-/// The content vocabulary, grouped by character count. Each group is sorted.
 pub(super) struct FuzzyVocabulary {
     by_length: Vec<Vec<VocabTerm>>,
 }
 
-/// Result of correcting one query.
 #[derive(Debug, Default, PartialEq, Eq)]
 pub(super) struct Corrections {
-    /// The corrected query, or `None` when no word changed.
     pub(super) query: Option<String>,
-    /// Levenshtein computations made for this query.
     pub(super) levenshtein_calls: usize,
 }
 
-/// The vocabulary last loaded for a store, with the database state it was read from.
 #[derive(Default)]
 pub(crate) struct VocabularyCache(RefCell<Option<CachedVocabulary>>);
 
@@ -52,8 +35,6 @@ struct CachedVocabulary {
     vocabulary: Arc<FuzzyVocabulary>,
 }
 
-/// Fuzzy layer: correct the query, then search the corrected query with BM25.
-/// Returns `None` when no word was corrected, so the layer did not run.
 pub(super) fn knowledge_fuzzy_search(
     store: &KnowledgeStore,
     query: &str,
@@ -70,14 +51,10 @@ pub(super) fn knowledge_fuzzy_search(
     }
 }
 
-/// Correct `query` against the store's vocabulary without searching.
 pub(super) fn fuzzy_correct(store: &KnowledgeStore, query: &str) -> Result<Corrections> {
     Ok(vocabulary(store)?.correct(query))
 }
 
-/// The store's vocabulary. The fingerprint is read before the vocabulary, so a
-/// write that lands in between leaves a stale fingerprint. The next call then
-/// reloads.
 fn vocabulary(store: &KnowledgeStore) -> Result<Arc<FuzzyVocabulary>> {
     let fingerprint = change_fingerprint(store.conn())?;
     if let Some(cached) = store.fuzzy_cache.0.borrow().as_ref() {
@@ -93,8 +70,6 @@ fn vocabulary(store: &KnowledgeStore) -> Result<Arc<FuzzyVocabulary>> {
     Ok(vocabulary)
 }
 
-/// Changes by other connections show up in `data_version`. Changes made by this
-/// connection show up in `total_changes`.
 fn change_fingerprint(conn: &Connection) -> Result<(i64, u64)> {
     let data_version: i64 = conn.query_row("PRAGMA data_version", [], |row| row.get(0))?;
     Ok((data_version, conn.total_changes()))
@@ -149,8 +124,6 @@ impl FuzzyVocabulary {
         })
     }
 
-    /// The closest term within `MAX_EDIT_DISTANCE`. Ties go to the smaller term,
-    /// so the result does not depend on the order of the buckets.
     fn nearest(&self, word: &str, levenshtein_calls: &mut usize) -> Option<&str> {
         let length = word.chars().count();
         let letters = letter_counts(word);
@@ -181,8 +154,6 @@ impl FuzzyVocabulary {
     }
 }
 
-/// Distinct content terms, in sorted order. The vocabulary table is created when the schema is
-/// applied, so this read path never writes. A query error is returned, not treated as empty.
 pub(super) fn extract_knowledge_terms(conn: &Connection) -> Result<Vec<String>> {
     let mut stmt = conn.prepare(
         "SELECT DISTINCT term FROM knowledge_chunks_vocab WHERE col = 'content' ORDER BY term",
@@ -205,10 +176,6 @@ fn letter_counts(text: &str) -> LetterCounts {
     counts
 }
 
-/// Each edit changes at most two letter counts, and each by one. A term more
-/// than `MAX_EDIT_DISTANCE` edits away therefore differs by more than twice that
-/// distance in total. Saturated counts only shrink the difference, so the bound
-/// never rejects a term that is within the limit.
 fn within_letter_budget(query: &LetterCounts, term: &LetterCounts) -> bool {
     let difference: usize = query
         .iter()

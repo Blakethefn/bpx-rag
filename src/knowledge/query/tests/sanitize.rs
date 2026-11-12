@@ -1,8 +1,6 @@
 use super::super::lexical::{sanitize_fts_query, sanitize_trigram_query};
 use super::super::rank::truncate_snippet;
 
-// ── sanitize helpers ─────────────────────────────────────────────────────
-
 #[test]
 fn test_sanitize_fts_query() {
     assert_eq!(
@@ -36,7 +34,7 @@ fn test_truncate_snippet_at_word_boundary() {
     let s = "the quick brown fox jumps over the lazy dog";
     let result = truncate_snippet(s, 20);
     assert!(result.ends_with("..."));
-    assert!(result.len() <= 24); // 20 + "..."
+    assert!(result.len() <= 24);
 }
 
 #[test]

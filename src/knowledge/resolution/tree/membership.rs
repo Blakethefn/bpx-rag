@@ -147,8 +147,6 @@ fn reachable(roots: &[i64], children: &HashMap<i64, HashMap<String, i64>>) -> Ha
     seen
 }
 
-/// A file that is a root uses itself. Another root's walk stops at that file, so `crate::`
-/// does not jump from a binary root into a library root.
 fn assign_crates(
     roots: &HashSet<i64>,
     children: &HashMap<i64, HashMap<String, i64>>,
@@ -227,7 +225,6 @@ fn cargo_directories(files: &HashMap<i64, String>) -> Vec<String> {
     dirs
 }
 
-/// `None` is the single group of files that sit under no `Cargo.toml`.
 fn package_of(rel: &str, cargo_dirs: &[String]) -> Option<String> {
     let dir = parent_dir(rel);
     let mut best: Option<&str> = None;

@@ -4,14 +4,12 @@ use std::collections::BTreeMap;
 use std::fs::{self};
 use std::path::Path;
 
-/// Running total of one [`QualityMetrics`] record, plus how many samples were added.
 #[derive(Clone, Copy, Default)]
 pub(in crate::eval) struct MetricSums {
     total: QualityMetrics,
     pub(in crate::eval) count: usize,
 }
 
-/// Running total of one [`UnanswerableMetrics`] record. `count` becomes `query_count`.
 #[derive(Clone, Copy, Default)]
 pub(in crate::eval) struct UnanswerableMetricSums {
     total: UnanswerableMetrics,

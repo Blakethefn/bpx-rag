@@ -1,7 +1,5 @@
 use rusqlite::{params, Connection};
 
-/// Mirror of `master`'s `index_prepared_file` chunk writes: content row, trigram row,
-/// then metadata row. No identifier row is written.
 pub(crate) fn insert_chunk(
     conn: &Connection,
     file_id: i64,
@@ -41,7 +39,6 @@ pub(crate) fn insert_chunk(
     rowid
 }
 
-/// Mirror of `master`'s `delete_file_chunks`: chunk, trigram, embedding, and metadata rows.
 pub(crate) fn delete_chunks(conn: &Connection, file_id: i64) {
     let rowids: Vec<i64> = {
         let mut statement = conn
@@ -78,7 +75,6 @@ pub(crate) fn delete_chunks(conn: &Connection, file_id: i64) {
     .unwrap();
 }
 
-/// Mirror of `master`'s `delete_file_chunks` followed by its file-row delete.
 pub(crate) fn delete_file(conn: &Connection, file_id: i64) {
     delete_chunks(conn, file_id);
     conn.execute(
@@ -88,8 +84,6 @@ pub(crate) fn delete_file(conn: &Connection, file_id: i64) {
     .unwrap();
 }
 
-/// Mirror of `master`'s update path for a changed file: it stores the new hash on the
-/// file row, which keeps its id, and replaces its chunks.
 pub(crate) fn set_content_hash(conn: &Connection, file_id: i64, hash: &str) {
     conn.execute(
         "UPDATE knowledge_files SET content_hash = ?1 WHERE id = ?2",
@@ -98,7 +92,6 @@ pub(crate) fn set_content_hash(conn: &Connection, file_id: i64, hash: &str) {
     .unwrap();
 }
 
-/// Mirror of `master`'s `remove_source` chunk deletes.
 pub(crate) fn remove_source(conn: &Connection, source_id: i64) {
     let rowids: Vec<i64> = {
         let mut statement = conn

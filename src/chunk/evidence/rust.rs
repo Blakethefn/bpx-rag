@@ -1,5 +1,3 @@
-//! Rust module declarations, `use` paths, `fn main`, and `#[test]`.
-
 use tree_sitter::Node;
 
 use super::{
@@ -60,8 +58,6 @@ pub(super) fn visit(
     Walk::Skip
 }
 
-/// Visibility written on a Rust declaration. `None` means a modifier was present and could not
-/// be read. Callers store `None` for every other language.
 pub(super) fn item_visibility(node: Node<'_>, content: &str) -> Option<String> {
     let modifier = (0..node.named_child_count())
         .filter_map(|index| node.named_child(index as u32))

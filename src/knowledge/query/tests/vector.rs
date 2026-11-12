@@ -47,7 +47,6 @@ fn vector_search_rejects_embedding_with_wrong_byte_length() {
         "whale migration notes",
         "{}",
     );
-    // Three bytes is not a whole f32 and does not match the two-dimension query.
     store
         .conn()
         .execute(
@@ -68,7 +67,6 @@ fn vector_search_rejects_embedding_with_wrong_byte_length() {
 #[test]
 fn vector_search_rejects_non_finite_stored_embedding_instead_of_panicking() {
     let store = make_store();
-    // Many rows with a NaN component, so the score sort has to compare NaN values.
     for index in 0..60 {
         let rowid = seed_chunk(
             &store,

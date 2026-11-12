@@ -1,5 +1,3 @@
-//! Sync against a database that a pre-identifier writer has modified.
-
 use super::super::*;
 use crate::knowledge::identifiers::identifier_words;
 use crate::knowledge::identifiers::tests::maintenance::legacy;
@@ -7,7 +5,6 @@ use tempfile::tempdir;
 
 use crate::support::{add_source, make_store};
 
-/// Every identifier row belongs to a live chunk, and its words match the stored chunk text.
 fn assert_identifier_index_matches_chunks(store: &KnowledgeStore) {
     let orphans: i64 = store
         .conn()
@@ -63,12 +60,9 @@ fn sync_succeeds_after_a_legacy_writer_deletes_and_reuses_chunk_rowids() {
         )
         .unwrap();
 
-    // A pre-identifier writer deletes the file and adds a chunk, which reuses its rowid.
     legacy::delete_file(store.conn(), billing_id);
     legacy::insert_chunk(store.conn(), 9_001, source.id, "orphan.md", "plain prose");
 
-    // The current binary then syncs, adding a file. This used to fail with SQLite
-    // constraint 1555 because the reused rowid still carried stale identifier words.
     fs::write(
         dir.path().join("users.ts"),
         "export function getUserById() {}\n",
@@ -160,7 +154,6 @@ fn legacy_content_update_hides_stale_symbol_lines_until_sync_rebuilds_them() {
         )
         .unwrap();
 
-    // A pre-symbol writer replaces the chunks and stores the new hash. It never writes symbols.
     let updated = "\n\npub fn beta_two() -> u8 {\n    2\n}\n";
     fs::write(dir.path().join("lib.rs"), updated).unwrap();
     legacy::delete_chunks(store.conn(), file_id);

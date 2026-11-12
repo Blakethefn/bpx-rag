@@ -15,7 +15,6 @@ pub use retrieval::*;
 pub use scaling::*;
 
 const TOP_K: usize = 10;
-/// Depth of the diagnostic ranking kept per query for pool-based relation studies.
 const DIAGNOSTIC_DEPTH: usize = 30;
 
 fn sha256(content: &str) -> String {

@@ -123,8 +123,6 @@ pub(super) fn apply_graph_rerank(
     Ok(())
 }
 
-/// Merge one chunk from each file the top hit links to. The top hits keep
-/// their place; neighbors fill the following slots, as in the relation eval.
 pub(crate) fn attach_relation_neighbors(
     ks: &KnowledgeStore,
     results: Vec<KnowledgeSearchResult>,

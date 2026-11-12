@@ -3,8 +3,6 @@ use std::collections::{HashSet, VecDeque};
 use super::{path_segments, walk_modules, Symbol, Walk};
 
 impl super::Tree {
-    /// A function, const, or associated item whose container is a type or trait.
-    /// Items inside an inline `mod` share the file module, so their container is not a method.
     pub(crate) fn is_method(&self, symbol: &Symbol) -> bool {
         let Some(container) = symbol.container.as_deref() else {
             return false;
@@ -42,7 +40,6 @@ impl super::Tree {
         }
     }
 
-    /// Glob imports are narrower than path visibility. Private and `pub(self)` items stay out.
     pub(crate) fn glob_visible(&self, symbol: &Symbol, glob_file: i64, module_file: i64) -> bool {
         if symbol.file_id != module_file || self.is_method(symbol) {
             return false;

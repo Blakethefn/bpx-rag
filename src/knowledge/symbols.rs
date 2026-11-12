@@ -1,26 +1,14 @@
-//! Symbol index: rows written by sync and exact or prefix lookup over them.
-//!
-//! Rows are written in the same transaction as a file's chunks. A file has current rows only
-//! when its `symbol_version` is at least `SYMBOL_INDEX_VERSION` and its `symbols_hash` equals its
-//! `content_hash`. Any other file is pending, and sync backfills it. Lookup returns no rows
-//! for a pending file, so a stale line range is never cited.
-
 use anyhow::{anyhow, bail, Result};
 use rusqlite::{params, Connection};
 
 use super::KnowledgeStore;
 
-/// Version of the symbol index. Bump it when extraction changes what it writes. A bump
-/// backfills symbols on the next sync without re-chunking or re-embedding.
 pub(crate) const SYMBOL_INDEX_VERSION: i64 = 2;
 
-/// Longest accepted name. Identifiers are far shorter, so a longer query is an error.
 const MAX_NAME_BYTES: usize = 256;
 
-/// The largest code point. A prefix range ends just before `prefix + U+10FFFF`.
 const PREFIX_UPPER_BOUND: char = '\u{10FFFF}';
 
-/// How `name` is matched against stored symbol names. Both modes are case-sensitive.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MatchMode {
     Exact,
@@ -46,7 +34,6 @@ pub struct SymbolHit {
     pub line_end: u32,
 }
 
-/// Files in a source that have not yet been symbol-indexed. Sync backfills them.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PendingSymbols {
     pub source_label: String,
@@ -63,8 +50,6 @@ pub struct SymbolReport {
 const HIT_COLUMNS: &str =
     "s.label, kf.rel_path, ks.name, ks.kind, ks.container, ks.line_start, ks.line_end";
 
-/// Look up declarations by name. Errors on an empty or oversized name, or an unknown source.
-/// Duplicate names are all returned, ordered by name, source, path, and line.
 pub fn lookup(store: &KnowledgeStore, query: &SymbolQuery<'_>) -> Result<SymbolReport> {
     let name = query.name.trim();
     if name.is_empty() {
@@ -117,7 +102,6 @@ fn select_hits(
          ORDER BY ks.name, s.label, kf.rel_path, ks.line_start
          LIMIT ?3"
     );
-    // One extra row tells the caller whether the result was truncated.
     let fetch_limit = i64::try_from(limit.saturating_add(1)).unwrap_or(i64::MAX);
     let upper_bound = format!("{name}{PREFIX_UPPER_BOUND}");
     let mut statement = conn.prepare(&sql)?;

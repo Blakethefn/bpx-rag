@@ -1,6 +1,3 @@
-//! `add` registers a source and runs its first sync. If that sync fails, the source must not
-//! stay registered with no content: a retry under the same label would be refused.
-
 use rusqlite::Connection;
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
@@ -54,8 +51,6 @@ fn text(bytes: &[u8]) -> String {
     String::from_utf8_lossy(bytes).into_owned()
 }
 
-/// A tree with one readable file and one directory the walk cannot enter. The walk itself
-/// fails, which no per-file policy skips.
 fn tree_with_unreadable_directory(root: &Path) -> (PathBuf, PathBuf) {
     let tree = root.join("tree");
     let locked = tree.join("locked");
@@ -70,7 +65,6 @@ fn restore(locked: &Path) {
     fs::set_permissions(locked, fs::Permissions::from_mode(0o755)).unwrap();
 }
 
-/// Makes the directory removable again even when an assertion panics.
 struct RestoreOnDrop(PathBuf);
 
 impl Drop for RestoreOnDrop {
@@ -86,7 +80,6 @@ fn failed_first_sync_leaves_no_registered_source_and_a_retry_succeeds() {
     let (tree, locked) = tree_with_unreadable_directory(root.path());
     let _guard = RestoreOnDrop(locked.clone());
     if fs::read_dir(&locked).is_ok() {
-        // Running as root: permissions do not block the walk, so the failure cannot be forced.
         return;
     }
 

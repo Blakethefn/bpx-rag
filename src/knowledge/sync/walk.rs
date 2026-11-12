@@ -10,7 +10,6 @@ use super::policy::{is_sensitive_path, is_sensitive_source_root};
 use super::SkippedFile;
 use crate::knowledge::scope;
 
-/// A file that could not be read, with the operating system's reason.
 fn unreadable_file(rel_path: &str, error: &dyn std::fmt::Display) -> SkippedFile {
     SkippedFile {
         rel_path: rel_path.to_string(),
@@ -18,11 +17,6 @@ fn unreadable_file(rel_path: &str, error: &dyn std::fmt::Display) -> SkippedFile
     }
 }
 
-/// Walk a knowledge source directory, returning files keyed by relative path.
-/// Respects .gitignore, skips binary/empty/sensitive files, and applies the glob filter.
-/// A traversal error aborts the sync so reconciliation cannot mistake an incomplete scan
-/// for deleted files. A file that cannot be opened or inspected is left out of `files`, and
-/// `walk_source_dir_with_report` names it with the reason.
 pub(crate) fn walk_source_dir(
     base_path: &Path,
     patterns: &[String],
@@ -30,12 +24,9 @@ pub(crate) fn walk_source_dir(
     Ok(walk_source_dir_with_report(base_path, patterns)?.files)
 }
 
-/// Files keyed by relative path. A `BTreeMap` keeps sync order (and so chunk
-/// and file rowids, which tie-break search results) the same across runs.
 pub(crate) struct SourceWalkReport {
     pub files: BTreeMap<String, PathBuf>,
     pub sensitive_files_skipped: usize,
-    /// Files the walk could not open or inspect, keyed like `files`, with the reason.
     pub unreadable: Vec<SkippedFile>,
 }
 
@@ -58,7 +49,7 @@ pub(crate) fn walk_source_dir_with_report(
 
     let mut builder = WalkBuilder::new(base_path);
     builder
-        .hidden(false) // Don't skip hidden files (dotfiles may be relevant)
+        .hidden(false)
         .git_ignore(true)
         .git_global(true)
         .git_exclude(true);
@@ -90,9 +81,6 @@ pub(crate) fn walk_source_dir_with_report(
             .to_string_lossy()
             .to_string();
 
-        // A file that cannot be opened or inspected is skipped with a reason. Only a failure
-        // of the traversal itself (above) is fatal, because it hides what a directory holds.
-        // Skip binary files (null byte in first 1KB)
         match is_binary(&abs_path) {
             Ok(true) => continue,
             Ok(false) => {}
@@ -102,7 +90,6 @@ pub(crate) fn walk_source_dir_with_report(
             }
         }
 
-        // Skip empty files
         match fs::metadata(&abs_path) {
             Ok(metadata) if metadata.len() == 0 => continue,
             Ok(_) => {}

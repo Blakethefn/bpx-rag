@@ -1,9 +1,3 @@
-//! Possibly-unused Rust symbols from a complete or partial analysis.
-//!
-//! A symbol is unused when sealed-scope resolution never targets it. The declaring file has to
-//! be sealed. `pub(crate)` also needs every Rust file in that package sealed. `pub` on a library
-//! tree, or on no program tree, is withheld. Null visibility is withheld. Non-Rust files are omitted.
-
 use anyhow::Result;
 use rusqlite::{params, Connection};
 use std::collections::{HashMap, HashSet};

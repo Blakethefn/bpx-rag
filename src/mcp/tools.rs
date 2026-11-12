@@ -76,7 +76,6 @@ fn tool_by_name(name: &str) -> Option<Tool> {
     catalog().into_iter().find(|tool| tool.name == name)
 }
 
-/// MCP tools. `tools/list` and `tools/call` both read this catalog.
 fn catalog() -> Vec<Tool> {
     vec![
         search(),

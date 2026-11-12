@@ -30,7 +30,6 @@ fn least_recently_used_entry_is_evicted_first() {
     let cache = QueryEmbeddingCache::new(2);
     cache.insert("m", "a", vec![1.0]);
     cache.insert("m", "b", vec![2.0]);
-    // Touch "a" so "b" becomes the least recently used entry.
     assert_eq!(cache.get("m", "a"), Some(vec![1.0]));
     cache.insert("m", "c", vec![3.0]);
 
@@ -89,6 +88,5 @@ fn keys_are_exact_text_so_case_variants_do_not_share_a_vector() {
     let cache = QueryEmbeddingCache::new(4);
     cache.insert("m", "Parse Config", vec![1.0]);
 
-    // The embedder may tokenize case differently, so a variant must not reuse the vector.
     assert_eq!(cache.get("m", "parse config"), None);
 }

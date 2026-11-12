@@ -1,28 +1,14 @@
-//! Enrichment pipeline for knowledge store metadata extraction.
-//!
-//! Enrichments are optional metadata extractors that run during sync to produce
-//! structured key-value pairs stored alongside each chunk. They enable filtered
-//! search — e.g., "find all active task notes about the prediction engine".
-//!
-//! Three built-in enrichments:
-//! - **frontmatter** — parses YAML between `---` fences at file start
-//! - **wikilinks** — extracts `[[target]]` and `[[target|alias]]` patterns
-//! - **folder_tags** — derives tags from directory path components
-
 use serde_json::Value;
 use std::path::Path;
 
-/// Extractor for one enrichment. `None` means the value is empty and is not stored.
 type Extract = fn(&str, &Path, &Path) -> Option<Value>;
 
-/// The only catalog. Each entry pairs a name with its extractor; that name is the JSON key.
 const CATALOG: &[(&str, Extract)] = &[
     ("frontmatter", frontmatter_value),
     ("wikilinks", wikilinks_value),
     ("folder_tags", folder_tags_value),
 ];
 
-/// Names in `CATALOG` order. Keep the two tables in sync.
 const NAMES: &[&str] = &["frontmatter", "wikilinks", "folder_tags"];
 
 fn enrichment(name: &str) -> Option<(&'static str, Extract)> {
@@ -33,7 +19,6 @@ fn enrichment_names() -> &'static [&'static str] {
     NAMES
 }
 
-/// Boxed enrichment closure returned by `build_enrichment_fn`.
 type BoxedEnrichment = Box<dyn Fn(&str, &Path) -> Value>;
 
 fn frontmatter_value(content: &str, _path: &Path, _base: &Path) -> Option<Value> {
@@ -61,7 +46,6 @@ fn present_array(value: Value) -> Option<Value> {
     }
 }
 
-/// Reject enrichment names this build does not know, so a typo fails at `add`.
 pub fn validate_enrichments(names: &[String]) -> anyhow::Result<()> {
     match names.iter().find(|name| enrichment(name).is_none()) {
         None => Ok(()),
@@ -72,11 +56,6 @@ pub fn validate_enrichments(names: &[String]) -> anyhow::Result<()> {
     }
 }
 
-/// Build an enrichment function from a list of enabled enrichment names.
-/// Returns `None` if the list is empty.
-///
-/// Valid names: `"frontmatter"`, `"wikilinks"`, `"folder_tags"`.
-/// Unknown names are logged as warnings and ignored.
 pub fn build_enrichment_fn(
     enrichments: &[String],
     source_base_path: &Path,

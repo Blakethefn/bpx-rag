@@ -1,6 +1,5 @@
 use super::{Chunk, MAX_CHUNK_BYTES};
 
-/// Flush accumulated content as one or more chunks (splitting if oversized), with line info
 pub(in crate::chunk) fn flush_chunk_with_lines(
     chunks: &mut Vec<Chunk>,
     title: &str,
@@ -18,10 +17,8 @@ pub(in crate::chunk) fn flush_chunk_with_lines(
         return;
     }
 
-    // Try splitting at paragraph boundaries first
     let paragraphs: Vec<&str> = content.split("\n\n").collect();
 
-    // If there's only one "paragraph" (no \n\n), go straight to newline splitting
     if paragraphs.len() <= 1 {
         split_at_newlines_with_lines(title, content, chunks, line_start);
         return;
@@ -83,7 +80,6 @@ pub(in crate::chunk) fn flush_chunk_with_lines(
     }
 }
 
-/// Hard split at single newline boundaries with line number tracking
 pub(in crate::chunk) fn split_at_newlines_with_lines(
     title: &str,
     content: &str,
@@ -97,11 +93,8 @@ pub(in crate::chunk) fn split_at_newlines_with_lines(
 
     for line in content.lines() {
         line_offset += 1;
-        // +1 for the newline we'll add
         if current.len() + line.len() + 1 > MAX_CHUNK_BYTES && !current.is_empty() {
             part += 1;
-            // line_offset is 1-based and has already advanced past the overflow line,
-            // so subtract 2 to get the last line actually included in the current chunk.
             let part_line_end = (base_line_start + line_offset)
                 .saturating_sub(2)
                 .max(part_line_start);
@@ -120,9 +113,7 @@ pub(in crate::chunk) fn split_at_newlines_with_lines(
         }
         current.push_str(line);
 
-        // Handle single lines longer than MAX_CHUNK_BYTES — hard byte split
         while current.len() > MAX_CHUNK_BYTES {
-            // Find a char boundary at or before MAX_CHUNK_BYTES
             let mut split_at = MAX_CHUNK_BYTES;
             while split_at > 0 && !current.is_char_boundary(split_at) {
                 split_at -= 1;

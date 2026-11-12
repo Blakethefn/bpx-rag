@@ -1,8 +1,3 @@
-//! In-memory Rust module tree for name resolution and file membership.
-//!
-//! Package boundaries, `mod` edges, and crate roots live here. They are not written onto
-//! `module` or `path` resolution rows. File findings walk these children, including `#[path]`.
-
 use anyhow::Result;
 use rusqlite::Connection;
 use std::collections::{HashMap, HashSet};
@@ -42,22 +37,18 @@ pub(crate) struct Tree {
     rust_files: HashSet<i64>,
     children: HashMap<i64, HashMap<String, i64>>,
     parents: HashMap<i64, Vec<i64>>,
-    /// Crate root for a file that has exactly one. A root maps to itself.
     crate_of: HashMap<i64, i64>,
     roots: HashSet<i64>,
     library_files: HashSet<i64>,
     program_files: HashSet<i64>,
     program_entries: HashSet<i64>,
-    /// Program, library, and test entry targets. Test files stay out of `program_files`.
     membership: HashSet<i64>,
-    /// Indexed files an unresolved `mod` could have named. Not part of the symbol seal.
     unresolved_candidates: HashSet<i64>,
     test_names: HashMap<i64, HashSet<String>>,
     inline_names: HashMap<i64, HashSet<String>>,
     has_macro: bool,
     has_inline_module: bool,
     paths: HashMap<i64, String>,
-    /// `None` is the one group of files that sit under no `Cargo.toml`.
     packages: HashMap<i64, Option<String>>,
 }
 
@@ -138,7 +129,6 @@ impl Tree {
                 .is_some_and(|parents| !parents.is_empty())
     }
 
-    /// The nearest `Cargo.toml` directory. `None` means the file sits under no manifest.
     pub(crate) fn package_dir(&self, file_id: i64) -> Option<&str> {
         self.packages
             .get(&file_id)
@@ -157,7 +147,6 @@ impl Tree {
         self.rust_files.iter().copied()
     }
 
-    /// Every Rust file in this file's package is outside `unsealed`.
     pub(crate) fn package_is_sealed(&self, file_id: i64, unsealed: &HashSet<i64>) -> bool {
         let package = self.packages.get(&file_id);
         self.rust_files

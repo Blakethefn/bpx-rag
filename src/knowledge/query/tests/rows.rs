@@ -60,12 +60,6 @@ fn failed_query_embedding_is_reported_and_lexical_results_still_return() {
     assert!(report.warnings[0].contains("synthetic query embedding failure"));
 }
 
-// ── Malformed database rows ──────────────────────────────────────────────
-//
-// A row that cannot be decoded is database corruption. Each retrieval layer
-// must return an error for it, not drop the row or substitute a default.
-
-/// Overwrite a chunk's metadata with bytes that cannot decode as TEXT.
 fn corrupt_metadata_as_blob(store: &KnowledgeStore, chunk_rowid: i64) {
     store
         .conn()

@@ -28,11 +28,8 @@ pub struct Config {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct GeneralConfig {
-    /// Max stdout capture in bytes (default 100KB)
     pub max_stdout_bytes: usize,
-    /// Head/tail split ratio for truncation (default 0.6)
     pub head_ratio: f64,
-    /// Files/outputs under this size bypass truncation entirely (default 8192)
     #[serde(default = "default_preview_threshold_bytes")]
     pub preview_threshold_bytes: usize,
 }
@@ -43,21 +40,17 @@ fn default_preview_threshold_bytes() -> usize {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct FetchConfig {
-    /// URL cache TTL in hours (default 24)
     pub cache_ttl_hours: u64,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct IntegrationConfig {
-    /// Path to taskvault binary
     pub taskvault_bin: String,
-    /// Path to obsidian vault
     pub vault_path: String,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct CleanupConfig {
-    /// Auto-delete content DBs older than this many days (default 14)
     pub stale_db_days: u64,
 }
 

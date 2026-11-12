@@ -1,13 +1,6 @@
-//! Judgment-pool retrieval channels.
-//!
-//! One definition owns each channel's name, search weights, and the rank field
-//! those hits are written to. Pool generation and the retrieval eval both read
-//! the weights from here.
-
 use super::PoolRetrieverRanks;
 use crate::knowledge::query::SearchWeights;
 
-/// A retriever whose hits enter the judgment pool.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(in crate::eval) enum PoolChannel {
     Hybrid,
@@ -66,7 +59,6 @@ impl PoolChannel {
         self.definition().weights
     }
 
-    /// Record a 1-based rank on the field this channel owns, keeping the best one.
     pub(in crate::eval) fn record_rank(self, ranks: &mut PoolRetrieverRanks, rank: usize) {
         let field = (self.definition().rank_field)(ranks);
         let current = *field;

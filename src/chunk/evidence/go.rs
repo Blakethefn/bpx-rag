@@ -1,5 +1,3 @@
-//! Go imports, `func main`, and `Test` functions in `_test.go` files.
-
 use std::path::Path;
 
 use tree_sitter::Node;

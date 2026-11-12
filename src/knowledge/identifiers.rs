@@ -1,33 +1,10 @@
-//! Identifier splitting for the identifier layer.
-//!
-//! `getUserById`, `get_user_by_id`, and `get-user-by-id` all index as one
-//! `porter unicode61` token, or as several tokens with no shared phrase. The
-//! identifier layer stores the words of each compound identifier, so a
-//! natural-language query such as "get user by id" can match the code.
-
 use anyhow::Result;
 use rusqlite::{params, Connection, TransactionBehavior};
 
-/// Version of the identifier index.
-///
-/// Version 2 keeps identifier rows in step with `knowledge_chunk_meta`. Triggers on that
-/// ordinary table delete a chunk's identifier row when the chunk's metadata row is deleted,
-/// and queue a new metadata row in `knowledge_identifier_pending`. Triggers live in the
-/// database file, so writers built before this version are covered too: their inserts and
-/// deletes go through the same table. Queued chunks are indexed the next time the database
-/// is opened or synced by a current binary.
-///
-/// Version 1 rows could be orphaned or attached to reused rowids, so moving to version 2
-/// rebuilds every row from the stored chunk text. Chunk rows and embeddings are not touched.
 pub(crate) const IDENTIFIER_INDEX_VERSION: i64 = 2;
 
 const VERSION_KEY: &str = "identifier_index_version";
 
-/// Bring the identifier index up to `IDENTIFIER_INDEX_VERSION` and index queued chunks.
-///
-/// The check and all writes run in one `BEGIN IMMEDIATE` transaction. Two processes that
-/// open the same database cannot interleave, and an interrupted rebuild rolls back, so the
-/// version marker is only set once every row is written.
 pub(crate) fn ensure_identifier_index(conn: &Connection) -> Result<()> {
     if !needs_maintenance(conn)? {
         return Ok(());
@@ -54,8 +31,6 @@ fn needs_maintenance(conn: &Connection) -> Result<bool> {
     Ok(queued)
 }
 
-/// Index one chunk's identifier words, replacing any row already held under its rowid, and
-/// clear it from the pending queue. Called by sync, inside its transaction.
 pub(crate) fn write_chunk_identifiers(conn: &Connection, rowid: i64, text: &str) -> Result<()> {
     conn.execute(
         "DELETE FROM knowledge_identifiers WHERE rowid = ?1",
@@ -85,9 +60,6 @@ fn stored_version(conn: &Connection) -> Result<i64> {
     }
 }
 
-/// Discard every identifier row and rebuild one per chunk row from the stored text. The text
-/// matches what sync writes: `title`, a space, then `content`. The identifier layer joins on
-/// metadata, so a chunk without a metadata row is never returned whatever its words are.
 fn rebuild_all(conn: &Connection) -> Result<()> {
     conn.execute_batch(
         "DELETE FROM knowledge_identifiers;
@@ -116,8 +88,6 @@ fn rebuild_all(conn: &Connection) -> Result<()> {
     Ok(())
 }
 
-/// Index the chunks queued by triggers since the last open or sync. Queue entries whose
-/// metadata row no longer exists are dropped without writing anything.
 pub(crate) fn index_pending(conn: &Connection) -> Result<()> {
     let queued: Vec<(i64, String)> = {
         let mut statement = conn.prepare(
@@ -148,8 +118,6 @@ fn insert_words(conn: &Connection, rowid: i64, text: &str) -> Result<()> {
     Ok(())
 }
 
-// Test hook: fail the rebuild after the given number of rows, to prove that an interrupted
-// migration rolls back completely.
 #[cfg(test)]
 thread_local! {
     pub(crate) static REBUILD_FAILPOINT: std::cell::Cell<Option<usize>> =

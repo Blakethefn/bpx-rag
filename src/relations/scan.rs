@@ -16,7 +16,6 @@ use super::types::{FileAnalysis, FileRelationship, RawReference, SourceFile};
 const MAX_FILES: usize = 20_000;
 const MAX_FILE_BYTES: u64 = 2 * 1024 * 1024;
 const MAX_TOTAL_BYTES: u64 = 128 * 1024 * 1024;
-/// A reference from one project file to another, both as project-relative paths.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ProjectEdge {
     pub from: String,
@@ -24,11 +23,6 @@ pub struct ProjectEdge {
     pub kind: String,
 }
 
-/// Resolve references among `paths` in one pass.
-///
-/// Only the listed files are read. Callers that index a subset, such as a
-/// source with a sensitive-path policy, never touch the rest of the project.
-/// Unsupported, unreadable, and self-referencing entries are skipped.
 pub fn project_edges(root: &Path, paths: &[PathBuf]) -> Result<Vec<ProjectEdge>> {
     let mut files = Vec::new();
     for path in paths {

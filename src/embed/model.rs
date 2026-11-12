@@ -13,7 +13,6 @@ const TOKENIZER_FILES: [&str; 4] = [
 ];
 
 impl super::Embedder {
-    /// Download the selected model artifacts explicitly into the local HF cache.
     pub fn download_model(model_dir: &Path, model_name: &str) -> Result<PathBuf> {
         let model = resolve_model(model_name)?;
         let model_info = TextEmbedding::get_model_info(&model)

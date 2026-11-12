@@ -10,8 +10,6 @@ pub enum QueryAnswerability {
     UnanswerableInCorpus,
 }
 
-// The record is the only field list. Summing walks `metric_values`, so a new rate
-// cannot average as zero just because a second accumulator forgot it.
 macro_rules! metric_record {
     (
         $(#[$meta:meta])*
@@ -66,7 +64,6 @@ macro_rules! metric_record {
         }
 
         impl $name {
-            /// Rates in declaration order.
             pub(in crate::eval) fn metric_values(&self) -> impl Iterator<Item = f64> + '_ {
                 [$(self.$field),*].into_iter()
             }
@@ -81,7 +78,6 @@ macro_rules! metric_record {
                 }
             }
 
-            /// Divides each rate by `count`, or by one when nothing has been recorded.
             pub(in crate::eval) fn mean(&mut self, count: usize) {
                 let divisor = count.max(1) as f64;
                 for value in self.metric_values_mut() {
@@ -152,9 +148,7 @@ pub struct RetrievalEvalReport {
     pub warm_query_p50_ms: f64,
     pub warm_query_p95_ms: f64,
     pub overall: QualityMetrics,
-    /// Same queries after linked files from the top hit are merged into the ranking.
     pub with_relation_neighbors: QualityMetrics,
-    /// Queries whose top hit had at least one linked file.
     pub queries_with_relation_neighbors: usize,
     pub lexical_only: QualityMetrics,
     pub vector_only: QualityMetrics,
@@ -164,8 +158,6 @@ pub struct RetrievalEvalReport {
     pub cases: Vec<EvalCaseReport>,
     pub by_category: BTreeMap<String, QualityMetrics>,
     pub by_language: BTreeMap<String, QualityMetrics>,
-    /// Fraction of snippets whose text matches the whitespace-normalized prefix of
-    /// cited source lines.
     pub citation_content_validity: Option<f64>,
     pub citation_content_matches: usize,
     pub citation_content_mismatches: Vec<CitationIssue>,
@@ -190,9 +182,7 @@ pub struct EvalCaseReport {
     pub top_paths: Vec<String>,
     pub lexical_top_paths: Vec<String>,
     pub vector_top_paths: Vec<String>,
-    /// Hybrid ranking to a deeper cutoff, for diagnosing relation-neighbor selection.
     pub deep_paths: Vec<String>,
-    /// Layer diagnostics for the hybrid search, in pipeline order.
     pub layers: Vec<LayerReport>,
 }
 
@@ -202,10 +192,8 @@ metric_record! {
         pub query_count: usize,
     }
     rates {
-        /// Fraction of top-10 returned files explicitly judged nonrelevant.
         pub explicit_negative_share_at_10: f64,
         pub judged_coverage_at_10: f64,
-        /// Fraction of queries for which retrieval returned no files.
         pub empty_result_rate: f64,
     }
 }

@@ -1,9 +1,3 @@
-//! Stored entry rows.
-//!
-//! An entry names a path and may leave the file id null when that path is not indexed.
-//! Implicit Cargo roots are rewritten from the manifest text and the paths indexed for the
-//! source, so they stay true after a file is added without chunking `Cargo.toml` again.
-
 use anyhow::{Context, Result};
 use rusqlite::{params, Connection};
 use std::collections::HashSet;
@@ -20,8 +14,6 @@ const IMPLICIT_REASONS: &[&str] = &[
     "Cargo.toml implicit bench",
 ];
 
-/// Replace the observations whose evidence is this file. Target file ids are filled later,
-/// after every path in the source is known.
 pub(crate) fn replace_file_entries(
     conn: &Connection,
     source_id: i64,
@@ -56,10 +48,6 @@ pub(crate) fn replace_file_entries(
     Ok(())
 }
 
-/// Replace implicit Cargo roots so they name indexed files of this source.
-///
-/// Explicit manifest entries stay as the chunker wrote them. A file that is not indexed
-/// does not become an implicit root, and a missing implicit path is not a missing-target gap.
 pub(crate) fn refresh_implicit(
     conn: &Connection,
     source_id: i64,
@@ -125,7 +113,6 @@ pub(crate) fn refresh_implicit(
     Ok(())
 }
 
-/// Point each entry at the indexed file for its path. A missing path stays null.
 pub(crate) fn relink_entries(conn: &Connection, source_id: i64) -> Result<()> {
     conn.execute(
         "UPDATE knowledge_entries

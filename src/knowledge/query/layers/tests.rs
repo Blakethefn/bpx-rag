@@ -14,7 +14,6 @@ fn current_policy_skips_trigram_only_when_bm25_fills_the_pool() {
 
 #[test]
 fn current_policy_fuzzy_gate_counts_trigram_additions() {
-    // BM25 is below the limit, but BM25 plus trigram has filled it.
     assert_eq!(
         fuzzy_skip(LayerPolicy::CurrentGating, 20, 50, 50),
         Some(SkipReason::PoolFull)

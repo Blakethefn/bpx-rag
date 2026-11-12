@@ -1,11 +1,3 @@
-//! Unreachable Rust files in a package that has a membership root.
-//!
-//! A membership root is a program, library, or test entry, including an implicit Cargo target.
-//! The walk follows in-memory module children, so a `#[path]` edge counts. A file reached from
-//! a test, example, or bench root is not an unused file. A package with an unsealed Rust file
-//! publishes no file findings. An unresolved `mod` candidate is withheld here and named
-//! `{path}:unsealed` by analysis; it stays out of the symbol seal.
-
 use anyhow::Result;
 use rusqlite::{params, Connection};
 use std::collections::{HashMap, HashSet, VecDeque};

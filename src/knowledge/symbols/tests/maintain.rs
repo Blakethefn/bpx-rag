@@ -135,7 +135,6 @@ fn existing_index_is_backfilled_on_sync_without_rechunking() {
     add_source(&store, "test", dir.path());
     sync(&store, "test");
 
-    // Simulate a database built before symbols existed: no rows and version 0.
     store
         .conn()
         .execute_batch(

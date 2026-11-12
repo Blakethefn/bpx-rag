@@ -10,9 +10,6 @@ use anyhow::{anyhow, Result};
 use std::collections::{BTreeMap, HashMap};
 use std::path::Path;
 
-/// Import completed human grades from a pool and its separate reveal key.
-/// Unreviewed candidates stay out of qrels, while explicit grade zero remains
-/// a judged nonrelevant document.
 pub fn import_judgment_pool(
     pool_path: &Path,
     key_path: &Path,

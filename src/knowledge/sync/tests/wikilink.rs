@@ -4,8 +4,6 @@ use crate::support::{add_source, make_store};
 use std::collections::HashMap;
 use tempfile::tempdir;
 
-// ── resolve_wikilink ────────────────────────────────────────────────────
-
 #[test]
 fn resolve_exact_path() {
     let files: HashMap<String, i64> = [("01-projects/bpcontext.md".into(), 1)]
@@ -40,8 +38,6 @@ fn resolve_returns_none_for_missing() {
     let files: HashMap<String, i64> = [("a.md".into(), 1)].into_iter().collect();
     assert_eq!(resolve_wikilink("nonexistent", &files), None);
 }
-
-// ── wikilink graph resolution (integration) ─────────────────────────────
 
 fn register_source_with_enrichments(
     store: &KnowledgeStore,
@@ -92,7 +88,6 @@ fn sync_creates_wikilink_edges() {
 fn sync_no_self_links() {
     let store = make_store();
     let dir = tempdir().unwrap();
-    // File links to itself
     fs::write(dir.path().join("self.md"), "See [[self]]").unwrap();
 
     let source = register_source_with_enrichments(&store, dir.path(), &["wikilinks"]);
@@ -150,7 +145,6 @@ fn sync_resync_updates_links() {
     sync_source(&store, &source, enrich_ref).unwrap();
     assert_eq!(link_count(&store, source.id), 1, "a→b");
 
-    // Change a.md to link to c instead
     fs::write(dir.path().join("a.md"), "See [[c]]").unwrap();
     let source = store.get_source("test").unwrap().unwrap();
     let enrich_fn = super::super::super::enrichment::build_enrichment_fn(
@@ -162,7 +156,6 @@ fn sync_resync_updates_links() {
         .map(|f| f.as_ref() as &dyn Fn(&str, &Path) -> serde_json::Value);
     sync_source(&store, &source, enrich_ref).unwrap();
 
-    // Old a→b link should be gone, new a→c should exist
     assert_eq!(link_count(&store, source.id), 1, "a→c only");
 }
 

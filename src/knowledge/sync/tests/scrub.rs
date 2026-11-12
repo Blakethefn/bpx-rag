@@ -30,7 +30,6 @@ fn sync_never_indexes_credential_files_or_key_material() {
     fs::write(dir.path().join("secrets/token.txt"), "kestrel token value").unwrap();
     fs::write(dir.path().join(".ssh/config"), "Host kestrel-bastion").unwrap();
     fs::write(dir.path().join("server.pem"), "-----BEGIN PRIVATE KEY-----").unwrap();
-    // Built at runtime so the repository never contains a key-shaped literal.
     let fake_key = format!("AIza{}", "0123456789abcdefghijklmnopqrstuvwxy");
     fs::write(
         dir.path().join("leak.md"),
@@ -64,7 +63,6 @@ fn scrub_removes_rows_that_match_the_policy_after_they_were_indexed() {
     let source = add_source(&store, "test", dir.path());
     sync_source(&store, &source, None).unwrap();
 
-    // Simulate a row written before the policy existed.
     let conn = store.conn();
     conn.execute(
         "INSERT INTO knowledge_files (source_id, rel_path, content_hash, size_bytes)

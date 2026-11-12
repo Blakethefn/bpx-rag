@@ -17,9 +17,6 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-/// Build a blinded annotation pool by merging file candidates from the hybrid,
-/// lexical, and vector search channels. The rank-reveal key is written
-/// separately from the annotator artifact.
 pub fn generate_judgment_pool(
     dataset: Option<&Path>,
     corpus_root: Option<&Path>,

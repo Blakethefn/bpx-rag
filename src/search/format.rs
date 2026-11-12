@@ -4,7 +4,6 @@ use crate::knowledge::freshness::{Freshness, FreshnessState};
 use crate::knowledge::query::{KnowledgeSearchResult, LayerOutcome, LayerReport};
 use crate::search::profile::SearchProfile;
 
-/// How much snippet text each result may show, and how many count as top results.
 #[derive(Debug, Clone, Copy)]
 pub(super) struct SnippetBudget {
     pub(super) top_bytes: usize,
@@ -41,7 +40,6 @@ pub(super) fn count_summary(
     }))?)
 }
 
-/// One line that says what each layer did. Intentional skips appear here and nowhere else.
 pub(super) fn layer_summary(layers: &[LayerReport]) -> String {
     let parts: Vec<String> = layers
         .iter()
@@ -56,7 +54,6 @@ pub(super) fn layer_summary(layers: &[LayerReport]) -> String {
     format!("layers: {}\n", parts.join("; "))
 }
 
-/// Everything `format_results` renders for one search response.
 pub(super) struct FormatInput<'a> {
     pub(super) original_query: &'a str,
     pub(super) explain: bool,

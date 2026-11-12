@@ -1,8 +1,6 @@
 use crate::knowledge::sync;
 use tempfile::tempdir;
 
-// ── Sync with embedder generates searchable vectors ────────────────────
-
 #[test]
 fn sync_with_embedder_produces_embeddings() {
     let store = super::super::make_store_with_embedder();
@@ -31,7 +29,6 @@ fn sync_with_embedder_produces_embeddings() {
         "embeddings should be generated during sync"
     );
 
-    // Every chunk should have a corresponding embedding
     let chunk_count: i64 = store
         .conn()
         .query_row("SELECT COUNT(*) FROM knowledge_chunk_meta", [], |row| {

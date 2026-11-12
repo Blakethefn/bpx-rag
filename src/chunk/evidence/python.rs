@@ -1,5 +1,3 @@
-//! Python imports, the `__main__` guard, and `test_` functions.
-
 use tree_sitter::Node;
 
 use super::{

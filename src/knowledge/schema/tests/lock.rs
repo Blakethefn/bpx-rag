@@ -1,14 +1,7 @@
-//! Opening and searching a database that is already up to date must not need its write lock.
-//!
-//! Every open runs the schema. If it writes even when nothing changes, a search fails with
-//! `database is locked` whenever another process (a sync or the watcher) holds a write
-//! transaction, although the search only reads.
-
 use crate::knowledge::{query, sync, KnowledgeStore};
 use rusqlite::Connection;
 use tempfile::tempdir;
 
-/// A database that has been opened by this version and holds one indexed file.
 fn up_to_date_database(dir: &std::path::Path) -> std::path::PathBuf {
     let db_path = dir.join("knowledge.db");
     let source_dir = dir.join("tree");

@@ -94,7 +94,6 @@ pub(super) fn collect_use(
     }
 }
 
-/// `self` at the end of a longer path names the preceding module.
 fn referred_path(segments: &[String]) -> &[String] {
     if segments.len() >= 2 && segments.last().is_some_and(|segment| segment == "self") {
         &segments[..segments.len() - 1]

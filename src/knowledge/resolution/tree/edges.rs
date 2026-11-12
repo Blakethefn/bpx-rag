@@ -101,9 +101,6 @@ pub(super) fn module_targets(
     }
 }
 
-/// Indexed files a `mod` did not bind. A `#[path]` that names an indexed file binds that file
-/// and does not put the default `name.rs` here. A missing path target, or both conventional
-/// files, leaves each indexed conventional file as a candidate.
 pub(super) fn unresolved_mod_candidates(
     modules: &[ModRef],
     files_by_path: &HashMap<&str, i64>,

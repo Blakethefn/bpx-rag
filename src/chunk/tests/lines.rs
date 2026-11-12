@@ -2,9 +2,7 @@ use super::*;
 
 #[test]
 fn test_code_chunks_have_line_numbers() {
-    // Build a Rust-like file with multiple functions
     let content = "fn first() {\n    let x = 1;\n    let y = 2;\n    let z = x + y;\n}\n\nfn second() {\n    let a = 10;\n    let b = 20;\n    let c = a + b;\n}\n\nfn third() {\n    let p = 100;\n    let q = 200;\n    let r = p + q;\n}";
-    // Force code detection by making it look like code
     let chunks = chunk_code(content);
     assert!(!chunks.is_empty());
     for chunk in &chunks {
@@ -17,7 +15,6 @@ fn test_code_chunks_have_line_numbers() {
             "line_end should be >= line_start"
         );
     }
-    // First chunk should start at line 1
     assert_eq!(
         chunks[0].line_start, 1,
         "First chunk should start at line 1"
@@ -32,12 +29,10 @@ fn test_markdown_chunks_have_line_numbers() {
         chunks.len() >= 2,
         "Expected at least 2 chunks from markdown with headings"
     );
-    // First chunk should start at line 1
     assert_eq!(
         chunks[0].line_start, 1,
         "First markdown chunk should start at line 1"
     );
-    // Each chunk should have valid line numbers
     for chunk in &chunks {
         assert!(chunk.line_start > 0, "line_start should be > 0");
         assert!(
@@ -45,7 +40,6 @@ fn test_markdown_chunks_have_line_numbers() {
             "line_end should be >= line_start"
         );
     }
-    // Chunks should be in ascending order
     for i in 1..chunks.len() {
         assert!(
             chunks[i].line_start > chunks[i - 1].line_start,
@@ -59,7 +53,6 @@ fn test_plain_text_chunks_have_line_numbers() {
     let text = "First paragraph with some text.\nMore lines here.\n\nSecond paragraph with text.\nAdditional lines.\n\nThird paragraph.";
     let chunks = chunk_plain_text(text);
     assert!(!chunks.is_empty());
-    // First chunk should start at line 1
     assert_eq!(
         chunks[0].line_start, 1,
         "First plain text chunk should start at line 1"
@@ -91,9 +84,7 @@ fn test_line_numbers_cover_full_content() {
     let chunks = chunk_markdown(content);
 
     assert!(!chunks.is_empty());
-    // First chunk starts at line 1
     assert_eq!(chunks[0].line_start, 1, "Coverage should start at line 1");
-    // Last chunk ends at or near total line count
     let last = chunks.last().unwrap();
     assert!(
         last.line_end >= total_lines,

@@ -67,15 +67,11 @@ const LANGUAGE_EXTENSIONS: &[(&[&str], Grammar)] = &[
     (&["css"], Grammar::Css),
 ];
 
-/// Markdown and Rust imports are resolved outside this extension list.
 const RESOLVED_ELSEWHERE: &[Grammar] = &[Grammar::Markdown, Grammar::Rust];
 
-/// Grammars that share one import candidate list. Earlier rows are tried first.
 const RESOLUTION_GROUPS: &[&[Grammar]] =
     &[&[Grammar::TypeScript, Grammar::Tsx, Grammar::JavaScript]];
 
-/// Extra suffixes for import resolution.
-/// These do not change which grammar a path is detected as.
 const RESOLUTION_EXTRAS: &[(Grammar, &[&str])] = &[
     (Grammar::Cpp, &["h"]),
     (Grammar::JavaScript, &["json"]),

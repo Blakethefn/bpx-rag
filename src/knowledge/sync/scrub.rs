@@ -20,9 +20,6 @@ impl SensitiveIndexScrubReport {
     }
 }
 
-/// Remove already-indexed VCS metadata and files containing a recognized
-/// Google API-key signature. This reads only stored index rows and never walks
-/// source directories or prints paths/content.
 pub fn scrub_sensitive_indexed_files(
     store: &KnowledgeStore,
     source_id: Option<i64>,
@@ -139,7 +136,6 @@ pub fn scrub_sensitive_indexed_files(
                  WHERE id = ?1",
                 params![file_source_id],
             )?;
-            // A removed file changes the evidence set. Rebuild from the rows still stored.
             crate::knowledge::rebuild::rebuild_source(conn, file_source_id, true)?;
         }
 
@@ -157,5 +153,3 @@ pub fn scrub_sensitive_indexed_files(
         }
     }
 }
-
-// ── Internal helpers ────────────────────────────────────────────────────────

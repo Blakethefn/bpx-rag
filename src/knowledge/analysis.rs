@@ -1,11 +1,3 @@
-//! Derived analysis for one source.
-//!
-//! `knowledge_analysis` is one row per source. Finding rows are written for `complete` and
-//! `partial`. `incomplete` stores the header gaps and no findings.
-//!
-//! Rust `unreachable_file` is package membership. A source with no membership root records
-//! `no_entry_points` and publishes no file findings.
-
 use anyhow::Result;
 use rusqlite::{params, Connection, OptionalExtension};
 use sha2::{Digest, Sha256};
@@ -36,7 +28,6 @@ pub(crate) struct EntryRow {
     pub(crate) evidence_file_id: i64,
 }
 
-/// Replace the analysis row. Finding rows are written for `complete` and `partial`.
 pub(crate) fn rebuild_analysis(conn: &Connection, source_id: i64) -> Result<()> {
     let files = load_files(conn, source_id)?;
     let entries = load_entries(conn, source_id)?;

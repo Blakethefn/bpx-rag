@@ -2,8 +2,6 @@ use super::super::*;
 use crate::support::{add_source, make_store};
 use tempfile::tempdir;
 
-// ── FTS5 cleanup ────────────────────────────────────────────────────────
-
 #[test]
 fn no_orphaned_chunks_after_file_removal() {
     let store = make_store();
@@ -18,7 +16,6 @@ fn no_orphaned_chunks_after_file_removal() {
     let source = store.get_source("test").unwrap().unwrap();
     sync_source(&store, &source, None).unwrap();
 
-    // No orphaned chunk_meta (meta pointing to deleted files)
     let orphaned: i64 = store
         .conn()
         .query_row(
@@ -31,7 +28,6 @@ fn no_orphaned_chunks_after_file_removal() {
         .unwrap();
     assert_eq!(orphaned, 0, "no orphaned chunk_meta");
 
-    // Chunk count in knowledge_chunks matches chunk_meta count
     let fts_count: i64 = store
         .conn()
         .query_row("SELECT COUNT(*) FROM knowledge_chunks", [], |row| {

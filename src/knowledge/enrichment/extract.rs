@@ -2,13 +2,6 @@ use serde_json::Value;
 use std::collections::HashSet;
 use std::path::Path;
 
-/// Extract YAML frontmatter from markdown content.
-///
-/// Parses the YAML block between `---` delimiters at the start of the file.
-/// Returns a JSON object with the parsed fields, or an empty object if:
-/// - No frontmatter found
-/// - Malformed YAML
-/// - YAML parses to a non-object type
 pub fn extract_frontmatter(content: &str) -> Value {
     let empty = || Value::Object(serde_json::Map::new());
     let trimmed = content.trim_start();
@@ -28,18 +21,14 @@ pub fn extract_frontmatter(content: &str) -> Value {
             }
             match serde_yaml::from_str::<Value>(yaml_str) {
                 Ok(val) if val.is_object() => val,
-                Ok(_) => empty(),  // Non-object YAML (e.g. bare string, list)
-                Err(_) => empty(), // Malformed YAML
+                Ok(_) => empty(),
+                Err(_) => empty(),
             }
         }
-        None => empty(), // No closing ---
+        None => empty(),
     }
 }
 
-/// Extract wikilinks from content.
-///
-/// Finds `[[target]]` and `[[target|alias]]` patterns. Returns a JSON array
-/// of unique link targets (without aliases). Targets are deduplicated.
 pub fn extract_wikilinks(content: &str) -> Value {
     let mut links = Vec::new();
     let mut seen = HashSet::new();
@@ -52,7 +41,6 @@ pub fn extract_wikilinks(content: &str) -> Value {
             let start = i + 2;
             if let Some(end_offset) = content[start..].find("]]") {
                 let link_content = &content[start..start + end_offset];
-                // Extract target (before | if alias exists)
                 let target = link_content
                     .split('|')
                     .next()
@@ -63,7 +51,7 @@ pub fn extract_wikilinks(content: &str) -> Value {
                 }
                 i = start + end_offset + 2;
             } else {
-                i += 2; // No closing ]], skip
+                i += 2;
             }
         } else {
             i += 1;
@@ -73,13 +61,6 @@ pub fn extract_wikilinks(content: &str) -> Value {
     Value::Array(links)
 }
 
-/// Derive folder tags from a file path relative to the source base.
-///
-/// Returns a JSON array of directory path components between the source base
-/// and the file. The filename itself is excluded.
-///
-/// Example: file `/vault/01-projects/bpcontext/specs/foo.md` with base `/vault`
-/// yields `["01-projects", "bpcontext", "specs"]`.
 pub fn extract_folder_tags(file_path: &Path, source_base: &Path) -> Value {
     let rel = match file_path.strip_prefix(source_base) {
         Ok(r) => r,

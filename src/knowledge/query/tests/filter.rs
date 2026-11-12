@@ -1,8 +1,6 @@
 use super::super::*;
 use super::{make_store, seed_chunk};
 
-// ── knowledge_search (with metadata filter) ──────────────────────────────
-
 #[test]
 fn search_with_frontmatter_filter() {
     let store = make_store();
@@ -27,7 +25,6 @@ fn search_with_frontmatter_filter() {
 
     let weights = SearchWeights::default();
 
-    // Filter for type:task — should return only the task
     let results = knowledge_search(
         &store,
         "implementation",

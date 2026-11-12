@@ -137,7 +137,6 @@ fn a_file_reached_only_from_a_test_root_is_not_an_unused_file() {
         "[package]\nname = \"demo\"\nversion = \"0.1.0\"\n",
     )
     .unwrap();
-    // The library root is a membership root elsewhere. It does not declare util.rs.
     fs::write(dir.path().join("src/lib.rs"), "// crate root\n").unwrap();
     fs::write(
         dir.path().join("tests/checks.rs"),

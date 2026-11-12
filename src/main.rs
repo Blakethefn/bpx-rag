@@ -24,7 +24,6 @@ use cli::{Cli, Commands, ModelsAction, WatchAction};
 
 fn main() -> Result<()> {
     let cli = Cli::parse();
-    // `--init` remains the old flag. It writes the config and does not run a command after it.
     if cli.init {
         return config::Config::init_default();
     }

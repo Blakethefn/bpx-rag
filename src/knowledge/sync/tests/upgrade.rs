@@ -5,8 +5,6 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use tempfile::tempdir;
 
-// ── identifier index upgrade ─────────────────────────────────────────────
-
 #[test]
 fn upgrading_the_identifier_index_does_not_reembed_unchanged_files() {
     let mut store = make_store();
@@ -32,7 +30,6 @@ fn upgrading_the_identifier_index_does_not_reembed_unchanged_files() {
     assert_eq!(first.files_added, 2);
     let embed_calls_after_index = calls.load(Ordering::SeqCst);
 
-    // Simulate a database from before the identifier index existed.
     store
         .conn()
         .execute_batch("DELETE FROM knowledge_identifiers; DROP TABLE knowledge_index_meta;")

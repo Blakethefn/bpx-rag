@@ -10,11 +10,8 @@ pub(super) fn file_paths_of_ranked(results: &[RankedResult]) -> Vec<&str> {
         .collect()
 }
 
-// ── identifier layer: selective matching ─────────────────────────────────
-
 #[test]
 fn identifier_layer_ignores_a_single_word_query() {
-    // "user" is one content word, so no identifier match is attempted at all.
     let (store, _dir) = indexed_store(&[("users.ts", GET_USER_BY_ID)]);
 
     let hits = knowledge_identifier_search(store.conn(), "user", 10, "", &[]).unwrap();
@@ -28,8 +25,6 @@ fn identifier_layer_ignores_a_single_word_query() {
 
 #[test]
 fn identifier_layer_does_not_match_chunks_that_share_one_common_word() {
-    // Both helpers contain the word "status" in their identifiers. Only the file with
-    // all of "http", "status", and "code" may match.
     let (store, _dir) = indexed_store(&[
         ("http_server.rs", "pub fn HttpStatusCode() -> u16 { 200 }\n"),
         (
@@ -45,7 +40,6 @@ fn identifier_layer_does_not_match_chunks_that_share_one_common_word() {
 
 #[test]
 fn identifier_layer_needs_two_content_words_not_stopwords() {
-    // "by" and "the" are stopwords, so "by the id" has one content word.
     let (store, _dir) = indexed_store(&[("users.ts", GET_USER_BY_ID)]);
 
     let hits = knowledge_identifier_search(store.conn(), "by the id", 10, "", &[]).unwrap();

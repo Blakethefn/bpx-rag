@@ -6,10 +6,6 @@ use crate::knowledge::identifiers::split_identifier;
 use super::super::rank::RankedResult;
 use super::{lexical_columns, ranked_result_from_row, select_list};
 
-/// Identifier layer: BM25 over the split words of compound identifiers in the
-/// `knowledge_identifiers` table. The query's own identifiers are split the same
-/// way, so `getUserById` also searches for "get user by id". The content layer
-/// is unchanged and still matches the exact identifier.
 pub(in crate::knowledge::query) fn knowledge_identifier_search(
     conn: &Connection,
     query: &str,
@@ -63,21 +59,14 @@ pub(in crate::knowledge::query) fn knowledge_identifier_search(
     Ok(results)
 }
 
-/// Words that never count toward an identifier match. Fixed in the Stage 3 protocol.
 const IDENTIFIER_STOPWORDS: &[&str] = &[
     "a", "an", "and", "are", "as", "at", "be", "by", "for", "from", "how", "if", "in", "into",
     "is", "it", "of", "on", "or", "that", "the", "this", "to", "was", "what", "when", "where",
     "which", "with",
 ];
-/// Only this many query words take part in identifier matching. Later words are ignored.
 const IDENTIFIER_MAX_QUERY_WORDS: usize = 12;
-/// A query needs at least this many content words before the identifier layer runs.
 const IDENTIFIER_MIN_CONTENT_WORDS: usize = 2;
 
-/// The identifier layer's FTS expression. Every content word of the query must appear in
-/// the identifier words of one chunk. Words are split the way indexed identifiers are, so
-/// `getUserById` in a query becomes "get user by id". A single content word matches nothing,
-/// because one common word is too weak to identify a chunk.
 pub(in crate::knowledge::query) fn identifier_match_expression(query: &str) -> String {
     let words: Vec<String> = query
         .split(|c: char| !(c.is_alphanumeric() || c == '_' || c == '-'))

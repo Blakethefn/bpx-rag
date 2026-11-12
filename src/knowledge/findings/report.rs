@@ -1,14 +1,10 @@
-//! Read the analysis row. Finding rows are printed for `complete` and `partial` when they match it.
-
 use anyhow::{anyhow, bail, Result};
 use rusqlite::{params, OptionalExtension};
 
 use crate::knowledge::{KnowledgeSourceInfo, KnowledgeStore};
 
-/// Analysis statuses that include finding lines. `incomplete` stays out.
 const PUBLISHED_STATUSES: &[&str] = &["complete", "partial"];
 
-/// Read the analysis row. Finding lines are included for `complete` and `partial`.
 pub fn report(store: &KnowledgeStore, source: Option<&str>) -> Result<String> {
     let selected = resolve_source(store, source)?;
     let conn = store.conn();

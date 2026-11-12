@@ -1,5 +1,3 @@
-//! Query embedding cache on the search path: reuse, misses, failures, and result parity.
-
 use super::super::*;
 use super::{make_store, seed_chunk};
 use crate::embed::{self, Embed};
@@ -36,7 +34,6 @@ enum Output {
     NonFinite,
 }
 
-/// Counts `embed_one` calls, so tests can tell cache hits from real embeddings.
 struct CountingEmbedder {
     model: &'static str,
     output: Output,
@@ -74,7 +71,6 @@ fn semantic_vector(text: &str) -> Vec<f32> {
     }
 }
 
-/// A store with the corpus indexed under `model`, and the embedder attached.
 fn seeded_store(output: Output, model: &'static str) -> (KnowledgeStore, Arc<AtomicUsize>) {
     let mut store = make_store();
     let calls = Arc::new(AtomicUsize::new(0));
@@ -222,7 +218,6 @@ fn cached_and_uncached_searches_return_identical_results() {
     assert!(cached.query_embedding_cache().stats().hits >= 3);
 }
 
-/// Everything a caller can observe from a search, serialized for comparison.
 fn search_fingerprint(store: &KnowledgeStore, query: &str) -> String {
     let report = search(store, query);
     format!(

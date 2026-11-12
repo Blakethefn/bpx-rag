@@ -12,7 +12,6 @@ use super::fail;
 use super::Engine;
 
 impl Engine {
-    /// Start watching sources newly switched on, and stop watching sources switched off.
     pub(in crate::watch) fn refresh_sources(&mut self) -> Result<()> {
         let wanted = self.store.watched_sources()?;
         let wanted_labels: BTreeSet<String> =
@@ -52,7 +51,6 @@ impl Engine {
         Ok(())
     }
 
-    /// Load the embedder once, before the first reconcile that may need it.
     fn ensure_embedder(&mut self) {
         if let Some(loader) = self.embedder_loader.take() {
             if let Some(embedder) = loader() {
@@ -61,8 +59,6 @@ impl Engine {
         }
     }
 
-    /// Register the `notify` watch, then reconcile. Events that arrive during the reconcile are
-    /// queued, so nothing that changes after the watch starts can be missed.
     fn start_source(&mut self, label: &str) {
         self.ensure_embedder();
         let Some(entry) = self.watched.get_mut(label) else {

@@ -2,8 +2,6 @@ use tree_sitter::Node;
 
 use super::super::{is_literal, node_text};
 
-/// The nearest `#[path = "..."]` on this module. The stored value is the string contents.
-/// An unreadable `path` attribute stores nothing rather than a guessed path.
 pub(super) fn mod_path(node: Node<'_>, content: &str) -> Option<String> {
     let mut sibling = node.prev_named_sibling();
     while let Some(current) = sibling {

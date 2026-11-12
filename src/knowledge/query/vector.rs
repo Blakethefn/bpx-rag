@@ -10,7 +10,6 @@ use rusqlite::Connection;
 #[cfg(test)]
 mod tests;
 
-/// Shared chunk columns with the embedding inserted after rowid.
 fn vector_columns(chunk: &str) -> Vec<BoundColumn> {
     let mut columns = chunk_columns(chunk);
     let rowid_at = column_at(&columns, Selected::Chunk(ChunkColumn::Rowid));
@@ -24,7 +23,6 @@ fn vector_columns(chunk: &str) -> Vec<BoundColumn> {
     columns
 }
 
-/// Vector similarity search over knowledge embeddings.
 pub(super) fn knowledge_vector_search(
     conn: &Connection,
     query_embedding: &[f32],
@@ -39,7 +37,6 @@ pub(super) fn knowledge_vector_search(
     }
     let mut params: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
 
-    // Metadata filter params
     for p in meta_params {
         params.push(Box::new(p.clone()));
     }
@@ -114,10 +111,6 @@ pub(super) fn knowledge_vector_search(
         .collect())
 }
 
-// ── Helpers ──────────────────────────────────────────────────────────────────
-
-/// Decode a stored embedding, rejecting a blob that is not `dimensions` f32 values.
-/// A short blob would otherwise be truncated and scored against a partial vector.
 fn decode_stored_embedding(chunk_rowid: i64, blob: &[u8], dimensions: usize) -> Result<Vec<f32>> {
     if blob.len() != dimensions * 4 {
         anyhow::bail!(
@@ -133,7 +126,6 @@ fn decode_stored_embedding(chunk_rowid: i64, blob: &[u8], dimensions: usize) -> 
     Ok(embedding)
 }
 
-/// Dot product for cosine similarity (vectors are L2-normalized at index time).
 pub(super) fn dot_product(a: &[f32], b: &[f32]) -> f32 {
     a.iter().zip(b.iter()).map(|(x, y)| x * y).sum()
 }

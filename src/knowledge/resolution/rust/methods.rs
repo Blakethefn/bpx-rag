@@ -10,8 +10,6 @@ pub(super) fn unique_type(
     from: i64,
     path: &str,
 ) -> Option<i64> {
-    // A single segment is a name in this module, including a `use` binding. A longer path walks
-    // modules. `find_path` treats a lone segment that is not a child module as external.
     let ids = if path.contains("::") || path.starts_with("::") {
         if path.starts_with("::") {
             return None;
@@ -68,8 +66,6 @@ pub(super) fn methods_of(
         .collect()
 }
 
-/// The impl container must name this type from the method's own file, not another type with the
-/// same identifier.
 pub(super) fn container_names_type(
     tree: &Tree,
     bindings: &HashMap<i64, HashMap<String, Vec<Vec<i64>>>>,

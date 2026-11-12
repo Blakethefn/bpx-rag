@@ -24,11 +24,9 @@ pub(crate) use events::{RegisterProbe, REGISTER_PROBE};
 
 type Event = (String, notify::Result<notify::Event>);
 
-/// One source under watch in this process.
 pub(in crate::watch) struct Watched {
     source: KnowledgeSourceInfo,
     root: PathBuf,
-    /// `None` until the `notify` watch is registered. Registration failure is an error state.
     pub(in crate::watch) registration: Option<RecommendedWatcher>,
     pub(in crate::watch) state: SourceState,
     pub(in crate::watch) reconciled_at: Option<i64>,
@@ -112,12 +110,10 @@ impl Engine {
                 })
                 .collect(),
         };
-        // A status write that fails must not stop watching. The next status write retries it.
         let _ = write_atomically(&status_path(&self.db_path), &status);
     }
 }
 
-/// Record a failure and schedule the next attempt with doubling backoff, capped at `retry_max`.
 fn fail(entry: &mut Watched, message: String, options: &WatchOptions) {
     entry.state = SourceState::Error;
     entry.last_error = Some(message);
@@ -126,7 +122,6 @@ fn fail(entry: &mut Watched, message: String, options: &WatchOptions) {
     entry.backoff = (entry.backoff * 2).min(options.retry_max);
 }
 
-/// Write to a temporary file, then rename it over the target, so readers never see a partial file.
 fn write_atomically(path: &Path, status: &WatchStatus) -> Result<()> {
     let temporary = sibling(path, ".tmp");
     let bytes = serde_json::to_vec(status)?;

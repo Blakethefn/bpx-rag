@@ -17,13 +17,9 @@ pub enum SearchProfile {
 struct ProfileWire {
     profile: SearchProfile,
     name: &'static str,
-    /// Accepted by `parse` and listed on the MCP `profile` enum.
-    /// `default` is only emitted by `as_str`.
     input: bool,
 }
 
-/// Wire names for search profiles. `parse`, `as_str`, the parse error, and the MCP schema
-/// enum all read this table.
 const PROFILE_WIRES: &[ProfileWire] = &[
     ProfileWire {
         profile: SearchProfile::Default,
@@ -77,7 +73,6 @@ impl SearchProfile {
             .expect("every search profile has one wire name")
     }
 
-    /// Profile tokens the MCP schema advertises. `default` is not an input.
     pub(crate) fn input_names() -> Vec<&'static str> {
         PROFILE_WIRES
             .iter()

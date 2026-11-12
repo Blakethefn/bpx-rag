@@ -30,7 +30,6 @@ fn startup_reconcile_applies_add_modify_rename_and_delete_made_while_stopped() {
     assert!(wait_for(Duration::from_secs(10), || watching(&fixture.db)));
     assert_eq!(stop_and_join(stop, handle), RunOutcome::Stopped);
 
-    // Changes made while no watcher runs.
     fs::write(
         fixture.source_dir.join("a.rs"),
         "pub fn alpha_v2() -> u8 { 1 }\n",
@@ -137,7 +136,6 @@ fn concurrent_manual_and_watched_sync_keep_the_database_consistent() {
             format!("pub fn round_{round:02}() -> u8 {{ {round} }}\n"),
         )
         .unwrap();
-        // A manual sync takes the same writer lock the watcher takes.
         let _writer = FileLock::acquire(&writer_lock_path(&fixture.db)).unwrap();
         let store = KnowledgeStore::open_at(&fixture.db).unwrap();
         let source = store.get_source("test").unwrap().unwrap();

@@ -7,8 +7,6 @@ const WEIGHTS: SearchWeights = SearchWeights {
     vector_weight: 0.0,
 };
 
-/// File `a.md` has four matching chunks, `b.md` has two, and `c.md` has one.
-/// The repeat counts of "retry" give a fixed BM25 order that does not depend on row order.
 fn seed_corpus() -> KnowledgeStore {
     let store = make_store();
     let chunks = [
@@ -46,9 +44,6 @@ fn default_output_matches_recorded_pre_stage_9_order() {
     let store = seed_corpus();
     let report = knowledge_search_report(&store, "retry", None, None, 4, &WEIGHTS, 1_000).unwrap();
 
-    // Recorded from the HEAD 1e85bda implementation before Stage 9 changed any code.
-    // One passage per file comes first in score order (A1, C1, B1). The remaining slot
-    // is filled with the best overflow passage, A2.
     assert_eq!(
         placements(&report),
         pairs(&[
@@ -72,7 +67,6 @@ fn default_output_fills_from_one_file_when_it_is_the_only_file() {
     }
     let report = knowledge_search_report(&store, "retry", None, None, 3, &WEIGHTS, 1_000).unwrap();
 
-    // Recorded from HEAD 1e85bda: a one-file corpus still returns the requested count.
     assert_eq!(
         placements(&report),
         pairs(&[("only.md", "A1"), ("only.md", "A2"), ("only.md", "A3")]),
@@ -125,7 +119,6 @@ fn max_per_file_two_takes_a_second_passage_from_the_top_file() {
     let report =
         knowledge_search_report_with_policy(&store, "retry", scope, 4, &WEIGHTS, 1_000).unwrap();
 
-    // Score order is A1, C1, A2, B1, A3, B2, A4. A2 is kept as the second passage from a.md.
     assert_eq!(
         placements(&report),
         pairs(&[

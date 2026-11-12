@@ -1,11 +1,3 @@
-//! Stage 8 latency measurements that compile against both HEAD and the cache branch.
-//!
-//! Ignored by default. Set `BPX_BENCH_MODEL_DIR` to the jina model directory and run:
-//! `cargo test --release --bin bpx-rag bench::latency -- --ignored --nocapture`
-//!
-//! The corpus is synthetic: deterministic chunk text and random unit vectors. Only time and
-//! bytes are measured, not ranking quality.
-
 use super::super::tests::seed_chunk;
 use super::super::vector::knowledge_vector_search;
 use super::super::*;
@@ -20,7 +12,6 @@ use std::time::Instant;
 pub(super) const MODEL_ID: &str = "jinaai/jina-embeddings-v2-base-code";
 const DIM: usize = 768;
 
-/// The fixed query set for every Stage 8 measurement. Do not change it after measuring.
 pub(super) const QUERIES: [&str; 40] = [
     "where is the watch debounce window configured",
     "how does sync decide which files changed",
@@ -64,7 +55,6 @@ pub(super) const QUERIES: [&str; 40] = [
     "eval harness repetitions and compare script",
 ];
 
-/// SplitMix64 step. Deterministic, so every run sees the same corpus.
 fn splitmix(state: &mut u64) -> u64 {
     *state = state.wrapping_add(0x9E37_79B9_7F4A_7C15);
     let mut z = *state;
@@ -73,7 +63,6 @@ fn splitmix(state: &mut u64) -> u64 {
     z ^ (z >> 31)
 }
 
-/// A deterministic unit vector of `DIM` dimensions.
 pub(super) fn unit_vector(seed: u64) -> Vec<f32> {
     let mut state = seed;
     let raw: Vec<f32> = (0..DIM)
@@ -86,7 +75,6 @@ pub(super) fn unit_vector(seed: u64) -> Vec<f32> {
     raw.iter().map(|value| value / norm).collect()
 }
 
-/// Index `chunks` synthetic chunks, each with a stored embedding for `MODEL_ID`.
 pub(super) fn synthetic_corpus(store: &KnowledgeStore, chunks: usize) {
     for index in 0..chunks {
         let rel_path = format!("src/chunk_{index}.rs");
@@ -109,7 +97,6 @@ pub(super) fn synthetic_corpus(store: &KnowledgeStore, chunks: usize) {
     }
 }
 
-/// A store with `chunks` synthetic chunks and `embedder` attached.
 pub(super) fn store_with_corpus(chunks: usize, embedder: Arc<dyn Embed>) -> KnowledgeStore {
     let mut store = make_store();
     store.set_embedder(embedder);
@@ -117,7 +104,6 @@ pub(super) fn store_with_corpus(chunks: usize, embedder: Arc<dyn Embed>) -> Know
     store
 }
 
-/// The real jina embedder on CPU. Loads only a complete local cache entry.
 pub(super) fn load_jina() -> Arc<dyn Embed> {
     let model_dir = std::env::var_os("BPX_BENCH_MODEL_DIR")
         .expect("set BPX_BENCH_MODEL_DIR to the jina model directory");
@@ -135,7 +121,6 @@ pub(super) fn load_jina() -> Arc<dyn Embed> {
     Arc::new(embedder)
 }
 
-/// Milliseconds for `runs` timed calls after `warmup` untimed calls.
 pub(super) fn time_runs(warmup: usize, runs: usize, mut run: impl FnMut()) -> Vec<f64> {
     for _ in 0..warmup {
         run();
@@ -149,7 +134,6 @@ pub(super) fn time_runs(warmup: usize, runs: usize, mut run: impl FnMut()) -> Ve
         .collect()
 }
 
-/// Nearest-rank percentile over unsorted samples.
 pub(super) fn percentile(samples: &[f64], fraction: f64) -> f64 {
     let mut sorted = samples.to_vec();
     sorted.sort_by(|left, right| left.partial_cmp(right).unwrap_or(std::cmp::Ordering::Equal));
@@ -205,7 +189,6 @@ fn search_latency_first_pass_at_4k() {
     let embedder = load_jina();
     let mut samples = Vec::new();
     for _ in 0..5 {
-        // A fresh store per pass, so every query is a first-time query for this tree.
         let store = store_with_corpus(4_000, Arc::clone(&embedder));
         for query in QUERIES {
             let start = Instant::now();

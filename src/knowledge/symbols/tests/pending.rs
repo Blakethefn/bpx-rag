@@ -39,10 +39,6 @@ fn default_search_does_not_read_the_symbol_index() {
 
 #[test]
 fn database_with_current_symbol_rows_reports_them_pending_after_upgrade_until_sync() {
-    // A database written by the build before `symbols_hash` existed has symbol rows at
-    // `symbol_version = 1` and no hash column. Opening it with this version adds the column
-    // as NULL, because the migration cannot prove the rows still match the content. Lookup
-    // therefore reports the source as pending, and one sync restores it without re-chunking.
     let dir = tempdir().unwrap();
     let source_dir = dir.path().join("tree");
     fs::create_dir_all(&source_dir).unwrap();

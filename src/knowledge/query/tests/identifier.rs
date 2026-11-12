@@ -4,10 +4,6 @@ use super::fuzzy::bm25_hits;
 use super::make_store;
 use super::rules::file_paths_of_ranked;
 
-// ── identifier layer ─────────────────────────────────────────────────────
-
-/// Index `files` through the real sync path, so tests see the same rows that
-/// indexing writes. The source is labelled `code`.
 pub(super) fn indexed_store(files: &[(&str, &str)]) -> (KnowledgeStore, tempfile::TempDir) {
     let store = make_store();
     let dir = tempfile::tempdir().unwrap();
@@ -43,8 +39,6 @@ fn identifier_layer_matches_a_natural_language_query_to_a_camel_case_identifier(
 
 #[test]
 fn search_finds_a_camel_case_identifier_from_split_words_when_no_other_layer_matches() {
-    // Nothing in this chunk tokenizes to "get", "user", "by", or "id", so only
-    // the identifier layer can match the query.
     let (store, _dir) = indexed_store(&[(
         "users.ts",
         "export function getUserById(lookup) { return cache.fetch(lookup); }\n",
@@ -129,8 +123,6 @@ fn reindexing_a_file_removes_the_identifier_words_of_its_old_content() {
     let source = store.get_source("code").unwrap().unwrap();
     crate::knowledge::sync::sync_source(&store, &source, None).unwrap();
 
-    // Query terms are OR-combined, so a search cannot prove a row is gone. Check
-    // the rows directly: only the new chunk's words may remain.
     let mut stmt = store
         .conn()
         .prepare("SELECT words FROM knowledge_identifiers")
@@ -149,8 +141,6 @@ fn reindexing_a_file_removes_the_identifier_words_of_its_old_content() {
 
 #[test]
 fn snake_and_kebab_query_terms_match_their_indexed_word_tokens() {
-    // Characterization of D12: `sanitize_fts_terms` keeps `_` and `-`, and the
-    // quoted phrase must match the tokens that unicode61 makes from them.
     let (store, _dir) = indexed_store(&[
         ("retry.py", "def get_user(identifier):\n    return None\n"),
         (

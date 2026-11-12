@@ -36,8 +36,6 @@ impl RagApp {
             &patterns,
             enrichments,
         )?;
-        // Registration and the first sync succeed or fail together. A source left registered
-        // with no content would also refuse a retry under the same label.
         match self.register_and_sync(label) {
             Ok(result) => Ok(format_sync_result(&result)),
             Err(error) => {
@@ -51,7 +49,6 @@ impl RagApp {
         }
     }
 
-    /// The first sync of a source that was just registered.
     fn register_and_sync(&self, label: &str) -> Result<knowledge::sync::SyncResult> {
         let source = self
             .knowledge

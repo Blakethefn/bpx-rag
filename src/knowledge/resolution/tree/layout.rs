@@ -1,10 +1,6 @@
 use super::super::paths::is_directory_module_stem;
 
 impl super::Tree {
-    /// The parent path would still name this child after the parent's `mod` edges are gone.
-    ///
-    /// `lib.rs`, `main.rs`, and `mod.rs` name the direct module files beside them.
-    /// Any other Rust file names the tree under its module directory.
     pub(crate) fn path_declares_child(&self, parent_id: i64, child_id: i64) -> bool {
         if parent_id == child_id {
             return false;
@@ -29,8 +25,6 @@ impl super::Tree {
     }
 }
 
-/// `lib.rs`, `main.rs`, and `mod.rs` keep children beside the file. Every other module keeps
-/// them in a directory named after the file stem.
 pub(super) fn module_base(rel_path: &str) -> String {
     let stem = file_stem(rel_path);
     let parent = parent_dir(rel_path);
@@ -41,8 +35,6 @@ pub(super) fn module_base(rel_path: &str) -> String {
     }
 }
 
-/// `{base}/{name}.rs` or `{base}/{name}/mod.rs`. `mod.rs` beside the parent is the parent
-/// directory's own file, not one of its child modules.
 fn direct_module_file(base: &str, child_rel: &str) -> bool {
     let Some(rest) = strip_base(base, child_rel) else {
         return false;

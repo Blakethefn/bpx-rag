@@ -5,11 +5,9 @@ use std::io::Cursor;
 fn test_newline_delimited_roundtrip() {
     let message = r#"{"jsonrpc":"2.0","id":1,"method":"test"}"#;
 
-    // Write (newline-delimited)
     let mut buf = Vec::new();
     write_message(&mut buf, message).unwrap();
 
-    // Read back
     let mut reader = BufReader::new(Cursor::new(buf));
     let result = read_message(&mut reader).unwrap().unwrap();
     assert_eq!(result, message);

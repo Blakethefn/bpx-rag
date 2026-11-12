@@ -35,8 +35,6 @@ fn related_columns_are_file_path_title_content_and_lines() {
     );
 }
 
-/// Distinct values on every column, in both directions, including missing line
-/// numbers. A select list that drifts from `related_from_row` fails here.
 #[test]
 fn related_chunks_keep_column_positions_on_both_directions() {
     let store = open_in_memory().unwrap();

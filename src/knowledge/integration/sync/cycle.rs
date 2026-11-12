@@ -9,7 +9,6 @@ fn full_sync_crud_cycle() {
     let store = super::super::make_store();
     let dir = tempdir().unwrap();
 
-    // Create 10 files
     for i in 0..10 {
         std::fs::write(
             dir.path().join(format!("note{i}.md")),
@@ -18,7 +17,6 @@ fn full_sync_crud_cycle() {
         .unwrap();
     }
 
-    // Register and initial sync
     let enrichments = vec!["frontmatter".to_string()];
     store
         .add_source("vault", dir.path().to_str().unwrap(), &[], &enrichments)
@@ -34,13 +32,11 @@ fn full_sync_crud_cycle() {
     assert_eq!(r1.files_unchanged, 0);
     assert!(r1.chunks_total > 0);
 
-    // Verify source stats updated
     let source = store.get_source("vault").unwrap().unwrap();
     assert_eq!(source.file_count, 10);
     assert!(source.chunk_count > 0);
     assert!(source.last_sync.is_some());
 
-    // Modify 2, delete 1, add 1
     std::fs::write(
         dir.path().join("note0.md"),
         "---\ntype: note\nindex: 0\n---\n# Note 0\n\nModified content for note zero.",
@@ -65,11 +61,9 @@ fn full_sync_crud_cycle() {
     assert_eq!(r2.files_removed, 1);
     assert_eq!(r2.files_unchanged, 7);
 
-    // Verify file count: 10 - 1 + 1 = 10
     let source = store.get_source("vault").unwrap().unwrap();
     assert_eq!(source.file_count, 10);
 
-    // Verify modified content is present in chunks
     let chunks: Vec<String> = {
         let mut stmt = store
             .conn()
@@ -95,16 +89,11 @@ fn full_sync_crud_cycle() {
     );
 }
 
-// ── Test Anchor 2: Frontmatter extraction + filtered search ────────────
-// "Index file with YAML frontmatter. Search with filter type:task → match.
-//  Search type:project → no match. Search tag:foo → match."
-
 #[test]
 fn sync_after_new_file_is_searchable() {
     let store = super::super::make_store();
     let dir = tempdir().unwrap();
 
-    // Initial file
     std::fs::write(
         dir.path().join("existing.md"),
         "# Existing\n\nOriginal content about authentication.",
@@ -117,7 +106,6 @@ fn sync_after_new_file_is_searchable() {
     let source = store.get_source("docs").unwrap().unwrap();
     sync::sync_source(&store, &source, None).unwrap();
 
-    // Write a new file (simulating Write tool)
     let new_path = dir.path().join("new-feature.md");
     std::fs::write(
         &new_path,
@@ -125,11 +113,9 @@ fn sync_after_new_file_is_searchable() {
     )
     .unwrap();
 
-    // Sync after a single file changes
     let source = store.get_source("docs").unwrap().unwrap();
     sync::sync_source(&store, &source, None).unwrap();
 
-    // Search should find the new content immediately
     let weights = SearchWeights::default();
     let results = query::knowledge_search(
         &store,
@@ -147,9 +133,6 @@ fn sync_after_new_file_is_searchable() {
     );
     assert!(results[0].snippet.contains("xylophone"));
 }
-
-// ── Test Anchor 7: Re-sync after an edit updates search results ───────────
-// "Edit existing indexed file. Reindex. New content appears, old gone."
 
 #[test]
 fn sync_after_edit_updates_content() {
@@ -169,13 +152,11 @@ fn sync_after_edit_updates_content() {
     let source = store.get_source("docs").unwrap().unwrap();
     sync::sync_source(&store, &source, None).unwrap();
 
-    // Verify original content is searchable
     let weights = SearchWeights::default();
     let results =
         query::knowledge_search(&store, "quasar protocol", None, None, 10, &weights, 2000).unwrap();
     assert!(!results.is_empty(), "original content should be searchable");
 
-    // Edit the file (simulating Edit tool)
     std::fs::write(
         &file_path,
         "# Beta Version\n\nReplacement nebula framework with improved throughput.",
@@ -185,7 +166,6 @@ fn sync_after_edit_updates_content() {
     let source = store.get_source("docs").unwrap().unwrap();
     sync::sync_source(&store, &source, None).unwrap();
 
-    // New content is searchable
     let results =
         query::knowledge_search(&store, "nebula framework", None, None, 10, &weights, 2000)
             .unwrap();
@@ -194,13 +174,10 @@ fn sync_after_edit_updates_content() {
         "updated content should be searchable after sync"
     );
 
-    // Old content is no longer present
     let results =
         query::knowledge_search(&store, "quasar protocol", None, None, 10, &weights, 2000).unwrap();
     assert!(results.is_empty(), "old content should be gone after sync");
 }
-
-// ── Boundary: source path no longer exists ─────────────────────────────
 
 #[test]
 fn sync_nonexistent_source_path_errors_gracefully() {
@@ -211,10 +188,8 @@ fn sync_nonexistent_source_path_errors_gracefully() {
     store.add_source("temp", &path_str, &[], &[]).unwrap();
     let source = store.get_source("temp").unwrap().unwrap();
 
-    // Remove the directory
     drop(dir);
 
-    // Sync should error but not panic
     let result = sync::sync_source(&store, &source, None);
     assert!(
         result.is_err(),

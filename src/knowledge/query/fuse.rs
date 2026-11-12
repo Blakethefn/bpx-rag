@@ -21,11 +21,6 @@ use super::{
     KnowledgeSearchResult, SearchReport, SearchScope, SearchWeights, IDENTIFIER_LAYER_WEIGHT,
 };
 
-/// Run the layered search with an explicit chunk candidate pool.
-///
-/// The pool size gates the lexical layers, so the requested output `limit`
-/// must not change it. Callers that want a deeper ranking than the default
-/// use the same pool as a shallower search, which keeps the top ranks equal.
 pub(crate) fn search_with_pool(
     store: &KnowledgeStore,
     query: &str,
@@ -43,7 +38,6 @@ pub(crate) fn search_with_pool(
     } = scope;
     let conn = store.conn();
 
-    // Parse metadata filters
     let mut predicates = parse_filter(filter)?;
     if let Some(label) = source_label {
         predicates.push(FilterPredicate::Source(label.to_string()));
@@ -56,13 +50,10 @@ pub(crate) fn search_with_pool(
     let pool_limit = candidate_limit as usize;
 
     if weights.keyword_weight > 0.0 {
-        // Layer 1: FTS5 BM25. Always runs.
         let bm25 = knowledge_bm25_search(conn, query, candidate_limit, &meta_where, &meta_params)?;
         merge_results(&mut all_results, &bm25, weights.keyword_weight, BM25);
         layers.push(LayerReport::ran(BM25.name, bm25.len()));
 
-        // Layer 2: trigram. It searches a wider chunk candidate pool before the final
-        // result limit is chosen. File diversity is applied after chunk-level RRF.
         match trigram_skip(policy, query, bm25.len(), pool_limit) {
             Some(reason) => layers.push(LayerReport::skipped(TRIGRAM.name, reason)),
             None => {
@@ -78,7 +69,6 @@ pub(crate) fn search_with_pool(
             }
         }
 
-        // Layer 3: fuzzy. The gate reads the pool the policy names.
         match fuzzy_skip(policy, bm25.len(), all_results.len(), pool_limit) {
             Some(reason) => layers.push(LayerReport::skipped(FUZZY.name, reason)),
             None => {
@@ -101,7 +91,6 @@ pub(crate) fn search_with_pool(
             }
         }
 
-        // Identifier words. This runs after the gates, and no gate counts its results.
         if identifier_match_expression(query).is_empty() {
             layers.push(LayerReport::skipped(
                 IDENTIFIER.name,
@@ -131,7 +120,6 @@ pub(crate) fn search_with_pool(
 
     let mut warnings = Vec::new();
 
-    // Layer 4: vector similarity. Runs whenever an embedder is attached.
     if weights.vector_weight <= 0.0 {
         layers.push(LayerReport::skipped(VECTOR.name, SkipReason::Disabled));
     } else if let Some(emb) = store.embedder() {
@@ -150,8 +138,6 @@ pub(crate) fn search_with_pool(
                     &meta_where,
                     &meta_params,
                     emb.model_id(),
-                    // ANN IDs come from the active model's full vector space, not
-                    // lexical hits. SQL rechecks model, metadata, and exact scores.
                     candidates.as_deref(),
                 )?;
                 merge_results(&mut all_results, &vector, weights.vector_weight, VECTOR);
@@ -168,7 +154,6 @@ pub(crate) fn search_with_pool(
         layers.push(LayerReport::skipped(VECTOR.name, SkipReason::NoEmbedder));
     }
 
-    // Sort by RRF score, then by chunk rowid, so ties do not depend on hash order.
     let mut entries: Vec<(i64, ScoredResult)> = all_results.into_iter().collect();
     entries.sort_by(|(left_id, left), (right_id, right)| {
         right
@@ -188,8 +173,6 @@ pub(crate) fn search_with_pool(
     })
 }
 
-/// The normalized query embedding. A vector is reused only when the same model already embedded
-/// this exact query. Only a vector that passed normalization is cached, so failures are retried.
 fn cached_query_embedding(
     store: &KnowledgeStore,
     embedder: &dyn embed::Embed,

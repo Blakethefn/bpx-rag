@@ -20,20 +20,13 @@ impl EmbeddingDevice {
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(default)]
 pub struct EmbeddingsConfig {
-    /// Model alias: all-MiniLM-L6-v2 or jina-embeddings-v2-base-code.
     pub model: String,
-    /// Directory for storing downloaded models
     pub model_dir: String,
-    /// Batch size for embedding generation (default 16)
     pub batch_size: usize,
-    /// ONNX Runtime intra-op CPU threads (default: available logical CPUs).
     #[serde(default = "default_embedding_threads")]
     pub intra_threads: usize,
-    /// Inference provider. CUDA requires a `gpu-cuda` build and compatible runtime libraries.
     pub device: EmbeddingDevice,
-    /// Enable/disable embedding generation (default true)
     pub enabled: bool,
-    /// Query embeddings kept in memory for repeated searches. 0 disables the cache (default 256).
     #[serde(default = "default_query_cache_entries")]
     pub query_cache_entries: usize,
 }

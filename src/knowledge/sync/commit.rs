@@ -14,8 +14,6 @@ use super::index::{
     resolve_wikilinks_for_source, FileEvidence,
 };
 
-/// Apply the plan inside one `BEGIN IMMEDIATE` transaction. Returns the links created and the
-/// transaction time in milliseconds.
 pub(super) fn commit_plan(
     conn: &rusqlite::Connection,
     source: &KnowledgeSourceInfo,
@@ -29,13 +27,10 @@ pub(super) fn commit_plan(
     conn.execute_batch("BEGIN IMMEDIATE")?;
 
     let inner = (|| -> Result<usize> {
-        // Another process may have synced/reindexed this source while model
-        // inference ran. Refuse to apply work based on a stale file-row map.
         if &load_db_files(conn, source.id)? != db_files {
             anyhow::bail!("knowledge source changed during sync preparation; retry sync");
         }
 
-        // 4a. Remove deleted files
         for file_id in &plan.to_remove {
             delete_file_chunks(conn, *file_id)?;
             conn.execute(
@@ -44,9 +39,6 @@ pub(super) fn commit_plan(
             )?;
         }
 
-        // 4b. Backfill symbols, references, and entries for unchanged files. Chunks,
-        // hashes, and vectors are not touched. The content hash is already current, so the
-        // stamp records that same hash.
         for file in &plan.backfill {
             replace_file_evidence(
                 conn,
@@ -68,7 +60,6 @@ pub(super) fn commit_plan(
             )?;
         }
 
-        // 4c. Replace changed files and add new files using prepared vectors.
         for file in prepared_files {
             let file_id = match file.file_id {
                 Some(file_id) => {
@@ -87,7 +78,6 @@ pub(super) fn commit_plan(
             index_prepared_file(conn, source.id, file_id, file, model_id)?;
         }
 
-        // 4d. Update source stats
         conn.execute(
             "UPDATE knowledge_sources SET
                 last_sync = datetime('now'),
@@ -97,13 +87,8 @@ pub(super) fn commit_plan(
             params![source.id],
         )?;
 
-        // 4d-2. Index identifier words for chunks that older writers queued. Current writers
-        // handle their own chunks, so this only does work for legacy inserts.
         crate::knowledge::identifiers::index_pending(conn)?;
 
-        // 4e. Resolve wikilinks and code relations to graph edges. Code edges
-        // depend on the whole indexed set, so they are rebuilt only when this
-        // sync changed something or the source has none yet.
         let lc = resolve_wikilinks_for_source(conn, source.id)?;
         let has_code_edges: bool = conn.query_row(
             "SELECT EXISTS(SELECT 1 FROM knowledge_links kl
@@ -117,16 +102,10 @@ pub(super) fn commit_plan(
             resolve_code_edges(conn, source.id, &root)?;
         }
 
-        // Findings are derived from stored evidence. The `changed` flag is the wrong gate:
-        // a symbol or reference backfill rewrites evidence while that flag stays false.
-        // A missing or outdated analysis row is rebuilt inside `rebuild_source` even when
-        // this flag is false.
         let structural = !plan.to_add.is_empty()
             || !plan.to_update.is_empty()
             || !plan.to_remove.is_empty()
             || !plan.backfill.is_empty();
-        // Implicit Cargo roots follow the indexed paths, including a file this sync just added.
-        // Cargo.toml itself is not re-chunked when only that file changed.
         if structural {
             crate::knowledge::entries::refresh_implicit(conn, source.id, Path::new(&source.path))?;
         }

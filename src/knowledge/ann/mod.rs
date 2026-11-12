@@ -1,8 +1,3 @@
-//! Rebuildable USearch HNSW sidecar for large active-model vector sets.
-//!
-//! SQLite remains the source of truth. This index is a derived candidate
-//! generator; every returned row ID is rechecked and exactly re-ranked in SQL.
-
 #[cfg(test)]
 use crate::embed;
 
@@ -145,8 +140,6 @@ impl VectorIndex {
             return Ok(Some(candidates));
         }
         match allowed {
-            // Let SQL do an exact filtered scan. Expanding a large
-            // allowlist into an IN clause can exceed SQLite's bind limit.
             Some(_) => Ok(None),
             None => Ok(Some(candidates)),
         }

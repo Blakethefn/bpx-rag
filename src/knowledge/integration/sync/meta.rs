@@ -3,9 +3,6 @@ use crate::knowledge::{enrichment, query, sync};
 use std::path::Path;
 use tempfile::tempdir;
 
-// ── Test Anchor 4: Empty knowledge graceful handling ───────────────────
-// "With no sources registered, search returns empty, not error."
-
 #[test]
 fn sync_with_enrichments_updates_metadata() {
     let store = super::super::make_store();
@@ -29,7 +26,6 @@ fn sync_with_enrichments_updates_metadata() {
         .map(|f| f.as_ref() as &dyn Fn(&str, &Path) -> serde_json::Value);
     sync::sync_source(&store, &source, enrich_ref).unwrap();
 
-    // Verify initial state: searchable with type:task
     let weights = SearchWeights::default();
     let results = query::knowledge_search(
         &store,
@@ -43,7 +39,6 @@ fn sync_with_enrichments_updates_metadata() {
     .unwrap();
     assert_eq!(results.len(), 1);
 
-    // Change the type from task → spec
     std::fs::write(
         &file_path,
         "---\ntype: spec\nstatus: done\n---\n# Spec\n\nCompleted quantum simulator specification.",
@@ -53,7 +48,6 @@ fn sync_with_enrichments_updates_metadata() {
     let source = store.get_source("vault").unwrap().unwrap();
     sync::sync_source(&store, &source, enrich_ref).unwrap();
 
-    // Old filter should no longer match
     let results = query::knowledge_search(
         &store,
         "quantum simulator",
@@ -69,7 +63,6 @@ fn sync_with_enrichments_updates_metadata() {
         "type:task should no longer match after status change"
     );
 
-    // New filter should match
     let results = query::knowledge_search(
         &store,
         "quantum simulator",

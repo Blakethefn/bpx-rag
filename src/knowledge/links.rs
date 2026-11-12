@@ -1,17 +1,12 @@
-//! File and chunk relationships: wikilink and frontmatter edges between sources.
-
 use anyhow::Result;
 use rusqlite::params;
 
 use super::{filter, KnowledgeStore, RelatedChunk};
 
-/// Top hits that keep their rank when linked files are merged in.
 pub const RELATION_KEEP_TOP: usize = 5;
 
-/// Most linked files added from the top hit's relations.
 pub const RELATION_NEIGHBOR_LIMIT: usize = 2;
 
-/// Columns of a related chunk. `related_from_row` reads them in this order.
 const RELATED_COLUMNS: &[&str] = &[
     "kcm.file_id",
     "kf.rel_path",
@@ -21,7 +16,6 @@ const RELATED_COLUMNS: &[&str] = &[
     "COALESCE(kcm.line_end, 0)",
 ];
 
-/// Read one related chunk. Positions follow `RELATED_COLUMNS`.
 fn related_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<RelatedChunk> {
     Ok(RelatedChunk {
         file_id: row.get(0)?,
@@ -34,21 +28,12 @@ fn related_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<RelatedChunk> {
 }
 
 impl KnowledgeStore {
-    /// Get chunks from files linked to the given chunk's file.
-    ///
-    /// Finds the file for `chunk_rowid`, traverses graph edges in the given
-    /// direction, and returns chunks from linked files.
-    /// Chunks from files that link to, or are linked from, `file_id`.
-    ///
-    /// When `filter_predicates` is provided, only chunks whose metadata matches
-    /// all predicates are returned. Predicates are ANDed.
     pub fn get_related_chunks(
         &self,
         file_id: i64,
         max_results: usize,
         filter_predicates: Option<&[filter::FilterPredicate]>,
     ) -> Result<Vec<RelatedChunk>> {
-        // ?1 is file_id, so filter params start at ?2; LIMIT follows them.
         let (filter_sql, filter_params) = match filter_predicates {
             Some(preds) if !preds.is_empty() => {
                 let (clause, params) = filter::predicates_to_sql(preds, 1);
@@ -104,7 +89,6 @@ impl KnowledgeStore {
         Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
     }
 
-    /// Distinct files linked to or from `file_id`, sorted by path.
     pub fn related_files(&self, file_id: i64, limit: usize) -> Result<Vec<String>> {
         let mut stmt = self.conn.prepare(
             "SELECT DISTINCT kf.rel_path
@@ -125,12 +109,6 @@ impl KnowledgeStore {
     }
 }
 
-/// Place `neighbors` after the first `keep_top` ranked items, then the rest of
-/// the ranking, without duplicates and capped at `limit`.
-///
-/// The top hits keep their order. Linked items fill the next slots, so a
-/// relation can surface a file the ranking missed without displacing the best
-/// matches. `key` identifies duplicates, such as a file path.
 pub fn merge_neighbors<T, K: PartialEq>(
     ranked: Vec<T>,
     neighbors: Vec<T>,

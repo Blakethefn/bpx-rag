@@ -17,7 +17,3 @@ fn link_count(store: &KnowledgeStore, source_id: i64) -> i64 {
         )
         .unwrap()
 }
-
-// ── Test Anchor 1: Incremental sync correctness ────────────────────────
-// "Create temp dir with 10 files. Sync. Modify 2, delete 1, add 1.
-//  Sync. Verify counts and content."

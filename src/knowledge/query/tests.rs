@@ -18,7 +18,6 @@ mod vocab;
 use crate::support::make_store;
 use rusqlite::params;
 
-/// Insert a source + file + chunk with metadata for testing search.
 pub(super) fn seed_chunk(
     store: &KnowledgeStore,
     source_label: &str,
@@ -30,7 +29,6 @@ pub(super) fn seed_chunk(
 ) -> i64 {
     let conn = store.conn();
 
-    // Ensure source exists
     let source_id: i64 = match conn.query_row(
         "SELECT id FROM knowledge_sources WHERE label = ?1",
         params![source_label],
@@ -47,7 +45,6 @@ pub(super) fn seed_chunk(
         }
     };
 
-    // Ensure file exists
     let file_id: i64 = match conn.query_row(
         "SELECT id FROM knowledge_files WHERE source_id = ?1 AND rel_path = ?2",
         params![source_id, rel_path],
@@ -64,7 +61,6 @@ pub(super) fn seed_chunk(
         }
     };
 
-    // Insert into FTS5
     conn.execute(
         "INSERT INTO knowledge_chunks (title, content) VALUES (?1, ?2)",
         params![title, content],
@@ -72,14 +68,12 @@ pub(super) fn seed_chunk(
     .unwrap();
     let rowid = conn.last_insert_rowid();
 
-    // Insert matching trigram row
     conn.execute(
         "INSERT INTO knowledge_chunks_trigram (rowid, title, content) VALUES (?1, ?2, ?3)",
         params![rowid, title, content],
     )
     .unwrap();
 
-    // Insert matching identifier words, as indexing does
     conn.execute(
         "INSERT INTO knowledge_identifiers (rowid, words) VALUES (?1, ?2)",
         params![
@@ -89,7 +83,6 @@ pub(super) fn seed_chunk(
     )
     .unwrap();
 
-    // Insert chunk_meta
     conn.execute(
         "INSERT INTO knowledge_chunk_meta (chunk_rowid, file_id, source_id, line_start, line_end, metadata) VALUES (?1, ?2, ?3, 1, 20, ?4)",
         params![rowid, file_id, source_id, metadata_json],
@@ -101,8 +94,6 @@ pub(super) fn seed_chunk(
 
 #[test]
 fn fuzzy_search_runs_on_a_query_only_connection() {
-    // With `query_only` set, any write fails. A search that corrects a misspelled word goes
-    // through the vocabulary read, so this proves the search path performs no writes.
     let store = make_store();
     seed_chunk(
         &store,

@@ -1,31 +1,14 @@
-//! Metadata filter parser and SQL generation for knowledge search.
-//!
-//! Parses filter strings like `"type:task status:active"` into SQL WHERE clauses
-//! that restrict search results based on enrichment metadata stored in
-//! `knowledge_chunk_meta.metadata`.
-
 use anyhow::{anyhow, Result};
 
-/// A parsed filter predicate.
 #[derive(Debug, Clone, PartialEq)]
 pub enum FilterPredicate {
-    /// Filter by source label (joined to knowledge_sources, not metadata).
     Source(String),
-    /// Filter by frontmatter field equality:
-    /// `json_extract(metadata, '$.frontmatter.<key>') = '<value>'`
     Frontmatter { key: String, value: String },
-    /// Filter by tag membership:
-    /// `value IN json_each(json_extract(metadata, '$.frontmatter.tags'))`
     Tag(String),
-    /// Filter by folder tag:
-    /// `value IN json_each(json_extract(metadata, '$.folder_tags'))`
     Folder(String),
-    /// Match a source-file extension or an explicit frontmatter language.
     Language(String),
 }
 
-/// Validate that a metadata key contains only safe characters for JSON path
-/// construction. Allows alphanumeric, underscore, and hyphen.
 fn validate_key(key: &str) -> bool {
     !key.is_empty()
         && key
@@ -33,17 +16,6 @@ fn validate_key(key: &str) -> bool {
             .all(|c| c.is_alphanumeric() || c == '_' || c == '-')
 }
 
-/// Parse a filter string into a list of predicates.
-///
-/// Filter syntax: space-separated `key:value` pairs. Multiple pairs are ANDed.
-/// Malformed tokens fail closed. Empty/None input returns an empty vec.
-///
-/// Special keys:
-/// - `source:` — filters by `knowledge_sources.label`
-/// - `tag:` — checks membership in `frontmatter.tags` array
-/// - `folder:` — checks membership in `folder_tags` array
-/// - `language:` — checks the indexed path extension and optional frontmatter
-/// - Everything else — treated as a frontmatter field equality check
 pub fn parse_filter(filter: Option<&str>) -> Result<Vec<FilterPredicate>> {
     let filter = match filter {
         Some(f) if !f.trim().is_empty() => f.trim(),
@@ -80,13 +52,6 @@ pub fn parse_filter(filter: Option<&str>) -> Result<Vec<FilterPredicate>> {
     Ok(predicates)
 }
 
-/// Generate SQL WHERE clause fragments and parameter values for a set of predicates.
-///
-/// Returns `(where_clause, params)` where `where_clause` is a string to append
-/// after an existing WHERE (joined with ` AND `), and `params` are the bind values.
-///
-/// The `param_offset` is the starting `?N` index for parameter placeholders
-/// (e.g., if you already have `?1` and `?2` bound, pass `param_offset = 2`).
 pub fn predicates_to_sql(
     predicates: &[FilterPredicate],
     param_offset: usize,
@@ -104,9 +69,6 @@ pub fn predicates_to_sql(
                 params.push(label.clone());
             }
             FilterPredicate::Frontmatter { key, value } => {
-                // SQLite json_extract path can't be parameterized, so we build the
-                // path string in Rust with a validated key and embed it in the SQL.
-                // Only the value is a bound parameter.
                 let json_path = format!("$.frontmatter.{key}");
                 fragments.push(format!(
                     "json_extract(kcm.metadata, '{json_path}') = ?{idx}"

@@ -1,7 +1,5 @@
 use super::super::*;
 
-// ── predicates_to_sql ────────────────────────────────────────────────────
-
 #[test]
 fn sql_empty_predicates() {
     let (clause, params) = predicates_to_sql(&[], 0);
@@ -73,7 +71,6 @@ fn sql_multiple_predicates_joined_with_and() {
 fn sql_param_offset_respected() {
     let preds = vec![FilterPredicate::Source("vault".to_string())];
     let (clause, params) = predicates_to_sql(&preds, 3);
-    // With offset 3, first param should be ?4
     assert!(clause.contains("?4"));
     assert_eq!(params.len(), 1);
 }

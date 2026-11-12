@@ -37,7 +37,6 @@ pub(in crate::knowledge::sync) fn resolve_code_edges(
     )?;
     let mut created = 0usize;
     for edge in &edges {
-        // Markdown wikilinks are the wikilink enrichment's job; code relations only.
         if edge.kind == "wikilink" {
             continue;
         }

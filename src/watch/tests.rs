@@ -39,7 +39,6 @@ struct Fixture {
     source_dir: PathBuf,
 }
 
-/// A database file with one source over a fresh directory, synced, and watch enabled.
 fn fixture() -> Fixture {
     let root = tempdir().unwrap();
     let db = root.path().join("knowledge.db");

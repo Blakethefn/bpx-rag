@@ -21,7 +21,6 @@ fn fuzzy_term_extraction_reads_the_vocab_table_created_by_the_schema() {
         .execute_batch("DROP TABLE IF EXISTS knowledge_chunks_vocab")
         .unwrap();
 
-    // Searching never creates the table: a missing table is an error until the schema runs.
     assert!(extract_knowledge_terms(store.conn()).is_err());
     crate::knowledge::schema::apply_schema(store.conn()).unwrap();
     let terms = extract_knowledge_terms(store.conn()).expect("schema recreates the vocab table");
@@ -29,13 +28,6 @@ fn fuzzy_term_extraction_reads_the_vocab_table_created_by_the_schema() {
     assert!(terms.iter().any(|term| term == "whale"));
 }
 
-// ── fuzzy correction ─────────────────────────────────────────────────────
-
-/// Filler word `index`: six consonants chosen from eight. Consonant-only words
-/// have no Porter suffix or vowel to strip, so each one stays distinct after
-/// stemming and the vocabulary count is exact. Every filler sorts after
-/// "aardvark" and before "zookeep". The test misspellings share too few letters
-/// with a filler to fall within the edit distance.
 fn filler_word(index: usize) -> String {
     const FILLER_LETTERS: &[u8; 8] = b"bcdfghjk";
     (0..6)
@@ -44,8 +36,6 @@ fn filler_word(index: usize) -> String {
         .collect()
 }
 
-/// Insert filler vocabulary. The FTS rows have no chunk metadata, so they
-/// add terms without adding search results.
 fn seed_filler_vocabulary(store: &KnowledgeStore, filler_count: usize) {
     let fillers: Vec<String> = (0..filler_count).map(filler_word).collect();
     for batch in fillers.chunks(500) {
@@ -59,7 +49,6 @@ fn seed_filler_vocabulary(store: &KnowledgeStore, filler_count: usize) {
     }
 }
 
-/// Number of distinct terms in the content vocabulary that fuzzy matching reads.
 fn content_vocab_size(store: &KnowledgeStore) -> i64 {
     let conn = store.conn();
     conn.execute_batch(
@@ -75,8 +64,6 @@ fn content_vocab_size(store: &KnowledgeStore) -> i64 {
     .unwrap()
 }
 
-/// Rowid and path of each result from the fuzzy layer alone, in result order. Empty when
-/// the layer did not run.
 pub(super) fn fuzzy_hits(store: &KnowledgeStore, query: &str) -> Vec<(i64, String)> {
     knowledge_fuzzy_search(store, query, 10, "", &[])
         .unwrap()
@@ -86,7 +73,6 @@ pub(super) fn fuzzy_hits(store: &KnowledgeStore, query: &str) -> Vec<(i64, Strin
         .collect()
 }
 
-/// Rowid and path of each result from BM25 on `query` as written.
 pub(super) fn bm25_hits(store: &KnowledgeStore, query: &str) -> Vec<(i64, String)> {
     knowledge_bm25_search(store.conn(), query, 10, "", &[])
         .unwrap()
@@ -188,9 +174,7 @@ fn fuzzy_leaves_words_without_a_candidate_within_distance_two_unchanged() {
     seed_chunk(&store, "repo", "/repo", "zoo.md", "Zoo", "zookeeper", "{}");
 
     assert!(fuzzy_hits(&store, "qwzxv").is_empty());
-    // "zkeepr" is distance 3 from "zookeep", so it is not corrected.
     assert!(fuzzy_hits(&store, "zkeepr").is_empty());
-    // Only the typo is corrected. The unknown word stays as written.
     assert_eq!(
         fuzzy_hits(&store, "zookeepr qwzxv"),
         bm25_hits(&store, "zookeep qwzxv")
@@ -202,7 +186,6 @@ fn fuzzy_corrects_within_distance_two() {
     let store = make_store();
     let zoo = seed_chunk(&store, "repo", "/repo", "zoo.md", "Zoo", "zookeeper", "{}");
 
-    // "zokeepr" needs one insertion and one deletion to reach "zookeep".
     assert_eq!(
         fuzzy_hits(&store, "zokeepr"),
         vec![(zoo, "zoo.md".to_string())]

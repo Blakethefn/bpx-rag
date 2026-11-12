@@ -57,8 +57,6 @@ fn same_size_edit_with_the_indexed_mtime_restored_is_the_documented_metadata_lim
 
     fs::write(&path, "fn two() -> u8 { 2 }\n").unwrap();
     set_mtime(&path, indexed_mtime);
-    // Size and mtime both match the index and the record is not racy, so metadata alone is trusted.
-    // Sync and watch mode both detect this; see the Stage 7 limitations.
     assert_eq!(
         check(&store, dir.path(), "a.rs"),
         freshness(FreshnessState::Fresh, FreshnessBasis::Metadata)
@@ -70,7 +68,6 @@ fn racy_record_is_checked_by_hash_even_when_size_and_mtime_match() {
     let store = open_in_memory().unwrap();
     let dir = tempdir().unwrap();
     let path = dir.path().join("a.rs");
-    // Written just before the sync: the mtime is within the granularity margin of the stat time.
     fs::write(&path, "fn one() -> u8 { 1 }\n").unwrap();
     let indexed_mtime = fs::metadata(&path).unwrap().modified().unwrap();
     sync_dir(&store, dir.path());
@@ -135,7 +132,6 @@ fn unreadable_changed_file_is_unknown_not_fresh() {
     set_mtime(&path, SystemTime::now());
     fs::set_permissions(&path, std::os::unix::fs::PermissionsExt::from_mode(0o000)).unwrap();
     if fs::File::open(&path).is_ok() {
-        // Running as root: permissions do not apply, so the scenario cannot be produced.
         eprintln!("skipping: permissions are not enforced for this user");
         return;
     }

@@ -22,11 +22,7 @@ pub fn run(project_dir: &Path) -> Result<()> {
     Ok(())
 }
 
-/// Run the watcher in a background thread. Only one process per database holds the lease, so a
-/// second server reports that the watcher is elsewhere and does nothing else.
 fn start_watcher() {
-    // Without an existing database there is nothing to watch. Starting one here would create
-    // runtime state for a relationship-only server, so the watcher waits for `add`.
     let db_path = match crate::db::data_dir() {
         Ok(dir) => dir.join("knowledge.db"),
         Err(error) => {

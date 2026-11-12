@@ -1,7 +1,3 @@
-//! A file that cannot be read is skipped with a reason, like invalid UTF-8, so one bad file
-//! cannot stop the rest of its source from syncing. A failure of the directory walk itself
-//! is not a per-file problem and still fails the sync.
-
 use super::super::*;
 use std::os::unix::fs::PermissionsExt;
 use tempfile::tempdir;
@@ -24,7 +20,6 @@ fn set_mode(path: &Path, mode: u32) {
     fs::set_permissions(path, fs::Permissions::from_mode(mode)).unwrap();
 }
 
-/// Restores permissions when dropped, so a failed assertion cannot leave a locked file behind.
 struct Restore(PathBuf);
 
 impl Drop for Restore {
@@ -34,7 +29,6 @@ impl Drop for Restore {
     }
 }
 
-/// Lock `path`. Returns `None` when permissions do not block reads, as when running as root.
 fn lock(path: &Path) -> Option<Restore> {
     let guard = Restore(path.to_path_buf());
     set_mode(path, 0o000);
@@ -93,7 +87,6 @@ fn file_that_becomes_unreadable_loses_its_rows_and_is_indexed_again_once_readabl
 
 #[test]
 fn event_driven_sync_skips_an_unreadable_file_and_reports_it() {
-    // Watch mode reindexes only the paths that events name, so it needs the same behavior.
     let store = make_store();
     let dir = tempdir().unwrap();
     let notes = dir.path().join("notes.txt");
@@ -140,7 +133,6 @@ fn event_driven_sync_does_not_report_unreadable_files_it_was_not_asked_about() {
 
 #[test]
 fn unreadable_directory_still_fails_the_sync() {
-    // The walk cannot say what the directory holds, so skipping it would silently drop files.
     let store = make_store();
     let dir = tempdir().unwrap();
     fs::write(dir.path().join("alpha.rs"), "fn alpha_one() -> u8 { 1 }\n").unwrap();

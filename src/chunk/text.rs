@@ -2,7 +2,6 @@ use super::{Chunk, MAX_CHUNK_BYTES};
 
 pub(in crate::chunk) use super::pack::{flush_chunk_with_lines, split_at_newlines_with_lines};
 
-/// Chunk markdown content by headings
 pub(super) fn chunk_markdown(content: &str) -> Vec<Chunk> {
     let mut chunks = Vec::new();
     let mut current_title = String::from("(untitled)");
@@ -14,16 +13,13 @@ pub(super) fn chunk_markdown(content: &str) -> Vec<Chunk> {
     for line in content.lines() {
         line_number += 1;
 
-        // Track code block boundaries
         if line.trim_start().starts_with("```") {
             in_code_block = !in_code_block;
             current_lines.push(line);
             continue;
         }
 
-        // Split on headings (only outside code blocks)
         if !in_code_block && line.starts_with('#') {
-            // Flush previous section
             if !current_lines.is_empty() {
                 let body = current_lines.join("\n");
                 let chunk_line_end = line_number - 1;
@@ -44,7 +40,6 @@ pub(super) fn chunk_markdown(content: &str) -> Vec<Chunk> {
         }
     }
 
-    // Flush final section
     if !current_lines.is_empty() {
         let body = current_lines.join("\n");
         flush_chunk_with_lines(
@@ -68,14 +63,12 @@ pub(super) fn chunk_markdown(content: &str) -> Vec<Chunk> {
     chunks
 }
 
-/// Chunk plain text by paragraphs
 pub(super) fn chunk_plain_text(content: &str) -> Vec<Chunk> {
     let mut chunks = Vec::new();
     let paragraphs: Vec<&str> = content.split("\n\n").collect();
 
     let mut current = String::new();
     let mut idx = 0u32;
-    // Track cumulative line offset for line number attribution
     let mut cumulative_lines: u32 = 0;
     let mut chunk_line_start: u32 = 1;
 
@@ -104,13 +97,10 @@ pub(super) fn chunk_plain_text(content: &str) -> Vec<Chunk> {
             current.push_str("\n\n");
         }
         current.push_str(para_trimmed);
-        // A two-newline paragraph separator advances the next paragraph by
-        // two line numbers: one separator line plus the paragraph's lines.
         cumulative_lines += para_lines + 1;
     }
 
     if !current.is_empty() {
-        // If the accumulated content is oversized (no \n\n splits helped), use newline fallback
         if current.len() > MAX_CHUNK_BYTES {
             split_at_newlines_with_lines(
                 &format!("section-{}", idx + 1),

@@ -29,8 +29,6 @@ fn set_mtime(path: &Path, time: SystemTime) {
         .unwrap();
 }
 
-/// Register a source over `dir` and sync it. Files written before this call are aged an hour so
-/// the metadata check is not racy unless a test makes it so.
 fn sync_dir(store: &KnowledgeStore, dir: &Path) -> KnowledgeSourceInfo {
     store
         .add_source("test", dir.to_str().unwrap(), &[], &[])

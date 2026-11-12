@@ -1,6 +1,3 @@
-//! `remove_source` deletes from many tables. A failure part-way must leave the source intact,
-//! not metadata with no chunk rows.
-
 use super::super::*;
 use crate::knowledge::sync::sync_source;
 use crate::support::{add_source, make_store};
@@ -25,7 +22,6 @@ const TABLES: &[&str] = &[
     "knowledge_identifier_pending",
 ];
 
-/// Row counts of every table `remove_source` touches, plus the embedding generation.
 fn snapshot(store: &KnowledgeStore) -> Vec<(String, i64)> {
     let mut rows: Vec<(String, i64)> = TABLES
         .iter()
@@ -51,7 +47,6 @@ fn snapshot(store: &KnowledgeStore) -> Vec<(String, i64)> {
     rows
 }
 
-/// A store with a source of two files, a vector per chunk, and symbol rows.
 fn populated_store() -> (KnowledgeStore, tempfile::TempDir) {
     let store = open_in_memory().unwrap();
     let dir = tempdir().unwrap();
@@ -97,7 +92,6 @@ fn a_failure_at_any_step_leaves_the_source_intact() {
     assert!(chunks >= 2, "the fixture needs several chunks");
     assert!(table_count(&store, "knowledge_symbols") >= 2);
     let before = snapshot(&store);
-    // One step per chunk, then the symbol, metadata, and source deletes.
     let steps = chunks as usize + 3;
 
     for fail_after in 1..=steps {

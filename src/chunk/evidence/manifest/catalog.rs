@@ -1,8 +1,3 @@
-//! One row per Cargo target kind this manifest recognizes.
-//!
-//! Explicit emit, explicit suppression, and implicit emit all read [`TARGETS`].
-//! The package binary `src/main.rs` follows the `bin` row. It is not that row's directory.
-
 use super::super::{ENTRY_PROGRAM, ENTRY_TEST};
 
 pub(super) struct Target {

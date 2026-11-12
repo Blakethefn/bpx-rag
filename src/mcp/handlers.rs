@@ -4,14 +4,11 @@ use std::path::Path;
 
 use crate::app::{RagApp, SearchOptions};
 
-/// `bpx_models` wire actions. The schema enum and `handle_models` both read this table.
 const MODEL_ACTIONS: &[(ModelAction, &str)] = &[
     (ModelAction::Status, "status"),
     (ModelAction::Download, "download"),
 ];
 
-/// `bpx_watch` wire actions. The schema enum and `handle_watch` both read this table.
-/// CLI `watch enable`, `disable`, and `run` are a separate surface.
 const WATCH_ACTIONS: &[(WatchAction, &str)] = &[
     (WatchAction::On, "on"),
     (WatchAction::Off, "off"),
@@ -153,7 +150,6 @@ pub(super) fn handle_knowledge_add(args: &Value, app: &mut RagApp) -> Result<Str
     app.add_source(Path::new(path), label, &include, &exclude, &enrichments)
 }
 
-/// Read an optional array of strings. Any other shape is an error, not an empty list.
 fn string_list(args: &Value, key: &str) -> Result<Vec<String>> {
     match args.get(key) {
         None | Some(Value::Null) => Ok(Vec::new()),

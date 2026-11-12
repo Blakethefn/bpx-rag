@@ -154,7 +154,6 @@ fn unreadable_changed_file_is_skipped_and_other_files_stay_indexed() {
     assert_eq!(result.skipped_files.len(), 1);
     assert_eq!(result.skipped_files[0].rel_path, "a.rs");
     assert!(result.skipped_files[0].reason.starts_with("unreadable: "));
-    // The stale rows of the unreadable file are removed. The other file is untouched.
     assert_eq!(indexed_paths(&store), vec!["b.rs"]);
     assert_eq!(symbol_names(&store), vec!["beta"]);
 }

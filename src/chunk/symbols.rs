@@ -1,39 +1,24 @@
-//! Symbol extraction from the Tree-sitter tree used for chunking.
-//!
-//! A symbol is a named declaration boundary from the chunker's own walk. The same nodes become
-//! chunk titles, so every symbol sits inside a chunk. The extractor reads the tree that chunking
-//! already built, so it costs no extra parse for a changed file.
-
 use super::syntax::{declaration_nodes, is_declaration_wrapper, is_named_container};
 use crate::relations::Grammar;
 #[cfg(test)]
 use std::path::Path;
 use tree_sitter::Node;
 
-/// A named declaration in a source file. Lines are 1-based and inclusive.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Symbol {
     pub name: String,
-    /// The node kind with its grammar suffix removed, such as `function` for `function_item`.
     pub kind: String,
-    /// The nearest enclosing named container, such as an impl type or a class.
     pub container: Option<String>,
     pub line_start: u32,
     pub line_end: u32,
-    /// Rust visibility: `private`, `pub`, `pub(crate)`, `pub(super)`, `pub(self)`, or
-    /// `pub(in <path>)`. `None` for other languages, and for a Rust modifier that could not be read.
     pub visibility: Option<String>,
 }
 
-/// Symbols for one file. Empty for an unsupported language, a parse error, a file above the
-/// Tree-sitter cap, or a finished walk that declared nothing. The status on
-/// [`super::chunk_content_for_path`] distinguishes those cases.
 #[cfg(test)]
 pub(crate) fn symbols_for_path(path: &Path, content: &str) -> Vec<Symbol> {
     super::chunk_content_for_path(path, content).symbols
 }
 
-/// Symbols from an already-parsed tree. The caller decides whether the tree is usable.
 pub(super) fn symbols_from_tree(content: &str, root: Node<'_>, grammar: Grammar) -> Vec<Symbol> {
     let mut symbols = Vec::new();
     for node in declaration_nodes(root, content, grammar) {
@@ -65,7 +50,6 @@ fn collect(node: Node<'_>, content: &str, grammar: Grammar, out: &mut Vec<Symbol
     }
 }
 
-/// The declaration a wrapper such as `export` or a Python decorator stands for.
 fn wrapped_declaration(node: Node<'_>) -> Option<Node<'_>> {
     if !is_declaration_wrapper(node.kind()) {
         return None;
@@ -96,7 +80,6 @@ fn push_named(
     });
 }
 
-/// Strip one grammar suffix from a node kind: `function_item` becomes `function`.
 fn declaration_kind(kind: &str) -> String {
     const SUFFIXES: [&str; 5] = [
         "_item",
@@ -124,7 +107,6 @@ fn go_type_kind(spec: Node<'_>) -> String {
     .to_string()
 }
 
-/// The nearest enclosing container with a name. An `impl` names itself through its `type` field.
 fn container_name(node: Node<'_>, content: &str) -> Option<String> {
     let mut ancestor = node.parent();
     while let Some(parent) = ancestor {

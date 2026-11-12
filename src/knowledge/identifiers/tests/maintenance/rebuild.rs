@@ -9,8 +9,6 @@ fn version_one_residue_is_repaired_by_the_rebuild() {
     apply_schema(&conn).unwrap();
     let live = legacy::insert_chunk(&conn, 1, 1, "users.ts", "function getUserById() {}");
     ensure_identifier_index(&conn).unwrap();
-    // Residue a version-1 writer could leave: a row for a chunk that no longer exists, and
-    // stale words attached to a live rowid.
     conn.execute(
         "INSERT INTO knowledge_identifiers(rowid, words) VALUES (999, 'build invoice total')",
         [],
@@ -95,7 +93,6 @@ fn interrupted_rebuild_rolls_back_completely() {
         "version must not advance after a failed rebuild"
     );
 
-    // A later open completes the migration.
     ensure_identifier_index(&conn).unwrap();
     assert_eq!(identifier_row(&conn, 999), None);
     assert_eq!(

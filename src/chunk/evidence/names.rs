@@ -3,7 +3,6 @@ use tree_sitter::Node;
 use super::{field_text, node_text, reference, Reference, KIND_NAME, KIND_TYPE};
 use crate::relations::Grammar;
 
-/// Rust raw identifiers keep the `r#` prefix in the tree. Stored names omit it.
 pub(super) fn normalize_rust(grammar: Grammar, mut reference: Reference) -> Option<Reference> {
     if grammar != Grammar::Rust {
         return Some(reference);
@@ -56,14 +55,11 @@ pub(super) fn plain_reference(node: Node<'_>, content: &str) -> Option<Reference
     Some(reference(kind, specifier, None, node))
 }
 
-/// `Stop` claims the node. The same arm names the qualifier field, the name field, and the
-/// reference kind. Children of a claimed node are not walked again.
 pub(super) enum Qualified {
     Skip,
     Stop(Option<Reference>),
 }
 
-/// Claims a qualified-name node and reads the fields that arm chose.
 pub(super) fn qualified_reference(node: Node<'_>, content: &str) -> Qualified {
     let (qualifier_field, name_field, kind) = match node.kind() {
         "scoped_type_identifier" => ("path", "name", KIND_TYPE),

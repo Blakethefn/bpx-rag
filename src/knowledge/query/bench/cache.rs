@@ -1,8 +1,3 @@
-//! Stage 8 measurements of the query embedding cache. Only this tree has the cache.
-//!
-//! Ignored by default. Set `BPX_BENCH_MODEL_DIR` to the jina model directory and run:
-//! `cargo test --release --bin bpx-rag bench::cache -- --ignored --nocapture`
-
 use super::super::*;
 use super::latency::{load_jina, percentile, store_with_corpus, unit_vector, MODEL_ID, QUERIES};
 use crate::embed::cache::QueryEmbeddingCache;
@@ -11,7 +6,6 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::Instant;
 
-/// Counts real embedding calls, so a cache hit shows up as a call that did not happen.
 struct CountingEmbedder {
     inner: Arc<dyn Embed>,
     calls: Arc<AtomicUsize>,
@@ -36,13 +30,10 @@ impl Embed for CountingEmbedder {
     }
 }
 
-/// Cyclic workload: the 40 queries, ten passes.
 fn cyclic_workload() -> Vec<&'static str> {
     (0..10).flat_map(|_| QUERIES).collect()
 }
 
-/// Hot-set workload: 80% of requests cycle through 8 hot queries. The rest cycle through the
-/// remaining 32 queries.
 fn hot_set_workload() -> Vec<&'static str> {
     (0..400)
         .map(|request| {
@@ -62,7 +53,6 @@ struct WorkloadRun {
     samples: Vec<f64>,
 }
 
-/// One pass over `requests` with a fresh 4k-chunk store at `capacity`.
 fn run_workload(requests: &[&str], capacity: usize, embedder: Arc<dyn Embed>) -> WorkloadRun {
     let calls = Arc::new(AtomicUsize::new(0));
     let counting: Arc<dyn Embed> = Arc::new(CountingEmbedder {
@@ -124,7 +114,6 @@ fn repeated_query_latency_by_capacity() {
     }
 }
 
-/// Median wall time of one operation, from batches of `ops` operations.
 fn per_operation_micros(ops: usize, mut batch: impl FnMut(usize)) -> f64 {
     let batch_ms: Vec<f64> = (0..200)
         .map(|round| {
@@ -177,7 +166,6 @@ fn rss_kib() -> u64 {
         .expect("VmRSS in /proc/self/status")
 }
 
-/// Run once per capacity: `BPX_BENCH_CACHE_CAPACITY=256 cargo test ... cache_memory_at_capacity`.
 #[test]
 #[ignore]
 fn cache_memory_at_capacity() {
@@ -195,8 +183,6 @@ fn cache_memory_at_capacity() {
         );
     }
     let after = rss_kib();
-    // Approximate heap per entry: the vector, the model id and query strings, and the
-    // (String, String) key plus the entry header. Map slack is not included.
     let per_entry = DIM_BYTES + MODEL_ID.len() + 40 + 2 * std::mem::size_of::<String>() + 32;
     println!(
         "RESULT cache_memory capacity={capacity} entries={} rss_delta_kib={} analytic_bytes={}",
@@ -208,8 +194,6 @@ fn cache_memory_at_capacity() {
 
 const DIM_BYTES: usize = 768 * std::mem::size_of::<f32>();
 
-/// The first-pass search measurement of `bench::latency`, with the cache disabled. Comparing it
-/// with the cached first pass isolates the cache's own cost from build-to-build differences.
 #[test]
 #[ignore]
 fn first_pass_with_cache_disabled_at_4k() {

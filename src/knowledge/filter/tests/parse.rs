@@ -1,7 +1,5 @@
 use super::super::*;
 
-// ── parse_filter ─────────────────────────────────────────────────────────
-
 #[test]
 fn parse_none_returns_empty() {
     assert!(parse_filter(None).unwrap().is_empty());
@@ -100,7 +98,6 @@ fn parse_rejects_empty_key_or_value() {
 
 #[test]
 fn parse_key_with_special_chars_rejected() {
-    // Keys with special characters should be rejected (SQL injection prevention)
     assert!(parse_filter(Some("key';DROP:evil")).is_err());
 
     assert!(parse_filter(Some("key.sub:value")).is_err());
@@ -126,8 +123,6 @@ fn parse_key_with_underscore_accepted() {
     let preds = parse_filter(Some("my_key:value")).unwrap();
     assert_eq!(preds.len(), 1);
 }
-
-// ── validate_key ─────────────────────────────────────────────────────────
 
 #[test]
 fn validate_key_alphanumeric() {

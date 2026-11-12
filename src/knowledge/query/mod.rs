@@ -1,5 +1,3 @@
-//! Knowledge search: BM25, trigram, fuzzy, and vector layers fused with RRF.
-
 #[cfg(test)]
 use crate::embed;
 use crate::knowledge::KnowledgeStore;
@@ -18,11 +16,8 @@ pub(crate) use fuzzy::VocabularyCache;
 pub use layers::SkipReason;
 pub use layers::{LayerOutcome, LayerPolicy, LayerReport};
 
-/// Identifier layer weight, relative to the keyword weight. Chosen by the Stage 3 Revision 2
-/// selection rule. It makes a precise identifier hit outrank a single lexical and vector pair.
 const IDENTIFIER_LAYER_WEIGHT: f64 = 2.0;
 
-/// Weight configuration for RRF layer blending
 pub struct SearchWeights {
     pub keyword_weight: f64,
     pub vector_weight: f64,
@@ -37,18 +32,14 @@ impl Default for SearchWeights {
     }
 }
 
-/// The filters and gating policy for one search. Grouped so the policy entry point stays
-/// within the argument limit.
 #[derive(Debug, Clone, Copy)]
 pub struct SearchScope<'a> {
     pub filter: Option<&'a str>,
     pub source_label: Option<&'a str>,
     pub policy: LayerPolicy,
-    /// Most passages kept from one file before other files fill the limit. Must be at least 1.
     pub max_per_file: u32,
 }
 
-/// A search result from the knowledge store (or combined search).
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct KnowledgeSearchResult {
     pub title: String,
@@ -64,10 +55,6 @@ pub struct KnowledgeSearchResult {
     pub why: SearchWhy,
 }
 
-/// Search the knowledge DB with optional metadata filtering.
-///
-/// Runs the full multi-layer pipeline: BM25 → trigram → fuzzy → vector → RRF.
-/// Metadata filters restrict results before RRF fusion.
 pub fn knowledge_search(
     store: &KnowledgeStore,
     query: &str,
@@ -89,16 +76,13 @@ pub fn knowledge_search(
     .results)
 }
 
-/// Ranked results plus notices about layers that degraded during the search.
 #[derive(Debug, Default)]
 pub struct SearchReport {
     pub results: Vec<KnowledgeSearchResult>,
     pub warnings: Vec<String>,
-    /// Per-layer diagnostics, in pipeline order.
     pub layers: Vec<LayerReport>,
 }
 
-/// Like [`knowledge_search`], but also reports layers that were skipped.
 pub fn knowledge_search_report(
     store: &KnowledgeStore,
     query: &str,
@@ -123,8 +107,6 @@ pub fn knowledge_search_report(
     )
 }
 
-/// Like [`knowledge_search_report`], with an explicit gating policy. The retrieval
-/// evaluation uses this to compare policies on the same index.
 pub fn knowledge_search_report_with_policy(
     store: &KnowledgeStore,
     query: &str,
@@ -156,7 +138,6 @@ pub fn knowledge_search_report_with_policy(
 
 const MAX_CANDIDATE_CHUNKS: u32 = 1_000;
 
-/// Largest accepted `max_per_file`. The CLI, MCP, and library all enforce 1 through this value.
 pub const MAX_PER_FILE: u32 = 50;
 
 pub const CANDIDATE_OVERSAMPLE_FACTOR: u32 = 5;
@@ -167,8 +148,6 @@ pub(crate) fn expanded_candidate_limit(limit: u32) -> u32 {
         .min(MAX_CANDIDATE_CHUNKS)
         .max(limit)
 }
-
-// ── Search layers ────────────────────────────────────────────────────────────
 
 #[cfg(test)]
 mod bench;
