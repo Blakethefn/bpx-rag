@@ -4,6 +4,41 @@
 
 use std::collections::HashMap;
 
+/// A Rust path keyword. `single_segment` is the only match for what each one resolves to.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum PathKeyword {
+    Crate,
+    /// The `self` keyword.
+    SelfModule,
+    Super,
+}
+
+/// `crate`, `self`, and `super`. These are path keywords, not module files.
+///
+/// Choosing Failed or External, whether a path entered a module, and module-file
+/// candidates all read this set.
+pub(super) const PATH_KEYWORDS: &[(&str, PathKeyword)] = &[
+    ("crate", PathKeyword::Crate),
+    ("self", PathKeyword::SelfModule),
+    ("super", PathKeyword::Super),
+];
+
+pub(super) fn path_keyword(name: &str) -> Option<PathKeyword> {
+    PATH_KEYWORDS
+        .iter()
+        .find_map(|&(keyword, path_keyword)| (keyword == name).then_some(path_keyword))
+}
+
+pub(super) fn is_path_keyword(name: &str) -> bool {
+    path_keyword(name).is_some()
+}
+
+/// `lib`, `main`, and `mod` keep child modules beside the file. Every other stem keeps
+/// them in a directory of that name.
+pub(super) fn is_directory_module_stem(stem: &str) -> bool {
+    matches!(stem, "lib" | "main" | "mod")
+}
+
 /// The first indexed file named by a module or path specifier, skipping the file that
 /// contains the reference.
 pub(super) fn module_file(
@@ -54,13 +89,13 @@ fn rust_candidates(from_rel: &str, specifier: &str) -> Vec<String> {
         .rsplit("::")
         .find(|part| !part.is_empty())
         .unwrap_or(specifier);
-    if matches!(name, "crate" | "self" | "super") {
+    if is_path_keyword(name) {
         return Vec::new();
     }
     let parent = parent_dir(from_rel);
     let stem = file_stem(from_rel);
     let mut bases = Vec::new();
-    if stem != "lib" && stem != "main" && stem != "mod" {
+    if !is_directory_module_stem(stem) {
         bases.push(join_rel(&parent, stem));
     }
     bases.push(parent);
@@ -170,3 +205,6 @@ fn extension(path: &str) -> &str {
     let name = path.rsplit('/').next().unwrap_or(path);
     name.rsplit_once('.').map(|(_, ext)| ext).unwrap_or("")
 }
+
+#[cfg(test)]
+mod tests;

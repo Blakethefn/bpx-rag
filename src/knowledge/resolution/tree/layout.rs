@@ -1,3 +1,5 @@
+use super::super::paths::is_directory_module_stem;
+
 impl super::Tree {
     /// The parent path would still name this child after the parent's `mod` edges are gone.
     ///
@@ -19,7 +21,7 @@ impl super::Tree {
             return false;
         };
         let base = module_base(parent_rel);
-        if matches!(file_stem(parent_rel), "lib" | "main" | "mod") {
+        if is_directory_module_stem(file_stem(parent_rel)) {
             direct_module_file(&base, child_rel)
         } else {
             descendant_module_file(&base, child_rel)
@@ -32,7 +34,7 @@ impl super::Tree {
 pub(super) fn module_base(rel_path: &str) -> String {
     let stem = file_stem(rel_path);
     let parent = parent_dir(rel_path);
-    if matches!(stem, "lib" | "main" | "mod") {
+    if is_directory_module_stem(stem) {
         parent
     } else {
         join_rel(&parent, stem)
@@ -108,3 +110,6 @@ pub(super) fn normalize_rel(path: &str) -> String {
     }
     parts.join("/")
 }
+
+#[cfg(test)]
+mod tests;

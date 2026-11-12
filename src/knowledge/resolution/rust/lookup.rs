@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 
+use super::super::paths::{is_path_keyword, path_keyword, PathKeyword};
 use super::super::tree::{ident, path_segments, walk_modules, Tree, Walk};
 use super::{Outcome, Space};
 
@@ -52,7 +53,7 @@ pub(super) fn find_path(
                 force_ambiguous: false,
             };
         }
-        return if matches!(name, "crate" | "self" | "super") || tree.child(from, name).is_some() {
+        return if is_path_keyword(name) || tree.child(from, name).is_some() {
             Found::Failed
         } else {
             Found::External
@@ -88,21 +89,21 @@ pub(super) fn find_path(
 }
 
 pub(super) fn single_segment(tree: &Tree, from: i64, name: &str, space: Option<Space>) -> Vec<i64> {
-    match name {
-        "crate" => {
+    match path_keyword(name) {
+        Some(PathKeyword::Crate) => {
             let Some(root) = tree.crate_root(from) else {
                 return Vec::new();
             };
             module_symbols(tree, root, from, space)
         }
-        "self" => module_symbols(tree, from, from, space),
-        "super" => {
+        Some(PathKeyword::SelfModule) => module_symbols(tree, from, from, space),
+        Some(PathKeyword::Super) => {
             let Some(parent) = tree.super_module(from) else {
                 return Vec::new();
             };
             module_symbols(tree, parent, from, space)
         }
-        name => {
+        None => {
             if tree.child(from, name).is_none() {
                 return Vec::new();
             }

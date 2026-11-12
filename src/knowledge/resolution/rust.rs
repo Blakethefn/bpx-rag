@@ -10,6 +10,7 @@
 
 use std::collections::HashMap;
 
+use super::paths::is_path_keyword;
 use super::tree::{ident, path_segments, Tree};
 use super::StoredReference;
 use crate::chunk::evidence::{KIND_IMPORT, KIND_NAME, KIND_TYPE};
@@ -17,7 +18,9 @@ use crate::chunk::evidence::{KIND_IMPORT, KIND_NAME, KIND_TYPE};
 mod lookup;
 mod methods;
 
-use lookup::{find_path, in_space, items_named, outcome, single_segment, symbol_outcome, symbols_of};
+use lookup::{
+    find_path, in_space, items_named, outcome, single_segment, symbol_outcome, symbols_of,
+};
 use methods::{methods_in_file, methods_of, unique_type};
 
 #[derive(Clone, Debug)]
@@ -209,8 +212,8 @@ fn entered_module(tree: &Tree, from: i64, path: &str) -> bool {
     let Some(segments) = path_segments(path) else {
         return false;
     };
-    match segments[0] {
-        "crate" | "self" | "super" => true,
-        name => tree.child(from, name).is_some(),
-    }
+    is_path_keyword(segments[0]) || tree.child(from, segments[0]).is_some()
 }
+
+#[cfg(test)]
+mod tests;
