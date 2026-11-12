@@ -14,28 +14,76 @@ pub enum SearchProfile {
     VaultNavigation,
 }
 
+struct ProfileWire {
+    profile: SearchProfile,
+    name: &'static str,
+    /// Accepted by `parse` and listed on the MCP `profile` enum.
+    /// `default` is only emitted by `as_str`.
+    input: bool,
+}
+
+/// Wire names for search profiles. `parse`, `as_str`, the parse error, and the MCP schema
+/// enum all read this table.
+const PROFILE_WIRES: &[ProfileWire] = &[
+    ProfileWire {
+        profile: SearchProfile::Default,
+        name: "default",
+        input: false,
+    },
+    ProfileWire {
+        profile: SearchProfile::CodeReview,
+        name: "code_review",
+        input: true,
+    },
+    ProfileWire {
+        profile: SearchProfile::Debug,
+        name: "debug",
+        input: true,
+    },
+    ProfileWire {
+        profile: SearchProfile::Planning,
+        name: "planning",
+        input: true,
+    },
+    ProfileWire {
+        profile: SearchProfile::VaultNavigation,
+        name: "vault_navigation",
+        input: true,
+    },
+];
+
 impl SearchProfile {
     pub fn parse(value: Option<&str>) -> Result<Self> {
         match value {
             None | Some("") => Ok(Self::Default),
-            Some("code_review") => Ok(Self::CodeReview),
-            Some("debug") => Ok(Self::Debug),
-            Some("planning") => Ok(Self::Planning),
-            Some("vault_navigation") => Ok(Self::VaultNavigation),
-            Some(other) => Err(anyhow!(
-                "Unknown profile '{other}'. Expected one of: code_review, debug, planning, vault_navigation"
-            )),
+            Some(other) => PROFILE_WIRES
+                .iter()
+                .find(|wire| wire.input && wire.name == other)
+                .map(|wire| wire.profile)
+                .ok_or_else(|| {
+                    anyhow!(
+                        "Unknown profile '{other}'. Expected one of: {}",
+                        Self::input_names().join(", ")
+                    )
+                }),
         }
     }
 
     pub fn as_str(self) -> &'static str {
-        match self {
-            Self::Default => "default",
-            Self::CodeReview => "code_review",
-            Self::Debug => "debug",
-            Self::Planning => "planning",
-            Self::VaultNavigation => "vault_navigation",
-        }
+        PROFILE_WIRES
+            .iter()
+            .find(|wire| wire.profile == self)
+            .map(|wire| wire.name)
+            .expect("every search profile has one wire name")
+    }
+
+    /// Profile tokens the MCP schema advertises. `default` is not an input.
+    pub(crate) fn input_names() -> Vec<&'static str> {
+        PROFILE_WIRES
+            .iter()
+            .filter(|wire| wire.input)
+            .map(|wire| wire.name)
+            .collect()
     }
 
     pub fn is_explicit(self) -> bool {
@@ -142,3 +190,6 @@ impl SearchProfile {
         matches!(self, Self::Planning | Self::VaultNavigation)
     }
 }
+
+#[cfg(test)]
+mod tests;
