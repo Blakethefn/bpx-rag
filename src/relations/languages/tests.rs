@@ -48,7 +48,7 @@ fn script_family_shares_one_candidate_list() {
     assert_eq!(javascript, ["ts", "tsx", "js", "jsx", "mjs", "cjs", "json"]);
     for grammar in [Grammar::JavaScript, Grammar::TypeScript, Grammar::Tsx] {
         for extension in extensions_for(grammar) {
-            assert!(javascript.contains(&extension), "{extension}");
+            assert!(javascript.contains(extension), "{extension}");
         }
     }
     assert!(is_resolution_extra(Grammar::JavaScript, "json"));

@@ -25,7 +25,7 @@ pub(super) fn extract(
             .into_iter()
             .flat_map(|names| names.split(','))
             .filter_map(|name| {
-                let name = name.trim().split_whitespace().next().unwrap_or_default();
+                let name = name.split_whitespace().next().unwrap_or_default();
                 (!name.is_empty()).then(|| ("import", name.to_string()))
             })
             .collect();
@@ -53,11 +53,7 @@ pub(super) fn extract(
         let Ok(name_text) = name_node.utf8_text(content.as_bytes()) else {
             continue;
         };
-        let name = name_text
-            .trim()
-            .split_whitespace()
-            .next()
-            .unwrap_or_default();
+        let name = name_text.split_whitespace().next().unwrap_or_default();
         if name.is_empty() || name == "*" {
             continue;
         }

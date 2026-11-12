@@ -146,8 +146,10 @@ pub(crate) fn attach_relation_neighbors(
             continue;
         };
         let (source_label, source_id) = knowledge_source_for_file(ks, chunk.file_id)?;
-        let mut why = SearchWhy::default();
-        why.graph_neighbor = true;
+        let why = SearchWhy {
+            graph_neighbor: true,
+            ..Default::default()
+        };
         neighbors.push(KnowledgeSearchResult {
             title: chunk.title.clone(),
             snippet: chunk.content.clone(),

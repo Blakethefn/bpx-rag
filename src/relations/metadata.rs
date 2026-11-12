@@ -24,7 +24,7 @@ fn read_go_module(root: &Path) -> Option<String> {
             return None;
         }
         let module = module.split_once("//").map_or(module, |(module, _)| module);
-        let value = module.trim().split_whitespace().next()?;
+        let value = module.split_whitespace().next()?;
         Some(value.trim_matches(['"', '`']).to_string())
     })
 }

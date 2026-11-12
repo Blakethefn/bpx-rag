@@ -18,7 +18,7 @@ fn write_file(root: &std::path::Path, relative: &str, contents: &str) {
     fs::write(path, contents).unwrap();
 }
 
-fn incoming_from<'a>(result: &'a FileAnalysis, from: &str, specifier: &str, kind: &str) -> bool {
+fn incoming_from(result: &FileAnalysis, from: &str, specifier: &str, kind: &str) -> bool {
     result.incoming.iter().any(|relationship| {
         relationship.from == from
             && relationship.specifier == specifier

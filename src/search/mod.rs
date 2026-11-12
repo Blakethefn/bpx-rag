@@ -4,7 +4,7 @@ pub mod truncate;
 mod format;
 mod rerank;
 
-use format::{count_summary, format_results, SnippetBudget};
+use format::{count_summary, format_results, FormatInput, SnippetBudget};
 #[cfg(test)]
 use format::layer_summary;
 use rerank::{apply_graph_rerank, apply_knowledge_bias};
@@ -140,20 +140,20 @@ pub fn run_query(
         .unwrap_or(config.search.secondary_snippet_bytes);
     let related = related_files_for(knowledge, &results, config.search.top_result_count)?;
     let freshness = check_results(knowledge, &results)?;
-    Ok(format_results(
-        request.query,
-        request.explain,
-        &warnings,
-        &layers,
-        &results,
-        &related,
-        &freshness,
-        SnippetBudget {
+    Ok(format_results(FormatInput {
+        original_query: request.query,
+        explain: request.explain,
+        warnings: &warnings,
+        layers: &layers,
+        results: &results,
+        related: &related,
+        freshness: &freshness,
+        budget: SnippetBudget {
             top_bytes: top_snippet_bytes,
             secondary_bytes: secondary_snippet_bytes,
             top_result_count: config.search.top_result_count,
         },
-    ))
+    }))
 }
 
 /// Linked files to list under each top result, aligned by index with `results`.

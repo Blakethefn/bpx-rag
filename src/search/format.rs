@@ -56,16 +56,29 @@ pub(super) fn layer_summary(layers: &[LayerReport]) -> String {
     format!("layers: {}\n", parts.join("; "))
 }
 
-pub(super) fn format_results(
-    original_query: &str,
-    explain: bool,
-    warnings: &[String],
-    layers: &[LayerReport],
-    results: &[KnowledgeSearchResult],
-    related: &[Vec<String>],
-    freshness: &[Freshness],
-    budget: SnippetBudget,
-) -> String {
+/// Everything `format_results` renders for one search response.
+pub(super) struct FormatInput<'a> {
+    pub(super) original_query: &'a str,
+    pub(super) explain: bool,
+    pub(super) warnings: &'a [String],
+    pub(super) layers: &'a [LayerReport],
+    pub(super) results: &'a [KnowledgeSearchResult],
+    pub(super) related: &'a [Vec<String>],
+    pub(super) freshness: &'a [Freshness],
+    pub(super) budget: SnippetBudget,
+}
+
+pub(super) fn format_results(input: FormatInput<'_>) -> String {
+    let FormatInput {
+        original_query,
+        explain,
+        warnings,
+        layers,
+        results,
+        related,
+        freshness,
+        budget,
+    } = input;
     let mut output = format!("### \"{original_query}\"\n");
     for warning in warnings {
         output.push_str(&format!("Warning: {warning}\n"));

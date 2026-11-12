@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{hash_map::Entry, HashMap};
 
 use tree_sitter::{Language, Parser, Tree};
 
@@ -11,11 +11,11 @@ pub(super) struct ParserCache {
 
 impl ParserCache {
     pub(super) fn parse(&mut self, grammar: Grammar, content: &str) -> Option<Tree> {
-        if !self.parsers.contains_key(&grammar) {
+        if let Entry::Vacant(entry) = self.parsers.entry(grammar) {
             let language = language_for(grammar)?;
             let mut parser = Parser::new();
             parser.set_language(&language).ok()?;
-            self.parsers.insert(grammar, parser);
+            entry.insert(parser);
         }
         self.parsers.get_mut(&grammar)?.parse(content, None)
     }
