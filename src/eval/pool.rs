@@ -6,9 +6,14 @@ use std::fs::{self, OpenOptions};
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
+mod channel;
 mod generate;
 mod import;
 
+#[cfg(test)]
+mod tests;
+
+pub(in crate::eval) use channel::PoolChannel;
 pub use generate::generate_judgment_pool;
 pub use import::import_judgment_pool;
 
