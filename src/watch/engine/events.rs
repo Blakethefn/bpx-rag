@@ -233,11 +233,21 @@ fn changed_files(result: &SyncResult) -> u64 {
 fn note_path(entry: &mut Watched, path: &Path) {
     match path.strip_prefix(&entry.root) {
         Ok(relative) if !relative.as_os_str().is_empty() => {
-            entry
-                .pending
-                .insert(relative.to_string_lossy().replace('\\', "/"));
+            entry.pending.insert(normalize_separators(
+                relative.to_string_lossy().into_owned(),
+            ));
         }
         _ => entry.need_full = true,
+    }
+}
+
+/// `notify` reports backslash-separated paths on Windows only. On other platforms a backslash is
+/// a legal filename byte, so the path is kept as is.
+fn normalize_separators(relative: String) -> String {
+    if cfg!(windows) {
+        relative.replace('\\', "/")
+    } else {
+        relative
     }
 }
 
@@ -368,6 +378,26 @@ mod tests {
         assert_eq!(
             entry.pending.iter().cloned().collect::<Vec<_>>(),
             vec!["sub/lib.rs".to_string()]
+        );
+        assert!(!entry.need_full);
+    }
+
+    #[test]
+    fn unix_filename_keeps_its_backslash() {
+        let root = tempdir().unwrap();
+        let (_data, mut engine) = engine_watching(root.path());
+
+        deliver(&mut engine, modify(root.path().join("sub\\lib.rs")));
+
+        let entry = &engine.watched[LABEL];
+        let expected = if cfg!(windows) {
+            "sub/lib.rs"
+        } else {
+            "sub\\lib.rs"
+        };
+        assert_eq!(
+            entry.pending.iter().cloned().collect::<Vec<_>>(),
+            vec![expected.to_string()]
         );
         assert!(!entry.need_full);
     }
