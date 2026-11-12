@@ -16,6 +16,7 @@ pub(in crate::eval) enum PoolChannel {
 }
 
 struct ChannelDefinition {
+    #[cfg(test)]
     name: &'static str,
     weights: SearchWeights,
     rank_field: fn(&mut PoolRetrieverRanks) -> &mut Option<usize>,
@@ -27,6 +28,7 @@ impl PoolChannel {
     fn definition(self) -> ChannelDefinition {
         match self {
             Self::Hybrid => ChannelDefinition {
+                #[cfg(test)]
                 name: "hybrid",
                 weights: SearchWeights {
                     keyword_weight: 1.0,
@@ -35,6 +37,7 @@ impl PoolChannel {
                 rank_field: |ranks| &mut ranks.hybrid,
             },
             Self::Lexical => ChannelDefinition {
+                #[cfg(test)]
                 name: "lexical",
                 weights: SearchWeights {
                     keyword_weight: 1.0,
@@ -43,6 +46,7 @@ impl PoolChannel {
                 rank_field: |ranks| &mut ranks.lexical,
             },
             Self::Vector => ChannelDefinition {
+                #[cfg(test)]
                 name: "vector",
                 weights: SearchWeights {
                     keyword_weight: 0.0,
@@ -53,6 +57,7 @@ impl PoolChannel {
         }
     }
 
+    #[cfg(test)]
     pub(in crate::eval) fn name(self) -> &'static str {
         self.definition().name
     }

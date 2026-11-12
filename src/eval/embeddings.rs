@@ -105,7 +105,7 @@ pub fn run_embedding_benchmark(
     let mut existing_chunker_files = 0usize;
     let mut file_hashes = Vec::with_capacity(files.len());
     for (_, path) in &files {
-        let content = fs::read_to_string(&path)
+        let content = fs::read_to_string(path)
             .with_context(|| format!("failed to read benchmark file {}", path.display()))?;
         let result = crate::chunk::chunk_content_for_path(path, &content);
         let chunk_count = result.chunks.len();

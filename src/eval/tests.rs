@@ -92,7 +92,7 @@ fn qrels_reject_unknown_query_ids_and_duplicate_paths() {
     let corpus = tempfile::tempdir().unwrap();
     fs::create_dir_all(corpus.path().join("src")).unwrap();
     fs::write(corpus.path().join("src/lib.rs"), "pub fn lib() {}\n").unwrap();
-    assert!(validate_qrels(&[query.clone()], &unknown, corpus.path()).is_err());
+    assert!(validate_qrels(std::slice::from_ref(&query), &unknown, corpus.path()).is_err());
     let missing = HashMap::new();
     assert!(validate_qrels(&[query], &missing, corpus.path()).is_err());
 

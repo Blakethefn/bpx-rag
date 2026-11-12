@@ -294,7 +294,7 @@ pub fn run_retrieval_evaluation(
             language: query.language.clone(),
             answerability: query.answerability,
             answerability_evidence: query.answerability_evidence.clone(),
-            hybrid: is_answerable.then_some(metrics.clone()),
+            hybrid: is_answerable.then_some(metrics),
             lexical_only: is_answerable.then_some(lexical_metrics),
             vector_only: is_answerable.then_some(vector_metrics),
             unanswerable_hybrid: no_answer_metrics,
