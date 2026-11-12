@@ -79,6 +79,12 @@ impl super::Tree {
     }
 }
 
+const ENTRY_PROGRAM: &str = "program";
+const ENTRY_TEST: &str = "test";
+const ENTRY_LIBRARY: &str = "library_root";
+
+pub(crate) const ENTRY_KINDS: &[&str] = &[ENTRY_PROGRAM, ENTRY_TEST, ENTRY_LIBRARY];
+
 fn roots(
     entries: &[(Option<i64>, String, String)],
     rust_files: &HashSet<i64>,
@@ -99,12 +105,12 @@ fn roots(
             continue;
         };
         match kind.as_str() {
-            "library_root" => library.push(target),
-            "program" => {
+            ENTRY_LIBRARY => library.push(target),
+            ENTRY_PROGRAM => {
                 program.push(target);
                 program_entries.insert(target);
             }
-            "test" => {
+            ENTRY_TEST => {
                 test_roots.push(target);
                 if let Some(name) = reason
                     .strip_prefix("#[test] ")

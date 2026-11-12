@@ -5,6 +5,9 @@ use rusqlite::{params, OptionalExtension};
 
 use crate::knowledge::{KnowledgeSourceInfo, KnowledgeStore};
 
+/// Analysis statuses that include finding lines. `incomplete` stays out.
+const PUBLISHED_STATUSES: &[&str] = &["complete", "partial"];
+
 /// Read the analysis row. Finding lines are included for `complete` and `partial`.
 pub fn report(store: &KnowledgeStore, source: Option<&str>) -> Result<String> {
     let selected = resolve_source(store, source)?;
@@ -42,7 +45,7 @@ pub fn report(store: &KnowledgeStore, source: Option<&str>) -> Result<String> {
     } else {
         lines.extend(gaps.lines().map(str::to_string));
     }
-    if !matches!(status.as_str(), "complete" | "partial") {
+    if !PUBLISHED_STATUSES.contains(&status.as_str()) {
         return Ok(lines.join("\n"));
     }
 
@@ -54,7 +57,6 @@ pub fn report(store: &KnowledgeStore, source: Option<&str>) -> Result<String> {
          JOIN knowledge_files kf ON kf.id = f.file_id
          LEFT JOIN knowledge_symbols ks ON ks.id = f.symbol_id
          WHERE f.source_id = ?1
-           AND a.status IN ('complete', 'partial')
            AND f.analysis_version = a.analysis_version
            AND f.evidence_generation = a.evidence_generation
            AND f.fingerprint = a.fingerprint

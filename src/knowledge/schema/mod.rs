@@ -8,6 +8,7 @@ use rusqlite::Connection;
 use std::path::PathBuf;
 
 use crate::db::data_dir;
+use crate::knowledge::resolution::{ENTRY_KINDS, RESOLUTION_STATUSES};
 
 mod migrate;
 use migrate::{
@@ -15,6 +16,19 @@ use migrate::{
     ensure_embedding_model_id, ensure_embedding_state_row, ensure_freshness_and_watch_columns,
     ensure_reference_columns, ensure_symbol_version,
 };
+
+/// `knowledge_analysis.status`. Fresh creates and the partial migration share this check.
+pub(super) const ANALYSIS_STATUS_CHECK: &str =
+    "CHECK (status IN ('complete', 'partial', 'incomplete'))";
+
+pub(super) fn check_in(column: &str, values: &[&str]) -> String {
+    let list = values
+        .iter()
+        .map(|value| format!("'{value}'"))
+        .collect::<Vec<_>>()
+        .join(", ");
+    format!("CHECK ({column} IN ({list}))")
+}
 
 /// Returns the path to the knowledge database.
 /// `~/.local/share/bpx-rag/knowledge.db`
@@ -34,7 +48,7 @@ pub(crate) fn apply_schema(conn: &Connection) -> Result<()> {
 
 fn ensure_schema(conn: &Connection) -> Result<()> {
     conn.execute_batch(
-        "
+        &"
         CREATE TABLE IF NOT EXISTS knowledge_sources (
             id          INTEGER PRIMARY KEY AUTOINCREMENT,
             label       TEXT NOT NULL UNIQUE,
@@ -156,7 +170,7 @@ fn ensure_schema(conn: &Connection) -> Result<()> {
             evidence_file_id INTEGER NOT NULL REFERENCES knowledge_files(id) ON DELETE CASCADE,
             target_file_id   INTEGER REFERENCES knowledge_files(id) ON DELETE SET NULL,
             target_rel_path  TEXT NOT NULL,
-            kind             TEXT NOT NULL CHECK (kind IN ('program', 'test', 'library_root')),
+            kind             TEXT NOT NULL {entry_kind_check},
             reason           TEXT NOT NULL,
             evidence_hash    TEXT NOT NULL
         );
@@ -165,7 +179,7 @@ fn ensure_schema(conn: &Connection) -> Result<()> {
             id               INTEGER PRIMARY KEY AUTOINCREMENT,
             source_id        INTEGER NOT NULL REFERENCES knowledge_sources(id) ON DELETE CASCADE,
             reference_id     INTEGER NOT NULL REFERENCES knowledge_references(id) ON DELETE CASCADE,
-            status           TEXT NOT NULL CHECK (status IN ('resolved', 'ambiguous', 'unresolved')),
+            status           TEXT NOT NULL {resolution_status_check},
             target_symbol_id INTEGER REFERENCES knowledge_symbols(id) ON DELETE CASCADE,
             target_file_id   INTEGER REFERENCES knowledge_files(id) ON DELETE CASCADE
         );
@@ -175,7 +189,7 @@ fn ensure_schema(conn: &Connection) -> Result<()> {
             analysis_version    INTEGER NOT NULL,
             evidence_generation INTEGER NOT NULL,
             fingerprint         TEXT NOT NULL,
-            status              TEXT NOT NULL CHECK (status IN ('complete', 'partial', 'incomplete')),
+            status              TEXT NOT NULL {analysis_status_check},
             gaps                TEXT NOT NULL
         );
 
@@ -220,7 +234,13 @@ fn ensure_schema(conn: &Connection) -> Result<()> {
             INSERT OR IGNORE INTO knowledge_identifier_pending (chunk_rowid)
                 VALUES (NEW.chunk_rowid);
         END;
-        ",
+        "
+        .replace("{entry_kind_check}", &check_in("kind", ENTRY_KINDS))
+        .replace(
+            "{resolution_status_check}",
+            &check_in("status", RESOLUTION_STATUSES),
+        )
+        .replace("{analysis_status_check}", ANALYSIS_STATUS_CHECK),
     )?;
     ensure_analysis_status(conn)?;
     ensure_embedding_state_row(conn)?;

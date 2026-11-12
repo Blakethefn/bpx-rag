@@ -83,3 +83,23 @@ fn a_symbol_version_backfill_rebuilds_resolutions_and_the_analysis_row() {
         "backfill must rewrite the analysis row"
     );
 }
+
+#[test]
+fn an_outcome_stores_its_catalog_status() {
+    assert_eq!(
+        super::status_of(&super::rust::Outcome::Resolved(7)),
+        "resolved"
+    );
+    assert_eq!(
+        super::status_of(&super::rust::Outcome::Ambiguous(vec![1, 2])),
+        "ambiguous"
+    );
+    assert_eq!(
+        super::status_of(&super::rust::Outcome::Unresolved),
+        "unresolved"
+    );
+    assert_eq!(
+        super::RESOLUTION_STATUSES,
+        ["resolved", "ambiguous", "unresolved"]
+    );
+}

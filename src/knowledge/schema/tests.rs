@@ -1,6 +1,7 @@
 use super::*;
 
 mod analysis;
+mod catalog;
 mod embed;
 mod identifier;
 mod lock;
