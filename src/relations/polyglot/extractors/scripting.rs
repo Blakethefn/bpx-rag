@@ -1,20 +1,13 @@
 use tree_sitter::Node;
 
-use super::super::super::super::languages::Grammar;
-use super::{quoted_literal, quoted_prefix};
+use super::{has_kind, quoted_literal, quoted_prefix};
 
-pub(super) fn extract(
-    grammar: Grammar,
-    node: Node<'_>,
-    content: &str,
-) -> Vec<(&'static str, String)> {
+pub(super) fn extract(node: Node<'_>, content: &str) -> Vec<(&'static str, String)> {
     let Some(text) = node.utf8_text(content.as_bytes()).ok().map(str::trim) else {
         return Vec::new();
     };
-    let reference = match grammar {
-        Grammar::Dart
-            if node.kind() == "import_specification" || node.kind() == "library_export" =>
-        {
+    let reference = match node.kind() {
+        "import_specification" | "library_export" => {
             let Some(uri) = node.child_by_field_name("uri") else {
                 return Vec::new();
             };
@@ -28,7 +21,7 @@ pub(super) fn extract(
             };
             quoted_literal(uri_text).map(|specifier| (kind, specifier))
         }
-        Grammar::Swift if node.kind() == "import_declaration" => {
+        "import_declaration" => {
             let Some(path) = text
                 .strip_prefix("import")
                 .map(str::trim)
@@ -38,63 +31,86 @@ pub(super) fn extract(
             };
             Some(("import", path.to_string()))
         }
-        Grammar::Php
-            if matches!(
-                node.kind(),
-                "include_expression"
-                    | "require_expression"
-                    | "include_once_expression"
-                    | "require_once_expression"
-            ) =>
-        {
+        "include_expression"
+        | "require_expression"
+        | "include_once_expression"
+        | "require_once_expression" => {
             let Some(quote) = text.find(['\'', '"']) else {
                 return Vec::new();
             };
             quoted_literal(&text[quote..]).map(|specifier| ("include", specifier))
         }
-        Grammar::Ruby
-            if node.kind() == "call"
-                && (text.starts_with("require ")
-                    || text.starts_with("require(")
-                    || text.starts_with("require_relative ")
-                    || text.starts_with("require_relative(")) =>
-        {
-            let relative = text.starts_with("require_relative");
-            let Some(mut specifier) = quoted_prefix(text) else {
-                return Vec::new();
-            };
-            if relative && !specifier.starts_with('.') && !specifier.starts_with('/') {
-                specifier = format!("./{specifier}");
+        "call" => call_reference(node, text, content),
+        "command" => command_reference(node, text, content),
+        "function_call" => lua_reference(text),
+        "import_statement" => julia_reference(node, text, content),
+        "using_statement" => powershell_reference(node, text, content)
+            .or_else(|| julia_reference(node, text, content)),
+        "call_expression" => {
+            if node.child_by_field_name("function").is_some() || has_kind(node, "call_suffix") {
+                None
+            } else {
+                julia_reference(node, text, content)
             }
-            Some(("import", specifier))
         }
-        Grammar::Bash if node.kind() == "command" => {
-            let command = text.split_whitespace().collect::<Vec<_>>();
-            let operand = match command.as_slice() {
-                ["source", operand, ..] | [".", operand, ..] => *operand,
-                _ => return Vec::new(),
-            };
-            let specifier = quoted_literal(operand).unwrap_or_else(|| operand.to_string());
-            Some(("include", specifier))
-        }
-        Grammar::Lua if node.kind() == "function_call" && text.starts_with("require") => {
-            let Some(argument) = text
-                .strip_prefix("require")
-                .map(str::trim)
-                .map(|value| value.trim_start_matches('(').trim())
-            else {
-                return Vec::new();
-            };
-            quoted_literal(argument).map(|specifier| ("import", specifier))
-        }
-        Grammar::Elixir => elixir_reference(node, content),
-        Grammar::R => r_reference(node, content),
-        Grammar::Julia => julia_reference(node, text, content),
-        Grammar::Perl => perl_reference(node, content),
-        Grammar::PowerShell => powershell_reference(node, text, content),
+        "use_no_statement" | "require_statement" => perl_reference(node, content),
         _ => None,
     };
     reference.into_iter().collect()
+}
+
+fn call_reference(node: Node<'_>, text: &str, content: &str) -> Option<(&'static str, String)> {
+    if node.child_by_field_name("target").is_some() {
+        return elixir_reference(node, content);
+    }
+    if node.child_by_field_name("function").is_some() {
+        return r_reference(node, content);
+    }
+    ruby_reference(text)
+}
+
+fn command_reference(node: Node<'_>, text: &str, content: &str) -> Option<(&'static str, String)> {
+    if node.child_by_field_name("command_name").is_some() {
+        return powershell_reference(node, text, content);
+    }
+    bash_reference(text)
+}
+
+fn ruby_reference(text: &str) -> Option<(&'static str, String)> {
+    if !(text.starts_with("require ")
+        || text.starts_with("require(")
+        || text.starts_with("require_relative ")
+        || text.starts_with("require_relative("))
+    {
+        return None;
+    }
+    let relative = text.starts_with("require_relative");
+    let mut specifier = quoted_prefix(text)?;
+    if relative && !specifier.starts_with('.') && !specifier.starts_with('/') {
+        specifier = format!("./{specifier}");
+    }
+    Some(("import", specifier))
+}
+
+fn bash_reference(text: &str) -> Option<(&'static str, String)> {
+    let command = text.split_whitespace().collect::<Vec<_>>();
+    let operand = match command.as_slice() {
+        ["source", operand, ..] | [".", operand, ..] => *operand,
+        _ => return None,
+    };
+    let specifier = quoted_literal(operand).unwrap_or_else(|| operand.to_string());
+    Some(("include", specifier))
+}
+
+fn lua_reference(text: &str) -> Option<(&'static str, String)> {
+    if !text.starts_with("require") {
+        return None;
+    }
+    let argument = text
+        .strip_prefix("require")
+        .map(str::trim)
+        .map(|value| value.trim_start_matches('(').trim())?;
+    quoted_literal(argument).map(|specifier| ("import", specifier))
 }
 
 fn elixir_reference(node: Node<'_>, content: &str) -> Option<(&'static str, String)> {

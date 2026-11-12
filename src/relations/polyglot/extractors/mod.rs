@@ -30,7 +30,7 @@ pub(super) fn extract_specifiers(
         | Grammar::Scala
         | Grammar::Haskell
         | Grammar::Erlang
-        | Grammar::Solidity => modules::extract(grammar, node, &source.content),
+        | Grammar::Solidity => modules::extract(node, &source.content),
         Grammar::Php
         | Grammar::Ruby
         | Grammar::Bash
@@ -41,8 +41,8 @@ pub(super) fn extract_specifiers(
         | Grammar::R
         | Grammar::Julia
         | Grammar::Perl
-        | Grammar::PowerShell => scripting::extract(grammar, node, &source.content),
-        Grammar::Html | Grammar::Css => web::extract(grammar, node, &source.content),
+        | Grammar::PowerShell => scripting::extract(node, &source.content),
+        Grammar::Html | Grammar::Css => web::extract(node, &source.content),
         Grammar::Markdown
         | Grammar::Rust
         | Grammar::JavaScript
@@ -50,6 +50,11 @@ pub(super) fn extract_specifiers(
         | Grammar::Tsx
         | Grammar::Sql => Vec::new(),
     }
+}
+
+pub(super) fn has_kind(node: Node<'_>, kind: &str) -> bool {
+    (0..node.child_count() as u32)
+        .any(|index| node.child(index).is_some_and(|child| child.kind() == kind))
 }
 
 pub(super) fn quoted_literal(value: &str) -> Option<String> {
@@ -66,3 +71,6 @@ pub(super) fn quoted_prefix(value: &str) -> Option<String> {
     let start = value.find(['\'', '"', '`'])?;
     quoted_literal(&value[start..])
 }
+
+#[cfg(test)]
+mod tests;
