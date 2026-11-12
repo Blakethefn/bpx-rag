@@ -1,5 +1,6 @@
 use anyhow::{bail, Result};
-use clap::{Args, Subcommand, ValueHint};
+use clap::parser::ValueSource;
+use clap::{ArgMatches, Args, Command, FromArgMatches, Id, Subcommand, ValueHint};
 use std::path::PathBuf;
 
 use super::{DEFAULT_POOL_DEPTH, DEFAULT_POOL_SEED};
@@ -145,54 +146,116 @@ pub struct PoolImportArgs {
     pub output: PathBuf,
 }
 
-#[derive(Debug, Args)]
+/// Hidden `eval pool` flags. They are the `PoolCreateArgs` fields, so a flag added there is
+/// accepted on this path and selecting any of them chooses legacy create.
+#[derive(Debug)]
 struct LegacyPoolCreate {
-    #[arg(long, hide = true, value_hint = ValueHint::DirPath)]
-    dataset: Option<PathBuf>,
-    #[arg(long, hide = true, value_hint = ValueHint::DirPath)]
-    corpus_root: Option<PathBuf>,
-    #[arg(long, hide = true, value_hint = ValueHint::FilePath)]
-    output: Option<PathBuf>,
-    #[arg(long, hide = true, value_hint = ValueHint::FilePath)]
-    key_output: Option<PathBuf>,
-    #[arg(long, hide = true)]
-    depth: Option<usize>,
-    #[arg(long, hide = true)]
-    seed: Option<u64>,
+    args: Option<PoolCreateArgs>,
+    missing: Vec<String>,
 }
 
 impl LegacyPoolCreate {
     fn specified(&self) -> bool {
-        self.dataset.is_some()
-            || self.corpus_root.is_some()
-            || self.output.is_some()
-            || self.key_output.is_some()
-            || self.depth.is_some()
-            || self.seed.is_some()
+        self.args.is_some() || !self.missing.is_empty()
     }
 
     fn into_create(self) -> Result<PoolCreateArgs> {
-        let mut missing = Vec::new();
-        if self.output.is_none() {
-            missing.push("--output <FILE>");
+        if let Some(args) = self.args {
+            return Ok(args);
         }
-        if self.key_output.is_none() {
-            missing.push("--key-output <FILE>");
-        }
-        if !missing.is_empty() {
-            bail!(
-                "generating a pool requires {}. Run `bpx-rag eval pool create --output <FILE> --key-output <FILE>`",
-                missing.join(" and ")
-            );
-        }
-        Ok(PoolCreateArgs {
-            dataset: self.dataset,
-            corpus_root: self.corpus_root,
-            output: self.output.expect("checked above"),
-            key_output: self.key_output.expect("checked above"),
-            depth: self.depth.unwrap_or(DEFAULT_POOL_DEPTH),
-            seed: self.seed.unwrap_or(DEFAULT_POOL_SEED),
-        })
+        let missing = self.missing.join(" and ");
+        bail!(
+            "generating a pool requires {missing}. Run `bpx-rag eval pool create --output <FILE> --key-output <FILE>`"
+        )
     }
 }
 
+impl Args for LegacyPoolCreate {
+    fn augment_args(cmd: Command) -> Command {
+        hide_create_flags(cmd)
+    }
+
+    fn augment_args_for_update(cmd: Command) -> Command {
+        hide_create_flags(cmd)
+    }
+}
+
+impl FromArgMatches for LegacyPoolCreate {
+    fn from_arg_matches(matches: &ArgMatches) -> Result<Self, clap::Error> {
+        let template = create_template();
+        if !create_flag_on_command_line(matches, &template) {
+            return Ok(Self {
+                args: None,
+                missing: Vec::new(),
+            });
+        }
+        let missing = missing_required_flags(matches, &template);
+        if !missing.is_empty() {
+            return Ok(Self {
+                args: None,
+                missing,
+            });
+        }
+        Ok(Self {
+            args: Some(PoolCreateArgs::from_arg_matches(matches)?),
+            missing: Vec::new(),
+        })
+    }
+
+    fn update_from_arg_matches(&mut self, matches: &ArgMatches) -> Result<(), clap::Error> {
+        *self = Self::from_arg_matches(matches)?;
+        Ok(())
+    }
+}
+
+fn create_template() -> Command {
+    <PoolCreateArgs as Args>::augment_args(Command::new("pool-create"))
+}
+
+fn hide_create_flags(cmd: Command) -> Command {
+    let ids = create_flag_ids();
+    let cmd = <PoolCreateArgs as Args>::augment_args(cmd);
+    cmd.mut_args(move |arg| {
+        if ids.iter().any(|id| id == arg.get_id()) {
+            arg.hide(true).required(false)
+        } else {
+            arg
+        }
+    })
+}
+
+fn create_flag_ids() -> Vec<Id> {
+    create_template()
+        .get_arguments()
+        .map(|arg| arg.get_id().clone())
+        .collect()
+}
+
+fn create_flag_on_command_line(matches: &ArgMatches, template: &Command) -> bool {
+    template
+        .get_arguments()
+        .any(|arg| matches.value_source(arg.get_id().as_str()) == Some(ValueSource::CommandLine))
+}
+
+fn missing_required_flags(matches: &ArgMatches, template: &Command) -> Vec<String> {
+    template
+        .get_arguments()
+        .filter(|arg| arg.is_required_set())
+        .filter(|arg| matches.value_source(arg.get_id().as_str()) != Some(ValueSource::CommandLine))
+        .filter_map(|arg| {
+            let long = arg.get_long()?;
+            Some(format!("--{long} <{}>", flag_placeholder(arg)))
+        })
+        .collect()
+}
+
+fn flag_placeholder(arg: &clap::Arg) -> &'static str {
+    match arg.get_value_hint() {
+        ValueHint::FilePath | ValueHint::AnyPath => "FILE",
+        ValueHint::DirPath => "DIR",
+        _ => "VALUE",
+    }
+}
+
+#[cfg(test)]
+mod tests;
