@@ -144,8 +144,13 @@ impl RagApp {
         )
     }
 
+    /// Lock beside the database this store writes. In-memory stores report an empty path, so
+    /// they fall back to the user database path.
     pub(in crate::app) fn writer_lock(&self) -> Result<FileLock> {
-        let db_path = knowledge::schema::knowledge_db_path()?;
+        let db_path = match self.knowledge.conn().path().filter(|path| !path.is_empty()) {
+            Some(path) => std::path::PathBuf::from(path),
+            None => knowledge::schema::knowledge_db_path()?,
+        };
         FileLock::acquire(&knowledge::lock::writer_lock_path(&db_path))
     }
 }
