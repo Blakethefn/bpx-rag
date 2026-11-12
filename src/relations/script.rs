@@ -1,6 +1,8 @@
 use std::path::{Path, PathBuf};
 
-use super::languages::grammar_for_path;
+use super::languages::{
+    candidate_extensions, extensions_for, grammar_for_path, is_resolution_extra, Grammar,
+};
 use super::parsers::ParserCache;
 use super::paths::canonical_file_under;
 use super::types::{RawReference, SourceFile};
@@ -88,19 +90,23 @@ fn resolve_script_import(source: &Path, root: &Path, specifier: &str) -> Option<
     } else {
         source.parent()?.join(spec_path)
     };
+    let extensions = candidate_extensions(Grammar::JavaScript);
     let mut candidates = vec![base.clone()];
     if let Some(extension) = base.extension().and_then(|extension| extension.to_str()) {
-        if extension == "js" || extension == "jsx" || extension == "mjs" || extension == "cjs" {
-            for replacement in ["ts", "tsx", "js", "jsx", "mjs", "cjs"] {
+        if extensions_for(Grammar::JavaScript).contains(&extension) {
+            for replacement in extensions
+                .iter()
+                .filter(|replacement| !is_resolution_extra(Grammar::JavaScript, replacement))
+            {
                 candidates.push(base.with_extension(replacement));
             }
         }
     } else {
-        for extension in ["ts", "tsx", "js", "jsx", "mjs", "cjs", "json"] {
+        for extension in &extensions {
             candidates.push(base.with_extension(extension));
         }
-        for index in ["ts", "tsx", "js", "jsx", "mjs", "cjs", "json"] {
-            candidates.push(base.join(format!("index.{index}")));
+        for extension in &extensions {
+            candidates.push(base.join(format!("index.{extension}")));
         }
     }
     candidates
@@ -108,3 +114,6 @@ fn resolve_script_import(source: &Path, root: &Path, specifier: &str) -> Option<
         .filter_map(|candidate| canonical_file_under(candidate, root))
         .next()
 }
+
+#[cfg(test)]
+mod tests;
