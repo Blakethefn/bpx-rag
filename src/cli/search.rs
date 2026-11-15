@@ -6,7 +6,9 @@ pub struct SearchArgs {
     #[arg(help = "Restrict to one registered source")]
     #[arg(short, long, value_name = "SOURCE")]
     pub source: Option<String>,
-    #[arg(help = "Metadata filter, e.g. `language:rust type:code`")]
+    #[arg(
+        help = "Metadata or indexed-path filter, e.g. `language:rust type:code`, `dir:src`, or `file:\"src/main.rs\""
+    )]
     #[arg(long)]
     pub filter: Option<String>,
     #[arg(short, long, default_value = "10")]

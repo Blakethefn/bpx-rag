@@ -1,5 +1,5 @@
 use anyhow::Result;
-use rusqlite::{params, Connection, OptionalExtension};
+use rusqlite::{Connection, OptionalExtension, params};
 
 use crate::embed::{self, Embed};
 
@@ -91,8 +91,12 @@ pub(super) fn write_batch(
 
         let vector = embed::normalize_embedding(vector, embedder.dim())?;
         conn.execute(
-            "INSERT OR REPLACE INTO knowledge_embeddings (chunk_rowid, embedding, dim, model_id)
-             VALUES (?1, ?2, ?3, ?4)",
+            "INSERT INTO knowledge_embeddings (chunk_rowid, embedding, dim, model_id)
+             VALUES (?1, ?2, ?3, ?4)
+             ON CONFLICT(chunk_rowid) DO UPDATE SET
+                embedding = excluded.embedding,
+                dim = excluded.dim,
+                model_id = excluded.model_id",
             params![
                 *rowid,
                 embed::embedding_to_bytes(&vector),

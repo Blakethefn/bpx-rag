@@ -12,7 +12,7 @@ pub(super) fn search() -> Tool {
             "query": { "type": "string", "description": "One natural-language or code search query." },
             "queries": { "type": "array", "items": { "type": "string" }, "description": "Optional batch of search queries." },
             "source": { "type": "string", "description": "Restrict results to a registered source label." },
-            "filter": { "type": "string", "description": "Metadata filter, e.g. `language:rust type:code`." },
+            "filter": { "type": "string", "description": "Metadata or indexed-path filter, e.g. `language:rust type:code`, `dir:src`, or `file:\"src/main.rs\"`. Quote path values that contain spaces." },
             "limit": { "type": "integer", "description": "Maximum results per query (1–50, default 10)." },
             "max_per_file": { "type": "integer", "description": "Preferred cap on passages returned from one file (1–50, default 1). Passages from one file are taken first, up to this number. If the other files cannot fill the results, the remaining slots take the next-best passages from the same file, so the cap is not strict." },
             "profile": { "type": "string", "enum": SearchProfile::input_names() },
@@ -52,7 +52,6 @@ pub(super) fn sync() -> Tool {
         invoke: Invoke::App(handlers::handle_knowledge_sync),
     }
 }
-
 
 pub(super) fn status() -> Tool {
     Tool {

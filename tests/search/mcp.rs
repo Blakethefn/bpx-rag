@@ -1,6 +1,6 @@
-use super::{indexed_fixture, Fixture};
+use super::{Fixture, indexed_fixture};
 
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::io::Write;
 use std::process::{Command, Stdio};
 
@@ -104,4 +104,26 @@ fn mcp_search_accepts_max_per_file_and_rejects_out_of_range_values() {
         response_text(default).contains("file: small.md"),
         "{default}"
     );
+}
+
+#[test]
+fn mcp_search_accepts_an_exact_file_scope_filter() {
+    let fixture = indexed_fixture();
+    let responses = mcp_responses(
+        &fixture,
+        &[search_call(
+            1,
+            json!({
+                "query": "kestrel",
+                "source": "docs",
+                "filter": "file:big.md",
+                "limit": 3
+            }),
+        )],
+    );
+    let response = response(&responses, 1);
+    assert_ne!(response["result"]["isError"], json!(true), "{response}");
+    let text = response_text(response);
+    assert!(text.contains("file: big.md"), "{text}");
+    assert!(!text.contains("file: small.md"), "{text}");
 }

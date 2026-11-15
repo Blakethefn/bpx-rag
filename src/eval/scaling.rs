@@ -1,5 +1,5 @@
 use crate::embed::{self};
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use serde::Serialize;
 
 mod index;
@@ -33,7 +33,7 @@ pub fn run_scaling_evaluation(repetitions: usize) -> Result<ScalingEvalReport> {
     if !(1..=100).contains(&repetitions) {
         return Err(anyhow!("repetitions must be between 1 and 100"));
     }
-    let sizes = [1_000, 10_000, 50_000];
+    let sizes = [1_000, 4_096, 10_000, 16_384, 25_000, 50_000];
     const QUERY_COUNT: usize = 5;
     let mut points = Vec::with_capacity(sizes.len());
     for chunk_count in sizes {

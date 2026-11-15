@@ -8,6 +8,7 @@ mod harness;
 
 mod bounds;
 mod mcp;
+mod path;
 
 fn write_corpus(source: &Path) {
     let filler = "lorem ipsum dolor sit amet ".repeat(35);

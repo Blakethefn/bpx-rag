@@ -111,6 +111,8 @@ By default each search returns at most one passage per file, so the results cove
 
 The `language:<name>` filter matches source-file extensions for common languages as well as an optional YAML frontmatter `language` value. For example, `--filter language:rust` works on ordinary `.rs` files without requiring frontmatter or reindexing existing sources. Registered aliases include names such as `c++`/`cpp` and `c#`/`csharp`; unregistered safe names such as `nix` or `tf` match that extension. `.h` is intentionally included in both C and C++ filters because the extension is ambiguous.
 
+Use `dir:<relative-path>` to restrict results to an indexed directory subtree, or `file:<relative-path>` for one exact file. They combine with source and metadata filters, for example `--filter 'source:api dir:src/routes type:code'`. Quote path values with spaces, such as `--filter 'file:"docs/user guide.md"'`. Directory paths match complete segments, so `dir:src/foo` does not match `src/foobar`.
+
 ## Freshness
 
 Each search result shows `freshness: <state> (<basis>)`. The basis says how the state was decided:

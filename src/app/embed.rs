@@ -2,15 +2,14 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use anyhow::Result;
-use rusqlite::types::ToSql;
 use serde_json::json;
 
 use crate::config::Config;
 use crate::embed::{self, Embed, Embedder};
-use crate::knowledge::filter::{predicates_to_sql, FilterPredicate};
 
 use super::RagApp;
 
+mod coverage;
 mod model;
 
 pub use model::{embedding_model_status, load_watch_embedder};
@@ -55,61 +54,6 @@ impl RagApp {
             .set_query_embedding_cache_capacity(self.config.embeddings.query_cache_entries);
         self.embedding_notice = None;
         self.embedder_loaded = true;
-    }
-
-    pub(super) fn embedding_coverage_notice(
-        &self,
-        predicates: &[FilterPredicate],
-    ) -> Result<Option<String>> {
-        let Some(embedder) = self.knowledge.embedder() else {
-            return Ok(None);
-        };
-        let (scope_where, scope_values) = predicates_to_sql(predicates, 1);
-        let scope_clause = if scope_where.is_empty() {
-            String::new()
-        } else {
-            format!(" WHERE {scope_where}")
-        };
-        let file_join = if predicates
-            .iter()
-            .any(|predicate| matches!(predicate, FilterPredicate::Language(_)))
-        {
-            "JOIN knowledge_files kf ON kf.id = kcm.file_id"
-        } else {
-            ""
-        };
-        let sql = format!(
-            "SELECT COUNT(kcm.chunk_rowid),
-                    COUNT(CASE WHEN e.model_id = ?1 THEN e.chunk_rowid END)
-             FROM knowledge_chunk_meta kcm
-             {file_join}
-             LEFT JOIN knowledge_embeddings e ON e.chunk_rowid = kcm.chunk_rowid{scope_clause}"
-        );
-        let mut params: Vec<Box<dyn ToSql>> = vec![Box::new(embedder.model_id().to_string())];
-        params.extend(
-            scope_values
-                .into_iter()
-                .map(|value| Box::new(value) as Box<dyn ToSql>),
-        );
-        let param_refs: Vec<&dyn ToSql> = params.iter().map(|param| param.as_ref()).collect();
-        let (total, current_model): (i64, i64) =
-            self.knowledge
-                .conn()
-                .query_row(&sql, param_refs.as_slice(), |row| {
-                    Ok((row.get(0)?, row.get(1)?))
-                })?;
-        if total > current_model {
-            let scope = if predicates.is_empty() {
-                "indexed chunks"
-            } else {
-                "chunks matching this search scope"
-            };
-            Ok(Some(format!(
-                "The active model has vectors for {current_model}/{total} {scope}; run `bpx-rag embed` to build or replace the remaining vectors."
-            )))
-        } else {
-            Ok(None)
-        }
     }
 
     pub fn download_embedding_model(&mut self) -> Result<String> {

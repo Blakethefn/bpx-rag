@@ -49,6 +49,23 @@ fn sql_folder_predicate() {
 }
 
 #[test]
+fn sql_directory_predicate_uses_segment_bounded_range() {
+    let preds = vec![FilterPredicate::Directory("src/foo".to_string())];
+    let (clause, params) = predicates_to_sql(&preds, 0);
+    assert!(clause.contains("kcm.file_id IN (SELECT kf.id FROM knowledge_files kf"));
+    assert!(clause.contains("kf.rel_path >= ?1 AND kf.rel_path < ?2"));
+    assert_eq!(params, vec!["src/foo/", "src/foo0"]);
+}
+
+#[test]
+fn sql_file_predicate_uses_exact_path_equality() {
+    let preds = vec![FilterPredicate::File("src/%_*.rs".to_string())];
+    let (clause, params) = predicates_to_sql(&preds, 0);
+    assert!(clause.contains("rel_path = ?1"));
+    assert_eq!(params, vec!["src/%_*.rs"]);
+}
+
+#[test]
 fn sql_multiple_predicates_joined_with_and() {
     let preds = vec![
         FilterPredicate::Frontmatter {

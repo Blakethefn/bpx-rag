@@ -1,4 +1,4 @@
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 
 use crate::knowledge::filter::{scope_predicates, single_source_predicate};
 use crate::search::profile::SearchProfile;
@@ -14,15 +14,19 @@ impl RagApp {
         let predicates = scope_predicates(options.filter, options.source)?;
         let source_scope = single_source_predicate(&predicates);
         self.ensure_embedder();
+        let coverage = self.embedding_coverage(&predicates)?;
         if let Some((model_id, dimensions)) = self
             .knowledge
             .embedder()
             .map(|embedder| (embedder.model_id().to_string(), embedder.dim()))
         {
-            if let Err(error) =
-                self.knowledge
-                    .ensure_vector_index_for_source(&model_id, dimensions, source_scope)
-            {
+            let embedded_count = coverage.map_or(0, |coverage| coverage.current_model);
+            if let Err(error) = self.knowledge.ensure_vector_index_for_scope(
+                &model_id,
+                dimensions,
+                source_scope,
+                embedded_count,
+            ) {
                 self.knowledge.clear_vector_index();
                 self.embedding_notice = Some(format!(
                     "Approximate index unavailable; using exact vector search: {error}"
@@ -30,7 +34,8 @@ impl RagApp {
                 eprintln!("[bpx-rag] failed to prepare approximate index: {error}");
             }
         }
-        if let Some(notice) = self.embedding_coverage_notice(&predicates)? {
+        if let Some(notice) = coverage.and_then(|coverage| coverage.notice(!predicates.is_empty()))
+        {
             self.embedding_notice = Some(notice);
         }
         let outcome = search::run_query(

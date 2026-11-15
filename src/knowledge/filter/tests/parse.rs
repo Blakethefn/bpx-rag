@@ -1,5 +1,7 @@
 use super::super::*;
 
+mod path;
+
 #[test]
 fn parse_none_returns_empty() {
     assert!(parse_filter(None).unwrap().is_empty());

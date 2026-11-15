@@ -2,6 +2,7 @@ use crate::knowledge::*;
 use crate::support::{make_store, make_store_with_embedder};
 
 mod enrichment;
+mod path;
 mod scope;
 mod search;
 mod sync;

@@ -28,6 +28,7 @@ pub(super) fn graph(conn: &Connection) -> Result<()> {
         CREATE INDEX IF NOT EXISTS idx_chunk_meta_source ON knowledge_chunk_meta(source_id);
         CREATE INDEX IF NOT EXISTS idx_chunk_meta_file ON knowledge_chunk_meta(file_id);
         CREATE INDEX IF NOT EXISTS idx_files_source ON knowledge_files(source_id);
+        CREATE INDEX IF NOT EXISTS idx_files_rel_path ON knowledge_files(rel_path);
         CREATE INDEX IF NOT EXISTS idx_links_source ON knowledge_links(source_file_id);
         CREATE INDEX IF NOT EXISTS idx_links_target ON knowledge_links(target_file_id);
         CREATE INDEX IF NOT EXISTS idx_symbols_name ON knowledge_symbols(name);

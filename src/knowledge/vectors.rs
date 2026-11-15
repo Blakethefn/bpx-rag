@@ -4,6 +4,12 @@ use super::ann;
 
 mod candidates;
 
+#[cfg(test)]
+mod tests;
+
+// Release scaling crossed from exact-faster at 10k to ANN-faster at 16,384 vectors.
+const RETRIEVAL_ANN_THRESHOLD: i64 = 16_384;
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct VectorIndexState {
     model_id: String,
@@ -14,23 +20,35 @@ pub(super) struct VectorIndexState {
 }
 
 impl super::KnowledgeStore {
-    pub(crate) fn ensure_vector_index_for_source(
+    pub(crate) fn ensure_vector_index_for_scope(
         &mut self,
         model_id: &str,
         dimensions: usize,
         source_label: Option<&str>,
+        scoped_embedding_count: i64,
     ) -> Result<()> {
-        let Some(source_label) = source_label else {
-            return self.ensure_vector_index(model_id, dimensions);
-        };
+        match index_scope(source_label, scoped_embedding_count) {
+            IndexScope::Global => self.ensure_vector_index(model_id, dimensions),
+            IndexScope::Source(label) => {
+                self.ensure_vector_index_for_source(model_id, dimensions, label)
+            }
+            IndexScope::Exact => {
+                self.clear_vector_index();
+                Ok(())
+            }
+        }
+    }
+
+    fn ensure_vector_index_for_source(
+        &mut self,
+        model_id: &str,
+        dimensions: usize,
+        source_label: &str,
+    ) -> Result<()> {
         let Some(source) = self.get_source(source_label)? else {
             self.clear_vector_index();
             return Ok(());
         };
-        if source.chunk_count < ann::ANN_MIN_VECTORS as i64 {
-            self.clear_vector_index();
-            return Ok(());
-        }
         self.ensure_vector_index_scope(model_id, dimensions, Some(source.id))
     }
 
@@ -101,5 +119,22 @@ impl super::KnowledgeStore {
         self.vector_index
             .as_ref()
             .map_or(0, ann::VectorIndex::memory_usage_bytes)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum IndexScope<'a> {
+    Exact,
+    Source(&'a str),
+    Global,
+}
+
+fn index_scope<'a>(source_label: Option<&'a str>, scoped_embedding_count: i64) -> IndexScope<'a> {
+    if scoped_embedding_count < RETRIEVAL_ANN_THRESHOLD {
+        IndexScope::Exact
+    } else if let Some(source_label) = source_label {
+        IndexScope::Source(source_label)
+    } else {
+        IndexScope::Global
     }
 }

@@ -2,6 +2,7 @@ use super::*;
 
 mod analysis;
 mod catalog;
+mod coverage;
 mod embed;
 mod identifier;
 mod lock;

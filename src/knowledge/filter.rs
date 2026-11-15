@@ -1,8 +1,16 @@
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
+
+mod path;
+mod scope;
+mod tokens;
+
+pub(crate) use scope::file_scope_sql;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum FilterPredicate {
     Source(String),
+    Directory(String),
+    File(String),
     Frontmatter { key: String, value: String },
     Tag(String),
     Folder(String),
@@ -24,7 +32,7 @@ pub fn parse_filter(filter: Option<&str>) -> Result<Vec<FilterPredicate>> {
 
     let mut predicates = Vec::new();
 
-    for token in filter.split_whitespace() {
+    for token in tokens::split(filter)? {
         let (key, value) = token
             .split_once(':')
             .ok_or_else(|| anyhow!("invalid filter token '{token}'; expected key:value"))?;
@@ -33,6 +41,20 @@ pub fn parse_filter(filter: Option<&str>) -> Result<Vec<FilterPredicate>> {
         }
         let pred = match key {
             "source" => FilterPredicate::Source(value.to_string()),
+            "dir" | "directory" => {
+                if !path::validate_relative_path(value) {
+                    return Err(anyhow!(
+                        "directory filter must be a normalized relative path"
+                    ));
+                }
+                FilterPredicate::Directory(value.to_string())
+            }
+            "file" => {
+                if !path::validate_relative_path(value) {
+                    return Err(anyhow!("file filter must be a normalized relative path"));
+                }
+                FilterPredicate::File(value.to_string())
+            }
             "tag" => FilterPredicate::Tag(value.to_string()),
             "folder" => FilterPredicate::Folder(value.to_string()),
             "language" => FilterPredicate::Language(value.to_string()),
@@ -92,6 +114,20 @@ pub fn predicates_to_sql(
                     "kcm.source_id = (SELECT id FROM knowledge_sources WHERE label = ?{idx})"
                 ));
                 params.push(label.clone());
+            }
+            FilterPredicate::Directory(path) => {
+                let (path_sql, path_params) = path::predicate_sql(path, true, "kf.rel_path", idx);
+                fragments.push(format!(
+                    "kcm.file_id IN (SELECT kf.id FROM knowledge_files kf WHERE {path_sql})"
+                ));
+                params.extend(path_params);
+            }
+            FilterPredicate::File(path) => {
+                let (path_sql, path_params) = path::predicate_sql(path, false, "kf.rel_path", idx);
+                fragments.push(format!(
+                    "kcm.file_id IN (SELECT kf.id FROM knowledge_files kf WHERE {path_sql})"
+                ));
+                params.extend(path_params);
             }
             FilterPredicate::Frontmatter { key, value } => {
                 let json_path = format!("$.frontmatter.{key}");
