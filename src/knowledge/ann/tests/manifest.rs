@@ -47,4 +47,3 @@ fn sidecar_manifest_rejects_stale_generation_and_database_identity() {
             .is_none()
     );
 }
-

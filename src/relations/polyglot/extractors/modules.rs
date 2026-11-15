@@ -111,4 +111,3 @@ fn solidity_import(node: Node<'_>, content: &str) -> Option<(&'static str, Strin
         .and_then(quoted_prefix)
         .map(|path| ("import", path))
 }
-

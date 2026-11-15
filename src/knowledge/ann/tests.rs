@@ -105,4 +105,3 @@ fn hnsw_candidate_search_recalls_exact_neighbors_and_roundtrips_sidecar() {
     assert_eq!(restored.dimensions(), TEST_DIMENSIONS);
     assert_eq!(manifest.tombstones, 0);
 }
-

@@ -78,4 +78,3 @@ fn command_reference(node: Node<'_>, text: &str, content: &str) -> Option<(&'sta
     }
     shell::bash_reference(text)
 }
-

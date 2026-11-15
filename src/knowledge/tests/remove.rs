@@ -129,4 +129,3 @@ fn sync(store: &KnowledgeStore, label: &str) {
 fn count(store: &KnowledgeStore, sql: &str) -> i64 {
     store.conn().query_row(sql, [], |row| row.get(0)).unwrap()
 }
-

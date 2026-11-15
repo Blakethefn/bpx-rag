@@ -79,4 +79,3 @@ pub(super) fn relate() -> Tool {
         invoke: Invoke::Relate,
     }
 }
-

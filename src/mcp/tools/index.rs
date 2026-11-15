@@ -91,4 +91,3 @@ pub(super) fn read() -> Tool {
         invoke: Invoke::App(handlers::handle_knowledge_read),
     }
 }
-
