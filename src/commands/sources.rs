@@ -1,18 +1,18 @@
 use anyhow::{anyhow, Result};
 
 use crate::app::{self, RagApp};
-use crate::cli::Commands;
+use crate::cli::{AddArgs, Commands, ReadArgs};
 
 pub(crate) fn run_sources(command: Commands) -> Result<()> {
     let mut app = RagApp::open()?;
     match command {
-        Commands::Add {
+        Commands::Add(AddArgs {
             path,
             label,
             include,
             exclude,
             enrich,
-        } => println!(
+        }) => println!(
             "{}",
             app.add_source(&path, &label, &include, &exclude, &enrich)?
         ),
@@ -42,13 +42,13 @@ pub(crate) fn run_sources(command: Commands) -> Result<()> {
             let report = app.scrub_sensitive_index(label.as_deref())?;
             println!("{}", report.summary());
         }
-        Commands::Read {
+        Commands::Read(ReadArgs {
             label,
             max_chunks,
             path,
             line_start,
             line_end,
-        } => {
+        }) => {
             println!(
                 "{}",
                 app.read_chunks(&label, max_chunks, path.as_deref(), line_start, line_end,)?

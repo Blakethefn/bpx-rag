@@ -1,9 +1,12 @@
 use anyhow::{bail, Result};
-use clap::parser::ValueSource;
-use clap::{ArgMatches, Args, Command, FromArgMatches, Id, Subcommand, ValueHint};
+use clap::{Args, Subcommand, ValueHint};
 use std::path::PathBuf;
 
-use super::{DEFAULT_POOL_DEPTH, DEFAULT_POOL_SEED};
+mod args;
+mod legacy;
+
+pub use args::{PoolCreateArgs, PoolImportArgs};
+use legacy::LegacyPoolCreate;
 
 #[derive(Debug, Subcommand)]
 pub enum EvalAction {
@@ -112,154 +115,6 @@ pub enum PoolAction {
         long_about = "Import completed pool grades into a new qrels file.\n\nRefuses to overwrite an existing output file. Does not change the annotation pool or the reveal key."
     )]
     Import(PoolImportArgs),
-}
-
-#[derive(Debug, Args)]
-pub struct PoolCreateArgs {
-    #[arg(help = "Dataset directory containing queries.jsonl. Defaults to the bundled fixture")]
-    #[arg(long, value_hint = ValueHint::DirPath)]
-    pub dataset: Option<PathBuf>,
-    #[arg(help = "Corpus tree to index. Defaults to <dataset>/corpus")]
-    #[arg(long, value_hint = ValueHint::DirPath)]
-    pub corpus_root: Option<PathBuf>,
-    #[arg(help = "New JSON file for annotators. Refuses to overwrite an existing file")]
-    #[arg(long, value_hint = ValueHint::FilePath)]
-    pub output: PathBuf,
-    #[arg(
-        help = "New JSON file for the retrieval-rank reveal key. Refuses to overwrite an existing file"
-    )]
-    #[arg(long, value_hint = ValueHint::FilePath)]
-    pub key_output: PathBuf,
-    #[arg(help = "Distinct files to retrieve per search channel before pooling")]
-    #[arg(long, default_value_t = DEFAULT_POOL_DEPTH)]
-    pub depth: usize,
-    #[arg(help = "Stable shuffle seed for blinded IDs and candidate order")]
-    #[arg(long, default_value_t = DEFAULT_POOL_SEED)]
-    pub seed: u64,
-}
-
-#[derive(Debug, Args)]
-pub struct PoolImportArgs {
-    #[arg(long, value_hint = ValueHint::FilePath)]
-    pub pool: PathBuf,
-    #[arg(long, value_hint = ValueHint::FilePath)]
-    pub key: PathBuf,
-    #[arg(long, value_hint = ValueHint::DirPath)]
-    pub dataset: PathBuf,
-    #[arg(long, value_hint = ValueHint::DirPath)]
-    pub corpus_root: PathBuf,
-    #[arg(help = "New qrels file. Refuses to overwrite an existing file")]
-    #[arg(long, value_hint = ValueHint::FilePath)]
-    pub output: PathBuf,
-}
-
-#[derive(Debug)]
-struct LegacyPoolCreate {
-    args: Option<PoolCreateArgs>,
-    missing: Vec<String>,
-}
-
-impl LegacyPoolCreate {
-    fn specified(&self) -> bool {
-        self.args.is_some() || !self.missing.is_empty()
-    }
-
-    fn into_create(self) -> Result<PoolCreateArgs> {
-        if let Some(args) = self.args {
-            return Ok(args);
-        }
-        let missing = self.missing.join(" and ");
-        bail!(
-            "generating a pool requires {missing}. Run `bpx-rag eval pool create --output <FILE> --key-output <FILE>`"
-        )
-    }
-}
-
-impl Args for LegacyPoolCreate {
-    fn augment_args(cmd: Command) -> Command {
-        hide_create_flags(cmd)
-    }
-
-    fn augment_args_for_update(cmd: Command) -> Command {
-        hide_create_flags(cmd)
-    }
-}
-
-impl FromArgMatches for LegacyPoolCreate {
-    fn from_arg_matches(matches: &ArgMatches) -> Result<Self, clap::Error> {
-        let template = create_template();
-        if !create_flag_on_command_line(matches, &template) {
-            return Ok(Self {
-                args: None,
-                missing: Vec::new(),
-            });
-        }
-        let missing = missing_required_flags(matches, &template);
-        if !missing.is_empty() {
-            return Ok(Self {
-                args: None,
-                missing,
-            });
-        }
-        Ok(Self {
-            args: Some(PoolCreateArgs::from_arg_matches(matches)?),
-            missing: Vec::new(),
-        })
-    }
-
-    fn update_from_arg_matches(&mut self, matches: &ArgMatches) -> Result<(), clap::Error> {
-        *self = Self::from_arg_matches(matches)?;
-        Ok(())
-    }
-}
-
-fn create_template() -> Command {
-    <PoolCreateArgs as Args>::augment_args(Command::new("pool-create"))
-}
-
-fn hide_create_flags(cmd: Command) -> Command {
-    let ids = create_flag_ids();
-    let cmd = <PoolCreateArgs as Args>::augment_args(cmd);
-    cmd.mut_args(move |arg| {
-        if ids.iter().any(|id| id == arg.get_id()) {
-            arg.hide(true).required(false)
-        } else {
-            arg
-        }
-    })
-}
-
-fn create_flag_ids() -> Vec<Id> {
-    create_template()
-        .get_arguments()
-        .map(|arg| arg.get_id().clone())
-        .collect()
-}
-
-fn create_flag_on_command_line(matches: &ArgMatches, template: &Command) -> bool {
-    template
-        .get_arguments()
-        .any(|arg| matches.value_source(arg.get_id().as_str()) == Some(ValueSource::CommandLine))
-}
-
-fn missing_required_flags(matches: &ArgMatches, template: &Command) -> Vec<String> {
-    template
-        .get_arguments()
-        .filter(|arg| arg.is_required_set())
-        .filter(|arg| matches.value_source(arg.get_id().as_str()) != Some(ValueSource::CommandLine))
-        .filter_map(|arg| {
-            let long = arg.get_long()?;
-            Some(format!("--{long} <{}>", flag_placeholder(arg)))
-        })
-        .collect()
-}
-
-fn flag_placeholder(arg: &clap::Arg) -> &'static str {
-    match arg.get_value_hint() {
-        ValueHint::FilePath | ValueHint::AnyPath => "FILE",
-        ValueHint::DirPath => "DIR",
-        _ => "VALUE",
-    }
 }
 
 #[cfg(test)]

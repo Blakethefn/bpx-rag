@@ -1,6 +1,9 @@
+mod import;
+mod shell;
+
 use tree_sitter::Node;
 
-use super::{has_kind, quoted_literal, quoted_prefix};
+use super::{has_kind, quoted_literal};
 
 pub(super) fn extract(node: Node<'_>, content: &str) -> Vec<(&'static str, String)> {
     let Some(text) = node.utf8_text(content.as_bytes()).ok().map(str::trim) else {
@@ -42,18 +45,18 @@ pub(super) fn extract(node: Node<'_>, content: &str) -> Vec<(&'static str, Strin
         }
         "call" => call_reference(node, text, content),
         "command" => command_reference(node, text, content),
-        "function_call" => lua_reference(text),
-        "import_statement" => julia_reference(node, text, content),
-        "using_statement" => powershell_reference(node, text, content)
-            .or_else(|| julia_reference(node, text, content)),
+        "function_call" => shell::lua_reference(text),
+        "import_statement" => import::julia_reference(node, text, content),
+        "using_statement" => shell::powershell_reference(node, text, content)
+            .or_else(|| import::julia_reference(node, text, content)),
         "call_expression" => {
             if node.child_by_field_name("function").is_some() || has_kind(node, "call_suffix") {
                 None
             } else {
-                julia_reference(node, text, content)
+                import::julia_reference(node, text, content)
             }
         }
-        "use_no_statement" | "require_statement" => perl_reference(node, content),
+        "use_no_statement" | "require_statement" => import::perl_reference(node, content),
         _ => None,
     };
     reference.into_iter().collect()
@@ -61,195 +64,18 @@ pub(super) fn extract(node: Node<'_>, content: &str) -> Vec<(&'static str, Strin
 
 fn call_reference(node: Node<'_>, text: &str, content: &str) -> Option<(&'static str, String)> {
     if node.child_by_field_name("target").is_some() {
-        return elixir_reference(node, content);
+        return import::elixir_reference(node, content);
     }
     if node.child_by_field_name("function").is_some() {
-        return r_reference(node, content);
+        return import::r_reference(node, content);
     }
-    ruby_reference(text)
+    shell::ruby_reference(text)
 }
 
 fn command_reference(node: Node<'_>, text: &str, content: &str) -> Option<(&'static str, String)> {
     if node.child_by_field_name("command_name").is_some() {
-        return powershell_reference(node, text, content);
+        return shell::powershell_reference(node, text, content);
     }
-    bash_reference(text)
+    shell::bash_reference(text)
 }
 
-fn ruby_reference(text: &str) -> Option<(&'static str, String)> {
-    if !(text.starts_with("require ")
-        || text.starts_with("require(")
-        || text.starts_with("require_relative ")
-        || text.starts_with("require_relative("))
-    {
-        return None;
-    }
-    let relative = text.starts_with("require_relative");
-    let mut specifier = quoted_prefix(text)?;
-    if relative && !specifier.starts_with('.') && !specifier.starts_with('/') {
-        specifier = format!("./{specifier}");
-    }
-    Some(("import", specifier))
-}
-
-fn bash_reference(text: &str) -> Option<(&'static str, String)> {
-    let command = text.split_whitespace().collect::<Vec<_>>();
-    let operand = match command.as_slice() {
-        ["source", operand, ..] | [".", operand, ..] => *operand,
-        _ => return None,
-    };
-    let specifier = quoted_literal(operand).unwrap_or_else(|| operand.to_string());
-    Some(("include", specifier))
-}
-
-fn lua_reference(text: &str) -> Option<(&'static str, String)> {
-    if !text.starts_with("require") {
-        return None;
-    }
-    let argument = text
-        .strip_prefix("require")
-        .map(str::trim)
-        .map(|value| value.trim_start_matches('(').trim())?;
-    quoted_literal(argument).map(|specifier| ("import", specifier))
-}
-
-fn elixir_reference(node: Node<'_>, content: &str) -> Option<(&'static str, String)> {
-    if node.kind() != "call" {
-        return None;
-    }
-    let target = node
-        .child_by_field_name("target")?
-        .utf8_text(content.as_bytes())
-        .ok()?
-        .trim();
-    if !matches!(target, "alias" | "import" | "require" | "use") {
-        return None;
-    }
-    let arguments = node
-        .named_child(1)?
-        .utf8_text(content.as_bytes())
-        .ok()?
-        .trim()
-        .trim_start_matches('(');
-    let module = arguments
-        .split([')', ',', '{'])
-        .next()?
-        .trim()
-        .trim_end_matches(" do");
-    (!module.is_empty()).then(|| ("import", module.to_string()))
-}
-
-fn r_reference(node: Node<'_>, content: &str) -> Option<(&'static str, String)> {
-    if node.kind() != "call" {
-        return None;
-    }
-    let function = node
-        .child_by_field_name("function")?
-        .utf8_text(content.as_bytes())
-        .ok()?
-        .trim();
-    if !matches!(function, "source" | "sys.source") {
-        return None;
-    }
-    let arguments = node
-        .child_by_field_name("arguments")?
-        .utf8_text(content.as_bytes())
-        .ok()?;
-    quoted_prefix(arguments).map(|specifier| ("include", specifier))
-}
-
-fn julia_reference(node: Node<'_>, text: &str, content: &str) -> Option<(&'static str, String)> {
-    if matches!(node.kind(), "import_statement" | "using_statement") {
-        let keyword = if node.kind() == "using_statement" {
-            "using"
-        } else {
-            "import"
-        };
-        let module = text.strip_prefix(keyword)?.trim().trim_end_matches(';');
-        return (!module.is_empty()).then(|| ("import", module.to_string()));
-    }
-    if node.kind() != "call_expression" || !text.trim_start().starts_with("include") {
-        return None;
-    }
-    let arguments = node
-        .named_child(1)
-        .and_then(|child| child.utf8_text(content.as_bytes()).ok())
-        .unwrap_or(text);
-    quoted_prefix(arguments).map(|specifier| ("include", specifier))
-}
-
-fn perl_reference(node: Node<'_>, content: &str) -> Option<(&'static str, String)> {
-    match node.kind() {
-        "use_no_statement" if node.child_by_field_name("use").is_some() => node
-            .child_by_field_name("package_name")
-            .and_then(|package| package.utf8_text(content.as_bytes()).ok())
-            .map(str::trim)
-            .filter(|package| !package.is_empty())
-            .map(|package| ("import", package.to_string())),
-        "require_statement" => node
-            .child_by_field_name("package_name")
-            .and_then(|package| package.utf8_text(content.as_bytes()).ok())
-            .and_then(|package| {
-                quoted_literal(package).or_else(|| Some(package.trim().to_string()))
-            })
-            .filter(|package| !package.is_empty())
-            .map(|package| ("include", package)),
-        _ => None,
-    }
-}
-
-fn powershell_reference(
-    node: Node<'_>,
-    text: &str,
-    content: &str,
-) -> Option<(&'static str, String)> {
-    if node.kind() == "using_statement" {
-        let trimmed = text.trim_start();
-        if trimmed.to_ascii_lowercase().starts_with("using module ") {
-            let remainder = trimmed.get("using module".len()..)?.trim();
-            return first_path_argument(remainder).map(|path| ("import", path));
-        }
-        return None;
-    }
-    if node.kind() != "command" {
-        return None;
-    }
-    let command_name = node
-        .child_by_field_name("command_name")
-        .and_then(|name| name.utf8_text(content.as_bytes()).ok())
-        .map(str::trim)
-        .unwrap_or_default();
-    let dot_source = (0..node.child_count() as u32).any(|index| {
-        node.child(index)
-            .is_some_and(|child| child.kind() == "command_invokation_operator")
-    }) && node
-        .child_by_field_name("command_name")
-        .is_some_and(|name| name.kind() == "command_name_expr");
-    if dot_source {
-        return first_path_argument(command_name).map(|path| ("include", path));
-    }
-    let command = node
-        .child_by_field_name("command_name")
-        .and_then(|name| name.utf8_text(content.as_bytes()).ok())
-        .map(str::trim)
-        .unwrap_or_default();
-    let remainder = text.strip_prefix(command)?.trim();
-    if command.eq_ignore_ascii_case("Import-Module") {
-        return first_path_argument(remainder).map(|path| ("import", path));
-    }
-    None
-}
-
-fn first_path_argument(arguments: &str) -> Option<String> {
-    let arguments = arguments.trim_start();
-    let argument = if let Some(quoted) = quoted_prefix(arguments) {
-        quoted
-    } else {
-        arguments
-            .split_whitespace()
-            .find(|part| !part.starts_with('-'))?
-            .trim_end_matches([';', ','])
-            .to_string()
-    };
-    (!argument.is_empty()).then_some(argument)
-}

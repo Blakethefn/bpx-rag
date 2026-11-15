@@ -1,65 +1,18 @@
 use anyhow::{bail, Context, Result};
 use ignore::WalkBuilder;
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
-use super::languages::{grammar_for_path, Grammar};
-use super::markdown::markdown_references;
-use super::metadata::ProjectMetadata;
-use super::parsers::ParserCache;
 use super::paths::{display_relative, infer_root, is_excluded_directory, is_supported};
-use super::polyglot::polyglot_references;
-use super::rust::rust_references;
-use super::script::script_references;
-use super::types::{FileAnalysis, FileRelationship, RawReference, SourceFile};
+use super::types::{FileAnalysis, SourceFile};
+
+mod extract;
+
+pub use extract::project_edges;
 
 const MAX_FILES: usize = 20_000;
 const MAX_FILE_BYTES: u64 = 2 * 1024 * 1024;
 const MAX_TOTAL_BYTES: u64 = 128 * 1024 * 1024;
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ProjectEdge {
-    pub from: String,
-    pub to: String,
-    pub kind: String,
-}
-
-pub fn project_edges(root: &Path, paths: &[PathBuf]) -> Result<Vec<ProjectEdge>> {
-    let mut files = Vec::new();
-    for path in paths {
-        if !is_supported(path) {
-            continue;
-        }
-        if let Ok(content) = fs::read_to_string(path) {
-            files.push(SourceFile {
-                path: path.clone(),
-                content,
-            });
-        }
-    }
-
-    let metadata = ProjectMetadata::read(root);
-    let mut parsers = ParserCache::default();
-    let mut edges = Vec::new();
-    for source in &files {
-        let from = display_relative(&source.path, root)?;
-        for reference in extract_references(source, root, &files, &metadata, &mut parsers) {
-            let Some(target) = reference.target.as_deref() else {
-                continue;
-            };
-            let Ok(to) = display_relative(target, root) else {
-                continue;
-            };
-            if to != from {
-                edges.push(ProjectEdge {
-                    from: from.clone(),
-                    to,
-                    kind: reference.kind.to_string(),
-                });
-            }
-        }
-    }
-    Ok(edges)
-}
 
 pub fn analyze_file(path: &Path, root: Option<&Path>) -> Result<FileAnalysis> {
     let unresolved_path = match root {
@@ -181,75 +134,13 @@ pub fn analyze_file(path: &Path, root: Option<&Path>) -> Result<FileAnalysis> {
         warnings.push(format!("Skipped {skipped} unreadable or oversized files."));
     }
 
-    let mut outgoing = Vec::new();
-    let mut incoming = Vec::new();
-    let scanned_files = files.len();
-    let relative_target = display_relative(&target, &root)?;
-    let metadata = ProjectMetadata::read(&root);
-    let mut parsers = ParserCache::default();
-
-    for source in &files {
-        for reference in extract_references(source, &root, &files, &metadata, &mut parsers) {
-            let relation = FileRelationship {
-                from: display_relative(&source.path, &root)?,
-                to: reference
-                    .target
-                    .as_ref()
-                    .and_then(|path| display_relative(path, &root).ok()),
-                kind: reference.kind.to_string(),
-                specifier: reference.specifier,
-                line: reference.line,
-                direction: if source.path == target {
-                    "outgoing".to_string()
-                } else {
-                    "incoming".to_string()
-                },
-            };
-
-            if source.path == target {
-                outgoing.push(relation);
-            } else if reference.target.as_deref() == Some(target.as_path()) {
-                incoming.push(relation);
-            }
-        }
-    }
-
-    sort_relationships(&mut outgoing);
-    sort_relationships(&mut incoming);
-
+    let (outgoing, incoming) = extract::relationships(&target, &root, &files)?;
     Ok(FileAnalysis {
         root: root.display().to_string(),
-        file: relative_target,
-        scanned_files,
+        file: display_relative(&target, &root)?,
+        scanned_files: files.len(),
         outgoing,
         incoming,
         warnings,
     })
-}
-
-pub(super) fn sort_relationships(relationships: &mut [FileRelationship]) {
-    relationships.sort_by(|left, right| {
-        left.from
-            .cmp(&right.from)
-            .then(left.line.cmp(&right.line))
-            .then(left.specifier.cmp(&right.specifier))
-    });
-}
-
-fn extract_references(
-    source: &SourceFile,
-    root: &Path,
-    files: &[SourceFile],
-    metadata: &ProjectMetadata,
-    parsers: &mut ParserCache,
-) -> Vec<RawReference> {
-    match grammar_for_path(&source.path) {
-        Some(Grammar::Markdown) => markdown_references(source, root, files),
-        Some(Grammar::Rust) => rust_references(source, root, parsers),
-        Some(Grammar::JavaScript | Grammar::TypeScript | Grammar::Tsx) => {
-            script_references(source, root, parsers)
-        }
-        Some(grammar) => polyglot_references(grammar, source, root, files, metadata, parsers),
-        None => Vec::new(),
-    }
 }

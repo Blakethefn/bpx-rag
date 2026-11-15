@@ -2,6 +2,8 @@ use tree_sitter::Node;
 
 use super::{has_kind, quoted_prefix};
 
+mod scala;
+
 pub(super) fn extract(node: Node<'_>, content: &str) -> Vec<(&'static str, String)> {
     let Some(text) = node.utf8_text(content.as_bytes()).ok().map(str::trim) else {
         return Vec::new();
@@ -40,7 +42,7 @@ fn import_declaration(node: Node<'_>, text: &str) -> Vec<(&'static str, String)>
         || has_kind(node, "namespace_selectors")
         || has_kind(node, "namespace_wildcard")
     {
-        return scala_imports(text)
+        return scala::imports(text)
             .into_iter()
             .map(|path| ("import", path))
             .collect();
@@ -110,50 +112,3 @@ fn solidity_import(node: Node<'_>, content: &str) -> Option<(&'static str, Strin
         .map(|path| ("import", path))
 }
 
-fn scala_imports(text: &str) -> Vec<String> {
-    let Some(import) = text.strip_prefix("import").map(str::trim) else {
-        return Vec::new();
-    };
-    let import = import.trim_end_matches(';').trim();
-    let Some((package, selectors)) = import.split_once('{') else {
-        let path = import
-            .split_once(" as ")
-            .or_else(|| import.split_once(" => "))
-            .map_or(import, |(path, _)| path)
-            .trim();
-        if path.is_empty() {
-            return Vec::new();
-        }
-        let wildcard = path.ends_with("._") || path.ends_with(".*");
-        let path = path.trim_end_matches("._").trim_end_matches(".*");
-        return vec![if wildcard {
-            format!("{}/*", path.trim_end_matches('.'))
-        } else {
-            path.to_string()
-        }];
-    };
-
-    let package = package.trim().trim_end_matches('.');
-    if package.is_empty() {
-        return Vec::new();
-    }
-    selectors
-        .trim_end_matches('}')
-        .split(',')
-        .filter_map(|selector| {
-            let selector = selector.trim();
-            let selector = selector
-                .split_once(" as ")
-                .or_else(|| selector.split_once(" => "))
-                .map_or(selector, |(name, _)| name)
-                .trim();
-            if selector.is_empty() {
-                None
-            } else if selector == "_" || selector == "*" {
-                Some(format!("{package}/*"))
-            } else {
-                Some(format!("{package}.{selector}"))
-            }
-        })
-        .collect()
-}

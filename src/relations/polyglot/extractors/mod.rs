@@ -67,7 +67,7 @@ pub(super) fn quoted_literal(value: &str) -> Option<String> {
     Some(value[quote.len_utf8()..end].to_string())
 }
 
-pub(super) fn quoted_prefix(value: &str) -> Option<String> {
+pub(crate) fn quoted_prefix(value: &str) -> Option<String> {
     let start = value.find(['\'', '"', '`'])?;
     quoted_literal(&value[start..])
 }

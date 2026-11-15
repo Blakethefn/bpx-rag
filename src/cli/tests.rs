@@ -23,7 +23,9 @@ fn help(args: &[&str]) -> String {
 
 fn source_name(command: Option<Commands>) -> String {
     match command {
-        Some(Commands::Add { label, .. } | Commands::Sync { label: Some(label) }) => label,
+        Some(Commands::Add(AddArgs { label, .. }) | Commands::Sync { label: Some(label) }) => {
+            label
+        }
         other => panic!("expected a source flag, got {other:?}"),
     }
 }
