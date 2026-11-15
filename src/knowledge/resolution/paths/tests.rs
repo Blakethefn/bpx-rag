@@ -1,4 +1,5 @@
-use super::{is_directory_module_stem, is_path_keyword, rust_candidates, PATH_KEYWORDS};
+use super::candidates::rust_candidates;
+use super::{is_directory_module_stem, is_path_keyword, PATH_KEYWORDS};
 
 #[test]
 fn path_keywords_are_not_module_file_candidates() {

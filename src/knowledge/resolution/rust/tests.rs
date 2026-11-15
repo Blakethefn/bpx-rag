@@ -23,12 +23,12 @@ fn path_keywords_fail_and_count_as_entered() {
             matches!(find_path(&tree, None, 1, name, None), Found::Failed),
             "{name}"
         );
-        assert!(super::entered_module(&tree, 1, &format!("{name}::item")));
+        assert!(super::qualify::entered_module(&tree, 1, &format!("{name}::item")));
     }
     assert!(matches!(
         find_path(&tree, None, 1, "missing", None),
         Found::External
     ));
-    assert!(!super::entered_module(&tree, 1, "missing::item"));
-    assert!(!super::entered_module(&tree, 1, "::crate"));
+    assert!(!super::qualify::entered_module(&tree, 1, "missing::item"));
+    assert!(!super::qualify::entered_module(&tree, 1, "::crate"));
 }
