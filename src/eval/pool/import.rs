@@ -2,10 +2,10 @@ use super::super::{
     corpus_manifest_sha256, read_jsonl, sha256_file, validate_qrels, validate_queries, EvalQuery,
     Qrel,
 };
-use super::{
+use super::output::{
     ensure_new_output, normalized_output_target, opaque_id, read_json_file, write_new_jsonl,
-    JudgmentPoolArtifact, JudgmentPoolKey, JUDGMENT_POOL_SCHEMA_VERSION,
 };
+use super::{JudgmentPoolArtifact, JudgmentPoolKey, JUDGMENT_POOL_SCHEMA_VERSION};
 use anyhow::{anyhow, Result};
 use std::collections::{BTreeMap, HashMap};
 use std::path::Path;
