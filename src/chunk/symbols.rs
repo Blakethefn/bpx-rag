@@ -1,3 +1,4 @@
+use super::evidence::field_text;
 use super::syntax::{declaration_nodes, is_declaration_wrapper, is_named_container};
 use crate::relations::Grammar;
 #[cfg(test)]
@@ -124,15 +125,6 @@ fn container_name(node: Node<'_>, content: &str) -> Option<String> {
 
 fn is_symbol_container(kind: &str) -> bool {
     is_named_container(kind) || kind == "mod_item"
-}
-
-fn field_text<'a>(node: Node<'_>, field: &str, content: &'a str) -> Option<&'a str> {
-    let text = node
-        .child_by_field_name(field)?
-        .utf8_text(content.as_bytes())
-        .ok()?
-        .trim();
-    (!text.is_empty()).then_some(text)
 }
 
 fn named_children(node: Node<'_>) -> Vec<Node<'_>> {

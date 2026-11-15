@@ -4,6 +4,7 @@ mod manifest;
 mod names;
 mod python;
 mod rust;
+mod visit;
 
 pub(super) use names::{is_literal, is_module_level};
 
@@ -60,7 +61,7 @@ pub(super) fn references_and_entries(
     let mut entries = Vec::new();
     let mut pending = vec![root];
     while let Some(node) = pending.pop() {
-        if !visit(grammar, path, node, content, &mut references, &mut entries) {
+        if !visit::visit(grammar, path, node, content, &mut references, &mut entries) {
             continue;
         }
         for index in (0..node.named_child_count() as u32).rev() {
@@ -77,53 +78,6 @@ pub(super) fn manifest_entries(path: &Path, content: &str) -> Vec<EntryObservati
 }
 
 pub(crate) use manifest::implicit_cargo_entries;
-
-fn visit(
-    grammar: Grammar,
-    path: &Path,
-    node: Node<'_>,
-    content: &str,
-    references: &mut Vec<Reference>,
-    entries: &mut Vec<EntryObservation>,
-) -> bool {
-    if is_literal(node.kind()) {
-        return false;
-    }
-    let claimed = match grammar {
-        Grammar::Rust => rust::visit(node, content, references, entries),
-        Grammar::Python => python::visit(node, content, references, entries),
-        Grammar::Go => go::visit(path, node, content, references, entries),
-        Grammar::JavaScript | Grammar::TypeScript | Grammar::Tsx => {
-            javascript::visit(node, content, references)
-        }
-        _ => Walk::Skip,
-    };
-    if claimed == Walk::Stop {
-        return false;
-    }
-
-    if let names::Qualified::Stop(reference) = names::qualified_reference(node, content) {
-        if let Some(reference) =
-            reference.and_then(|reference| names::normalize_rust(grammar, reference))
-        {
-            push_reference(references, reference);
-        }
-        return false;
-    }
-
-    if matches!(
-        node.kind(),
-        "identifier" | "type_identifier" | "field_identifier" | "property_identifier"
-    ) {
-        if let Some(reference) = names::plain_reference(node, content)
-            .and_then(|reference| names::normalize_rust(grammar, reference))
-        {
-            push_reference(references, reference);
-        }
-        return false;
-    }
-    true
-}
 
 pub(super) fn reference(
     kind: &'static str,
