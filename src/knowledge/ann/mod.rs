@@ -13,7 +13,7 @@ mod sidecar;
 use build::{apply_incremental_changes, build_index, IncrementalChanges};
 use sidecar::{load_sidecar, save_sidecar};
 
-const ANN_MIN_VECTORS: usize = 4_096;
+pub(super) const ANN_MIN_VECTORS: usize = 4_096;
 const ANN_MAX_CANDIDATES: usize = 8_192;
 const _: () = assert!(ANN_MAX_CANDIDATES >= 256);
 const ANN_CANDIDATE_MULTIPLIER: usize = 512;

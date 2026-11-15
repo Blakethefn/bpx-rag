@@ -11,6 +11,25 @@ pub(super) struct VectorIndexState {
 }
 
 impl super::KnowledgeStore {
+    pub(crate) fn ensure_vector_index_for_source(
+        &mut self,
+        model_id: &str,
+        dimensions: usize,
+        source_label: Option<&str>,
+    ) -> Result<()> {
+        if self.vector_index_state.is_none() {
+            if let Some(label) = source_label {
+                let source_is_small = self
+                    .get_source(label)?
+                    .is_none_or(|source| source.chunk_count < ann::ANN_MIN_VECTORS as i64);
+                if source_is_small {
+                    return Ok(());
+                }
+            }
+        }
+        self.ensure_vector_index(model_id, dimensions)
+    }
+
     pub fn ensure_vector_index(&mut self, model_id: &str, dimensions: usize) -> Result<()> {
         self.conn.execute_batch("BEGIN")?;
         let result = (|| -> Result<(VectorIndexState, Option<ann::VectorIndex>)> {

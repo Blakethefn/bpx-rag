@@ -52,6 +52,31 @@ pub fn parse_filter(filter: Option<&str>) -> Result<Vec<FilterPredicate>> {
     Ok(predicates)
 }
 
+pub fn scope_predicates(
+    filter: Option<&str>,
+    source_label: Option<&str>,
+) -> Result<Vec<FilterPredicate>> {
+    let mut predicates = parse_filter(filter)?;
+    if let Some(label) = source_label {
+        predicates.push(FilterPredicate::Source(label.to_string()));
+    }
+    Ok(predicates)
+}
+
+pub fn single_source_predicate(predicates: &[FilterPredicate]) -> Option<&str> {
+    let mut source = None;
+    for predicate in predicates {
+        let FilterPredicate::Source(label) = predicate else {
+            continue;
+        };
+        if source.is_some_and(|current| current != label) {
+            return None;
+        }
+        source = Some(label.as_str());
+    }
+    source
+}
+
 pub fn predicates_to_sql(
     predicates: &[FilterPredicate],
     param_offset: usize,

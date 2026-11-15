@@ -1,7 +1,7 @@
 use anyhow::Result;
 
 use crate::embed;
-use crate::knowledge::filter::{parse_filter, predicates_to_sql, FilterPredicate};
+use crate::knowledge::filter::{predicates_to_sql, scope_predicates};
 use crate::knowledge::KnowledgeStore;
 
 use super::rank::diversify_by_file;
@@ -27,11 +27,7 @@ pub(crate) fn search_with_pool(
         max_per_file,
     } = scope;
 
-    let mut predicates = parse_filter(filter)?;
-    if let Some(label) = source_label {
-        predicates.push(FilterPredicate::Source(label.to_string()));
-    }
-
+    let predicates = scope_predicates(filter, source_label)?;
     let (meta_where, meta_params) = predicates_to_sql(&predicates, 0);
     let (all_results, layers, warnings) = search_layers(
         store,
