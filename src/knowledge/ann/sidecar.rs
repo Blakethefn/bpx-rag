@@ -1,9 +1,14 @@
 use anyhow::{anyhow, Context, Result};
 use serde::{Deserialize, Serialize};
-use sha2::{Digest, Sha256};
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use usearch::{Index, MetricKind, ScalarKind};
+
+mod paths;
+
+use paths::{
+    index_path, manifest_path, remove_old_sidecars, remove_source_sidecars, sidecar_temp_path,
+};
 
 const SIDECAR_VERSION: u32 = 1;
 
@@ -13,10 +18,13 @@ pub(super) struct Manifest {
     database_id: String,
     model_id: String,
     dimensions: usize,
+    #[serde(default)]
+    source_id: Option<i64>,
     pub(super) generation: i64,
     pub(super) tombstones: usize,
 }
 
+#[cfg(test)]
 pub(super) fn load_sidecar(
     dir: &Path,
     model_id: &str,
@@ -24,7 +32,18 @@ pub(super) fn load_sidecar(
     generation: i64,
     database_id: &str,
 ) -> Result<Option<(Index, Manifest)>> {
-    let manifest_path = manifest_path(dir, model_id)?;
+    load_sidecar_scoped(dir, model_id, dimensions, generation, database_id, None)
+}
+
+pub(super) fn load_sidecar_scoped(
+    dir: &Path,
+    model_id: &str,
+    dimensions: usize,
+    generation: i64,
+    database_id: &str,
+    source_id: Option<i64>,
+) -> Result<Option<(Index, Manifest)>> {
+    let manifest_path = manifest_path(dir, model_id, source_id)?;
     let Ok(manifest_bytes) = fs::read(&manifest_path) else {
         return Ok(None);
     };
@@ -36,10 +55,11 @@ pub(super) fn load_sidecar(
         || manifest.dimensions != dimensions
         || manifest.generation > generation
         || manifest.database_id != database_id
+        || manifest.source_id != source_id
     {
         return Ok(None);
     }
-    let index_path = index_path(dir, model_id, database_id, manifest.generation)?;
+    let index_path = index_path(dir, model_id, database_id, manifest.generation, source_id)?;
     if !index_path.is_file() {
         return Ok(None);
     }
@@ -59,6 +79,7 @@ pub(super) fn load_sidecar(
     }
 }
 
+#[cfg(test)]
 pub(super) fn save_sidecar(
     dir: &Path,
     index: &Index,
@@ -68,9 +89,31 @@ pub(super) fn save_sidecar(
     database_id: &str,
     tombstones: usize,
 ) -> Result<()> {
+    save_sidecar_scoped(
+        dir,
+        index,
+        model_id,
+        dimensions,
+        generation,
+        database_id,
+        tombstones,
+        None,
+    )
+}
+
+pub(super) fn save_sidecar_scoped(
+    dir: &Path,
+    index: &Index,
+    model_id: &str,
+    dimensions: usize,
+    generation: i64,
+    database_id: &str,
+    tombstones: usize,
+    source_id: Option<i64>,
+) -> Result<()> {
     fs::create_dir_all(dir)
         .with_context(|| format!("failed to create ANN sidecar directory {}", dir.display()))?;
-    let path = index_path(dir, model_id, database_id, generation)?;
+    let path = index_path(dir, model_id, database_id, generation, source_id)?;
     let temporary_path = sidecar_temp_path(&path);
     index
         .save(&temporary_path.to_string_lossy())
@@ -83,10 +126,11 @@ pub(super) fn save_sidecar(
         database_id: database_id.to_string(),
         model_id: model_id.to_string(),
         dimensions,
+        source_id,
         generation,
         tombstones,
     };
-    let manifest_path = manifest_path(dir, model_id)?;
+    let manifest_path = manifest_path(dir, model_id, source_id)?;
     let temporary_manifest_path = sidecar_temp_path(&manifest_path);
     fs::write(&temporary_manifest_path, serde_json::to_vec(&manifest)?)?;
     fs::rename(&temporary_manifest_path, &manifest_path).with_context(|| {
@@ -95,54 +139,10 @@ pub(super) fn save_sidecar(
             manifest_path.display()
         )
     })?;
-    remove_old_sidecars(dir, model_id, &path)?;
+    remove_old_sidecars(dir, model_id, source_id, &path)?;
     Ok(())
 }
 
-fn model_hash(model_id: &str) -> String {
-    format!("{:x}", Sha256::digest(model_id.as_bytes()))
-}
-
-fn manifest_path(dir: &Path, model_id: &str) -> Result<PathBuf> {
-    Ok(dir.join(format!("{}.manifest.json", model_hash(model_id))))
-}
-
-fn index_path(dir: &Path, model_id: &str, database_id: &str, generation: i64) -> Result<PathBuf> {
-    Ok(dir.join(format!(
-        "{}-{}-{}.usearch",
-        model_hash(model_id),
-        &database_id[..database_id.len().min(12)],
-        generation
-    )))
-}
-
-fn sidecar_temp_path(path: &Path) -> PathBuf {
-    let name = path
-        .file_name()
-        .and_then(|name| name.to_str())
-        .unwrap_or("index");
-    path.with_file_name(format!("{name}.tmp-{}", std::process::id()))
-}
-
-fn remove_old_sidecars(dir: &Path, model_id: &str, current: &Path) -> Result<()> {
-    let prefix = model_hash(model_id);
-    for entry in fs::read_dir(dir)? {
-        let entry = entry?;
-        let path = entry.path();
-        if path == current {
-            continue;
-        }
-        let Some(name) = path.file_name().and_then(|name| name.to_str()) else {
-            continue;
-        };
-        if name.starts_with(&prefix) && name.ends_with(".usearch") {
-            if let Err(error) = fs::remove_file(&path) {
-                eprintln!(
-                    "[bpx-rag] could not remove stale ANN sidecar {}: {error}",
-                    path.display()
-                );
-            }
-        }
-    }
-    Ok(())
+pub(super) fn remove_source(dir: &Path, source_id: i64) -> Result<()> {
+    remove_source_sidecars(dir, source_id)
 }

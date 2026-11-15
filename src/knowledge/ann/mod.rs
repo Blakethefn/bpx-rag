@@ -9,9 +9,15 @@ use usearch::Index;
 mod build;
 mod candidates;
 mod sidecar;
+mod update;
 
-use build::{apply_incremental_changes, build_index, IncrementalChanges};
+#[cfg(test)]
+use build::build_index;
+use build::build_index_scoped;
+#[cfg(test)]
 use sidecar::{load_sidecar, save_sidecar};
+use sidecar::{load_sidecar_scoped, save_sidecar_scoped};
+use update::{apply_incremental_changes, IncrementalChanges};
 
 pub(super) const ANN_MIN_VECTORS: usize = 4_096;
 const ANN_MAX_CANDIDATES: usize = 8_192;
@@ -25,6 +31,7 @@ pub struct VectorIndex {
 }
 
 impl VectorIndex {
+    #[cfg(test)]
     pub fn load_or_build(
         conn: &Connection,
         sidecar_dir: Option<&Path>,
@@ -33,7 +40,27 @@ impl VectorIndex {
         generation: i64,
         database_id: &str,
     ) -> Result<Option<Self>> {
-        let vector_count = active_vector_count(conn, model_id)?;
+        Self::load_or_build_scoped(
+            conn,
+            sidecar_dir,
+            model_id,
+            dimensions,
+            generation,
+            database_id,
+            None,
+        )
+    }
+
+    pub(super) fn load_or_build_scoped(
+        conn: &Connection,
+        sidecar_dir: Option<&Path>,
+        model_id: &str,
+        dimensions: usize,
+        generation: i64,
+        database_id: &str,
+        source_id: Option<i64>,
+    ) -> Result<Option<Self>> {
+        let vector_count = active_vector_count_scoped(conn, model_id, source_id)?;
         if vector_count == 0 {
             return Ok(None);
         }
@@ -42,9 +69,14 @@ impl VectorIndex {
         }
 
         if let Some(dir) = sidecar_dir {
-            if let Some((index, manifest)) =
-                load_sidecar(dir, model_id, dimensions, generation, database_id)?
-            {
+            if let Some((index, manifest)) = load_sidecar_scoped(
+                dir,
+                model_id,
+                dimensions,
+                generation,
+                database_id,
+                source_id,
+            )? {
                 if manifest.generation == generation && index.size() == vector_count {
                     return Ok(Some(Self { index, dimensions }));
                 }
@@ -58,6 +90,7 @@ impl VectorIndex {
                         to_generation: generation,
                         previous_tombstones: manifest.tombstones,
                         expected_size: vector_count,
+                        source_id,
                     };
                     if let Some(tombstones) = apply_incremental_changes(changes)? {
                         let index_size = index.size();
@@ -70,7 +103,7 @@ impl VectorIndex {
                         } else {
                             tombstones
                         };
-                        save_sidecar(
+                        save_sidecar_scoped(
                             dir,
                             &index,
                             model_id,
@@ -78,6 +111,7 @@ impl VectorIndex {
                             generation,
                             database_id,
                             tombstones,
+                            source_id,
                         )?;
                         return Ok(Some(Self { index, dimensions }));
                     }
@@ -85,9 +119,9 @@ impl VectorIndex {
             }
         }
 
-        let index = build_index(conn, model_id, dimensions, vector_count)?;
+        let index = build_index_scoped(conn, model_id, dimensions, vector_count, source_id)?;
         if let Some(dir) = sidecar_dir {
-            save_sidecar(
+            save_sidecar_scoped(
                 dir,
                 &index,
                 model_id,
@@ -95,6 +129,7 @@ impl VectorIndex {
                 generation,
                 database_id,
                 0,
+                source_id,
             )?;
         }
 
@@ -106,13 +141,41 @@ impl VectorIndex {
     }
 }
 
-pub fn active_vector_count(conn: &Connection, model_id: &str) -> Result<usize> {
-    let count: i64 = conn.query_row(
-        "SELECT COUNT(*) FROM knowledge_embeddings WHERE model_id = ?1",
-        params![model_id],
-        |row| row.get(0),
-    )?;
+pub(super) fn remove_source_sidecars(dir: &Path, source_id: i64) -> Result<()> {
+    sidecar::remove_source(dir, source_id)
+}
+
+fn active_vector_count_scoped(
+    conn: &Connection,
+    model_id: &str,
+    source_id: Option<i64>,
+) -> Result<usize> {
+    let count = match source_id {
+        Some(source_id) => conn.query_row(
+            "SELECT COUNT(*)
+             FROM knowledge_chunk_meta kcm INDEXED BY idx_chunk_meta_source
+             CROSS JOIN knowledge_embeddings ke
+             WHERE kcm.source_id = ?2 AND ke.chunk_rowid = kcm.chunk_rowid
+               AND ke.model_id = ?1",
+            params![model_id, source_id],
+            |row| row.get::<_, i64>(0),
+        )?,
+        None => conn.query_row(
+            "SELECT COUNT(*) FROM knowledge_embeddings WHERE model_id = ?1",
+            params![model_id],
+            |row| row.get::<_, i64>(0),
+        )?,
+    };
     Ok(count.max(0) as usize)
+}
+
+pub(super) fn source_generation(conn: &Connection, source_id: i64) -> Result<i64> {
+    Ok(conn.query_row(
+        "SELECT COALESCE(MAX(change_id), 0)
+         FROM knowledge_embedding_changes WHERE source_id = ?1",
+        params![source_id],
+        |row| row.get(0),
+    )?)
 }
 
 #[cfg(test)]

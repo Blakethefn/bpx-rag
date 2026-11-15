@@ -48,27 +48,10 @@ fn ensure_schema(conn: &Connection) -> Result<()> {
     ensure_freshness_and_watch_columns(conn)?;
     ensure_embedding_model_id(conn)?;
     ensure_database_instance_id(conn)?;
+    migrate::ensure_embedding_change_tracking(conn)?;
     crate::knowledge::identifiers::ensure_identifier_index(conn)?;
     conn.execute_batch(
-        "CREATE INDEX IF NOT EXISTS idx_embeddings_model ON knowledge_embeddings(model_id);
-         CREATE TRIGGER IF NOT EXISTS knowledge_embeddings_generation_insert
-         AFTER INSERT ON knowledge_embeddings BEGIN
-            INSERT INTO knowledge_embedding_changes (chunk_rowid, model_id, operation)
-                VALUES (NEW.chunk_rowid, NEW.model_id, 'upsert');
-            UPDATE knowledge_embedding_state SET generation = last_insert_rowid() WHERE state_id = 1;
-         END;
-         CREATE TRIGGER IF NOT EXISTS knowledge_embeddings_generation_update
-         AFTER UPDATE ON knowledge_embeddings BEGIN
-            INSERT INTO knowledge_embedding_changes (chunk_rowid, model_id, operation)
-                VALUES (NEW.chunk_rowid, NEW.model_id, 'upsert');
-            UPDATE knowledge_embedding_state SET generation = last_insert_rowid() WHERE state_id = 1;
-         END;
-         CREATE TRIGGER IF NOT EXISTS knowledge_embeddings_generation_delete
-         AFTER DELETE ON knowledge_embeddings BEGIN
-            INSERT INTO knowledge_embedding_changes (chunk_rowid, model_id, operation)
-                VALUES (OLD.chunk_rowid, OLD.model_id, 'delete');
-            UPDATE knowledge_embedding_state SET generation = last_insert_rowid() WHERE state_id = 1;
-         END;",
+        "CREATE INDEX IF NOT EXISTS idx_embeddings_model ON knowledge_embeddings(model_id);",
     )?;
     Ok(())
 }

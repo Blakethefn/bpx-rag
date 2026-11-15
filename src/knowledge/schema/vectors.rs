@@ -20,7 +20,8 @@ pub(super) fn vectors(conn: &Connection) -> Result<()> {
             change_id INTEGER PRIMARY KEY AUTOINCREMENT,
             chunk_rowid INTEGER NOT NULL,
             model_id TEXT NOT NULL,
-            operation TEXT NOT NULL CHECK (operation IN ('upsert', 'delete'))
+            operation TEXT NOT NULL CHECK (operation IN ('upsert', 'delete')),
+            source_id INTEGER
         );
 
 ",

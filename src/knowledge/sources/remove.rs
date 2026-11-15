@@ -90,6 +90,11 @@ impl super::super::KnowledgeStore {
         remove_failpoint(&mut step)?;
 
         transaction.commit()?;
+        if let Some(index_dir) = self.vector_index_dir.as_deref() {
+            if let Err(error) = super::super::ann::remove_source_sidecars(index_dir, source_id) {
+                eprintln!("[bpx-rag] could not clear ANN sidecars for source {label}: {error}");
+            }
+        }
         Ok(RemoveResult {
             files_removed,
             chunks_removed,
