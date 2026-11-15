@@ -2,6 +2,11 @@ use tree_sitter::Node;
 
 use super::super::{node_text, push_reference, reference, Reference, KIND_IMPORT};
 
+mod segments;
+
+use segments::ident_text;
+pub(super) use segments::{join_path, path_segments, strip_raw};
+
 pub(super) fn collect_use(
     node: Node<'_>,
     prefix: &[String],
@@ -115,64 +120,4 @@ fn push_import(
         references,
         reference(KIND_IMPORT, specifier, join_path(qualifier_segments), node),
     );
-}
-
-pub(super) fn path_segments(node: Node<'_>, content: &str) -> Option<Vec<String>> {
-    let mut segments = Vec::new();
-    extend_path(node, content, &mut segments)?;
-    if node_text(node, content)?.starts_with("::")
-        && segments.first().is_none_or(|segment| !segment.is_empty())
-    {
-        segments.insert(0, String::new());
-    }
-    if segments.iter().all(String::is_empty) {
-        return None;
-    }
-    Some(segments)
-}
-
-fn extend_path(node: Node<'_>, content: &str, segments: &mut Vec<String>) -> Option<()> {
-    match node.kind() {
-        "scoped_identifier" | "scoped_type_identifier" => {
-            let name = node.child_by_field_name("name")?;
-            if let Some(path) = node.child_by_field_name("path") {
-                extend_path(path, content, segments)?;
-            }
-            extend_path(name, content, segments)
-        }
-        "identifier" | "type_identifier" | "crate" | "self" | "super" => {
-            segments.push(ident_text(node, content)?);
-            Some(())
-        }
-        _ => None,
-    }
-}
-
-pub(super) fn join_path(segments: &[String]) -> Option<String> {
-    let segments: Vec<String> = segments
-        .iter()
-        .map(|segment| segment.replace(['"', '\''], ""))
-        .collect();
-    if segments.is_empty() {
-        return None;
-    }
-    if segments[0].is_empty() {
-        let rest = segments[1..].join("::");
-        if rest.is_empty() {
-            Some("::".to_string())
-        } else {
-            Some(format!("::{rest}"))
-        }
-    } else {
-        Some(segments.join("::"))
-    }
-}
-
-fn ident_text(node: Node<'_>, content: &str) -> Option<String> {
-    strip_raw(node_text(node, content)?).map(str::to_string)
-}
-
-pub(super) fn strip_raw(text: &str) -> Option<&str> {
-    let stripped = text.strip_prefix("r#").unwrap_or(text);
-    (!stripped.is_empty()).then_some(stripped)
 }
