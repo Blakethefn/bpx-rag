@@ -72,7 +72,7 @@ pub fn lookup(store: &KnowledgeStore, query: &SymbolQuery<'_>) -> Result<SymbolR
     let hits = select_hits(conn, name, query.mode, source_id, query.limit)?;
     let truncated = hits.len() > query.limit;
     let hits = hits.into_iter().take(query.limit).collect();
-    let pending = pending_sources(conn, source_id)?;
+    let pending = pending::pending_sources(conn, source_id)?;
     Ok(SymbolReport {
         hits,
         truncated,
@@ -129,25 +129,7 @@ fn hit_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<SymbolHit> {
     })
 }
 
-fn pending_sources(conn: &Connection, source_id: Option<i64>) -> Result<Vec<PendingSymbols>> {
-    let mut statement = conn.prepare(
-        "SELECT s.label, COUNT(*)
-         FROM knowledge_files kf
-         JOIN knowledge_sources s ON s.id = kf.source_id
-         WHERE (kf.symbol_version < ?1 OR kf.symbols_hash IS NOT kf.content_hash)
-           AND (?2 IS NULL OR kf.source_id = ?2)
-         GROUP BY s.label
-         ORDER BY s.label",
-    )?;
-    let rows = statement.query_map(params![SYMBOL_INDEX_VERSION, source_id], |row| {
-        Ok(PendingSymbols {
-            source_label: row.get(0)?,
-            files: row.get(1)?,
-        })
-    })?;
-    Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
-}
-
+mod pending;
 mod write;
 pub(crate) use write::{delete_file_symbols, replace_file_symbols};
 

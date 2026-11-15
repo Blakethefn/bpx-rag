@@ -1,10 +1,10 @@
 use anyhow::Result;
 use rusqlite::{params, Connection, OptionalExtension};
-use sha2::{Digest, Sha256};
 use std::collections::HashSet;
 
 use crate::chunk::evidence::STATUS_COMPLETE;
 
+mod rows;
 mod seal;
 
 pub(crate) const ANALYSIS_VERSION: i64 = 5;
@@ -29,8 +29,8 @@ pub(crate) struct EntryRow {
 }
 
 pub(crate) fn rebuild_analysis(conn: &Connection, source_id: i64) -> Result<()> {
-    let files = load_files(conn, source_id)?;
-    let entries = load_entries(conn, source_id)?;
+    let files = rows::load_files(conn, source_id)?;
+    let entries = rows::load_entries(conn, source_id)?;
     let tree = crate::knowledge::resolution::Tree::load(conn, source_id)?;
     let previous: i64 = conn
         .query_row(
@@ -41,7 +41,7 @@ pub(crate) fn rebuild_analysis(conn: &Connection, source_id: i64) -> Result<()> 
         .optional()?
         .unwrap_or(0);
     let generation = previous + 1;
-    let fingerprint = fingerprint(&files, &entries);
+    let fingerprint = rows::fingerprint(&files, &entries);
     let unsealed = seal::unsealed_rust_files(&files, &tree);
     let gaps = gaps(&files, &entries, &tree, &unsealed);
     let status = seal::analysis_status(&files, &unsealed);
@@ -124,79 +124,6 @@ fn gaps(
     lines.sort();
     lines.dedup();
     lines.join("\n")
-}
-
-fn fingerprint(files: &[FileRow], entries: &[EntryRow]) -> String {
-    let mut hasher = Sha256::new();
-    hasher.update(format!("analysis_version:{ANALYSIS_VERSION}\n"));
-    let mut files: Vec<&FileRow> = files.iter().collect();
-    files.sort_by_key(|file| file.id);
-    for file in files {
-        hasher.update(format!(
-            "file:{}:{}:{}:{}\n",
-            file.id, file.content_hash, file.symbol_status, file.reference_status
-        ));
-    }
-    let mut entries: Vec<&EntryRow> = entries.iter().collect();
-    entries.sort_by(|left, right| {
-        (
-            &left.evidence_hash,
-            &left.kind,
-            &left.target_rel_path,
-            left.evidence_file_id,
-        )
-            .cmp(&(
-                &right.evidence_hash,
-                &right.kind,
-                &right.target_rel_path,
-                right.evidence_file_id,
-            ))
-    });
-    for entry in entries {
-        hasher.update(format!(
-            "entry:{}:{}:{}\n",
-            entry.evidence_hash, entry.kind, entry.target_rel_path
-        ));
-    }
-    format!("{:x}", hasher.finalize())
-}
-
-fn load_files(conn: &Connection, source_id: i64) -> Result<Vec<FileRow>> {
-    let mut statement = conn.prepare(
-        "SELECT id, rel_path, content_hash,
-                COALESCE(symbol_status, ''),
-                COALESCE(reference_status, ''),
-                reference_version
-         FROM knowledge_files WHERE source_id = ?1 ORDER BY id",
-    )?;
-    let rows = statement.query_map(params![source_id], |row| {
-        Ok(FileRow {
-            id: row.get(0)?,
-            rel_path: row.get(1)?,
-            content_hash: row.get(2)?,
-            symbol_status: row.get(3)?,
-            reference_status: row.get(4)?,
-            reference_version: row.get(5)?,
-        })
-    })?;
-    Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
-}
-
-fn load_entries(conn: &Connection, source_id: i64) -> Result<Vec<EntryRow>> {
-    let mut statement = conn.prepare(
-        "SELECT target_file_id, target_rel_path, kind, evidence_hash, evidence_file_id
-         FROM knowledge_entries WHERE source_id = ?1",
-    )?;
-    let rows = statement.query_map(params![source_id], |row| {
-        Ok(EntryRow {
-            target_file_id: row.get(0)?,
-            target_rel_path: row.get(1)?,
-            kind: row.get(2)?,
-            evidence_hash: row.get(3)?,
-            evidence_file_id: row.get(4)?,
-        })
-    })?;
-    Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
 }
 
 #[cfg(test)]

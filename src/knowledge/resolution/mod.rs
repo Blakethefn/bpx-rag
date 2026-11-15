@@ -5,6 +5,7 @@ use std::collections::HashMap;
 use crate::chunk::evidence::{KIND_IMPORT, KIND_MODULE, KIND_NAME, KIND_PATH, KIND_TYPE};
 
 mod paths;
+mod rows;
 mod rust;
 mod tree;
 
@@ -46,8 +47,8 @@ pub(crate) fn rebuild(conn: &Connection, source_id: i64) -> Result<()> {
         params![source_id],
     )?;
 
-    let files = load_files(conn, source_id)?;
-    let references = load_references(conn, source_id)?;
+    let files = rows::load_files(conn, source_id)?;
+    let references = rows::load_references(conn, source_id)?;
     let files_by_path: HashMap<&str, i64> = files
         .iter()
         .map(|file| (file.rel_path.as_str(), file.id))
@@ -91,7 +92,7 @@ pub(crate) fn rebuild(conn: &Connection, source_id: i64) -> Result<()> {
         } else {
             rust::Outcome::Unresolved
         };
-        write_outcome(&mut insert, source_id, reference.id, &outcome)?;
+        rows::write_outcome(&mut insert, source_id, reference.id, &outcome)?;
     }
     Ok(())
 }
@@ -99,80 +100,6 @@ pub(crate) fn rebuild(conn: &Connection, source_id: i64) -> Result<()> {
 fn is_rust_name(reference: &StoredReference) -> bool {
     tree::is_rust_path(&reference.from_rel)
         && matches!(reference.kind.as_str(), KIND_NAME | KIND_IMPORT | KIND_TYPE)
-}
-
-fn write_outcome(
-    insert: &mut rusqlite::CachedStatement<'_>,
-    source_id: i64,
-    reference_id: i64,
-    outcome: &rust::Outcome,
-) -> Result<()> {
-    let status = status_of(outcome);
-    match outcome {
-        rust::Outcome::Unresolved => {
-            insert.execute(params![
-                source_id,
-                reference_id,
-                status,
-                None::<i64>,
-                None::<i64>
-            ])?;
-        }
-        rust::Outcome::Resolved(symbol_id) => {
-            insert.execute(params![
-                source_id,
-                reference_id,
-                status,
-                symbol_id,
-                None::<i64>
-            ])?;
-        }
-        rust::Outcome::Ambiguous(symbol_ids) => {
-            for symbol_id in symbol_ids {
-                insert.execute(params![
-                    source_id,
-                    reference_id,
-                    status,
-                    symbol_id,
-                    None::<i64>
-                ])?;
-            }
-        }
-    }
-    Ok(())
-}
-
-fn load_files(conn: &Connection, source_id: i64) -> Result<Vec<StoredFile>> {
-    let mut statement =
-        conn.prepare("SELECT id, rel_path FROM knowledge_files WHERE source_id = ?1")?;
-    let rows = statement.query_map(params![source_id], |row| {
-        Ok(StoredFile {
-            id: row.get(0)?,
-            rel_path: row.get(1)?,
-        })
-    })?;
-    Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
-}
-
-fn load_references(conn: &Connection, source_id: i64) -> Result<Vec<StoredReference>> {
-    let mut statement = conn.prepare(
-        "SELECT kr.id, kr.file_id, kr.kind, kr.specifier, kr.qualifier, kf.rel_path
-         FROM knowledge_references kr
-         JOIN knowledge_files kf ON kf.id = kr.file_id
-         WHERE kr.source_id = ?1
-         ORDER BY kr.id",
-    )?;
-    let rows = statement.query_map(params![source_id], |row| {
-        Ok(StoredReference {
-            id: row.get(0)?,
-            file_id: row.get(1)?,
-            kind: row.get(2)?,
-            specifier: row.get(3)?,
-            qualifier: row.get(4)?,
-            from_rel: row.get(5)?,
-        })
-    })?;
-    Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
 }
 
 #[cfg(test)]

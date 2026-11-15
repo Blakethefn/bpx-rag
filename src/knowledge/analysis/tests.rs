@@ -6,6 +6,8 @@ use rusqlite::params;
 use std::fs;
 use tempfile::tempdir;
 
+mod repeat;
+
 fn sync(store: &KnowledgeStore, label: &str) {
     let source = store.get_source(label).unwrap().unwrap();
     sync_source(store, &source, None).unwrap();
@@ -137,27 +139,4 @@ fn a_parse_error_publishes_an_incomplete_analysis_and_no_conclusions() {
     assert!(!text.contains("findings:"), "{text}");
     assert!(!text.contains("possibly_unused_symbol"), "{text}");
     assert!(!text.contains("unreachable_file"), "{text}");
-}
-
-#[test]
-fn an_unchanged_sync_keeps_the_fingerprint_and_the_finding_rows() {
-    let store = make_store();
-    let dir = tempdir().unwrap();
-    fs::write(
-        dir.path().join("lib.rs"),
-        "pub fn alpha() { beta(); }\npub fn beta() {}\nfn unused() {}\n",
-    )
-    .unwrap();
-    add_source(&store, "demo", dir.path());
-    sync(&store, "demo");
-    let (_, generation, fingerprint, _) = analysis(&store, "demo");
-    let findings = finding_rows(&store);
-    assert!(!findings.is_empty());
-
-    sync(&store, "demo");
-
-    let (_, next_generation, next_fingerprint, _) = analysis(&store, "demo");
-    assert_eq!(next_fingerprint, fingerprint);
-    assert_eq!(next_generation, generation);
-    assert_eq!(finding_rows(&store), findings);
 }

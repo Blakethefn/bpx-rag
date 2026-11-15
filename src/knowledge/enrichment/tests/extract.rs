@@ -1,6 +1,8 @@
 use super::super::*;
 use serde_json::json;
 
+mod links;
+
 #[test]
 fn frontmatter_standard_fields() {
     let content = "---\ntype: task\nstatus: active\n---\nBody text";
@@ -69,106 +71,4 @@ fn frontmatter_multiple_types() {
     let content = "---\ncount: 42\nactive: true\nname: test\n---\n";
     let result = extract_frontmatter(content);
     assert_eq!(result, json!({"count": 42, "active": true, "name": "test"}));
-}
-
-#[test]
-fn wikilinks_simple() {
-    let content = "See [[projects/foo]]";
-    let result = extract_wikilinks(content);
-    assert_eq!(result, json!(["projects/foo"]));
-}
-
-#[test]
-fn wikilinks_with_alias() {
-    let content = "Link [[target|alias]] here";
-    let result = extract_wikilinks(content);
-    assert_eq!(result, json!(["target"]));
-}
-
-#[test]
-fn wikilinks_multiple() {
-    let content = "Two [[a]] and [[b]]";
-    let result = extract_wikilinks(content);
-    assert_eq!(result, json!(["a", "b"]));
-}
-
-#[test]
-fn wikilinks_nested_brackets() {
-    let content = "Nested [[a|[[b]]]]";
-    let result = extract_wikilinks(content);
-    assert_eq!(result, json!(["a"]));
-}
-
-#[test]
-fn wikilinks_none() {
-    let content = "No links here";
-    let result = extract_wikilinks(content);
-    assert_eq!(result, json!([]));
-}
-
-#[test]
-fn wikilinks_deduplicated() {
-    let content = "Duplicate [[a]] and [[a]]";
-    let result = extract_wikilinks(content);
-    assert_eq!(result, json!(["a"]));
-}
-
-#[test]
-fn wikilinks_unclosed() {
-    let content = "Unclosed [[link";
-    let result = extract_wikilinks(content);
-    assert_eq!(result, json!([]));
-}
-
-#[test]
-fn wikilinks_empty_target() {
-    let content = "Empty [[]] link";
-    let result = extract_wikilinks(content);
-    assert_eq!(result, json!([]));
-}
-
-#[test]
-fn wikilinks_adjacent() {
-    let content = "[[a]][[b]]";
-    let result = extract_wikilinks(content);
-    assert_eq!(result, json!(["a", "b"]));
-}
-
-#[test]
-fn wikilinks_in_frontmatter() {
-    let content = "---\nproject: \"[[myproject]]\"\n---\nSee [[other]]";
-    let result = extract_wikilinks(content);
-    assert_eq!(result, json!(["myproject", "other"]));
-}
-
-#[test]
-fn folder_tags_multi_level() {
-    let file = Path::new("/vault/01-projects/bpcontext/specs/foo.md");
-    let base = Path::new("/vault");
-    let result = extract_folder_tags(file, base);
-    assert_eq!(result, json!(["01-projects", "bpcontext", "specs"]));
-}
-
-#[test]
-fn folder_tags_single_level() {
-    let file = Path::new("/vault/tasks/task.md");
-    let base = Path::new("/vault");
-    let result = extract_folder_tags(file, base);
-    assert_eq!(result, json!(["tasks"]));
-}
-
-#[test]
-fn folder_tags_root_file() {
-    let file = Path::new("/vault/root-note.md");
-    let base = Path::new("/vault");
-    let result = extract_folder_tags(file, base);
-    assert_eq!(result, json!([]));
-}
-
-#[test]
-fn folder_tags_path_not_under_base() {
-    let file = Path::new("/other/path/file.md");
-    let base = Path::new("/vault");
-    let result = extract_folder_tags(file, base);
-    assert_eq!(result, json!([]));
 }

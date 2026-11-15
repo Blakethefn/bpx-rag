@@ -2,7 +2,8 @@ use std::collections::HashMap;
 
 use super::super::tree::{ident, Symbol, Tree};
 use super::lookup::{find_path, is_data_type, symbols_of};
-use super::{resolve_bare, Outcome, Space};
+use super::qualify::resolve_bare;
+use super::{Outcome, Space};
 
 pub(super) fn unique_type(
     tree: &Tree,

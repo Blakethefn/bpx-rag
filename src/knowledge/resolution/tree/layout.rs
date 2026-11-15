@@ -1,4 +1,4 @@
-use super::super::paths::is_directory_module_stem;
+use super::super::paths::{file_stem, is_directory_module_stem, join_rel, parent_dir};
 
 impl super::Tree {
     pub(crate) fn path_declares_child(&self, parent_id: i64, child_id: i64) -> bool {
@@ -60,47 +60,6 @@ fn strip_base<'a>(base: &str, child_rel: &'a str) -> Option<&'a str> {
         return Some(child_rel);
     }
     child_rel.strip_prefix(&format!("{base}/"))
-}
-
-pub(super) fn parent_dir(path: &str) -> String {
-    match path.rfind('/') {
-        Some(index) => path[..index].to_string(),
-        None => String::new(),
-    }
-}
-
-fn file_stem(path: &str) -> &str {
-    let name = path.rsplit('/').next().unwrap_or(path);
-    name.rsplit_once('.').map(|(stem, _)| stem).unwrap_or(name)
-}
-
-pub(super) fn extension(path: &str) -> &str {
-    let name = path.rsplit('/').next().unwrap_or(path);
-    name.rsplit_once('.').map(|(_, ext)| ext).unwrap_or("")
-}
-
-pub(super) fn join_rel(parent: &str, child: &str) -> String {
-    let combined = if parent.is_empty() {
-        child.to_string()
-    } else {
-        format!("{parent}/{child}")
-    };
-    normalize_rel(&combined)
-}
-
-pub(super) fn normalize_rel(path: &str) -> String {
-    let normalized = path.replace('\\', "/");
-    let mut parts = Vec::new();
-    for part in normalized.split('/') {
-        match part {
-            "" | "." => {}
-            ".." => {
-                parts.pop();
-            }
-            other => parts.push(other),
-        }
-    }
-    parts.join("/")
 }
 
 #[cfg(test)]
