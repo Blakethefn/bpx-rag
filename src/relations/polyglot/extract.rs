@@ -1,6 +1,8 @@
 #[path = "extractors/mod.rs"]
 mod extractors;
 
+pub(crate) use extractors::quoted_prefix;
+
 use std::path::Path;
 
 use super::super::languages::Grammar;

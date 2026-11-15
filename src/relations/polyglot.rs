@@ -1,6 +1,8 @@
 mod extract;
 mod resolve;
 
+pub(crate) use extract::quoted_prefix;
+
 use std::path::Path;
 
 use self::resolve::resolve_specifier;

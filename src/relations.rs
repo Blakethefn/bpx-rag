@@ -17,6 +17,7 @@ use tree_sitter::Tree;
 
 pub use format::format_analysis;
 pub use scan::{analyze_file, project_edges};
+pub(crate) use polyglot::quoted_prefix;
 
 pub(crate) fn parse_tree_for_path(path: &Path, content: &str) -> Option<(Grammar, Tree)> {
     let grammar = languages::grammar_for_path(path)?;

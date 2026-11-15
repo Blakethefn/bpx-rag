@@ -20,7 +20,7 @@ use clap::Parser;
 use std::path::PathBuf;
 
 use app::{RagApp, SearchOptions};
-use cli::{Cli, Commands, ModelsAction, WatchAction};
+use cli::{Cli, Commands};
 
 fn main() -> Result<()> {
     let cli = Cli::parse();
@@ -57,98 +57,39 @@ fn main() -> Result<()> {
             println!("{}", RagApp::open()?.findings(source.as_deref())?);
             Ok(())
         }
-        Commands::Watch { action } => run_watch(action),
+        Commands::Watch { action } => commands::run_watch(action),
         Commands::Relate { path, root } => {
             let analysis = relations::analyze_file(&path, root.as_deref())?;
             println!("{}", relations::format_analysis(&analysis));
             Ok(())
         }
-        Commands::Search {
-            query,
-            source,
-            filter,
-            limit,
-            max_per_file,
-            profile,
-            explain,
-            count_only,
-        } => {
+        Commands::Search(args) => {
             let mut app = RagApp::open()?;
             let output = app.search(
-                &query,
+                &args.query,
                 SearchOptions {
-                    source: source.as_deref(),
-                    filter: filter.as_deref(),
-                    limit,
-                    max_per_file,
-                    profile: profile.as_deref(),
-                    explain,
-                    count_only,
+                    source: args.source.as_deref(),
+                    filter: args.filter.as_deref(),
+                    limit: args.limit,
+                    max_per_file: args.max_per_file,
+                    profile: args.profile.as_deref(),
+                    explain: args.explain,
+                    count_only: args.count_only,
                 },
             )?;
             println!("{output}");
             Ok(())
         }
-        Commands::Add { .. }
+        Commands::Add(_)
         | Commands::Sync { .. }
         | Commands::Status
         | Commands::Remove { .. }
-        | Commands::Read { .. }
+        | Commands::Read(_)
         | Commands::Embed { .. }
         | Commands::Scrub { .. } => commands::run_sources(command),
-        Commands::Models { action } => run_models(action),
+        Commands::Models { action } => commands::run_models(action),
         Commands::Eval { action } => commands::run_evaluation(action),
     }
-}
-
-fn run_watch(action: WatchAction) -> Result<()> {
-    match action {
-        WatchAction::Enable { label } => {
-            println!("{}", RagApp::open()?.set_watch(&label, true)?);
-            Ok(())
-        }
-        WatchAction::Disable { label } => {
-            println!("{}", RagApp::open()?.set_watch(&label, false)?);
-            Ok(())
-        }
-        WatchAction::Status => {
-            println!("{}", RagApp::open()?.watch_status()?);
-            Ok(())
-        }
-        WatchAction::Run => {
-            match RagApp::open()?.run_watch()? {
-                watch::RunOutcome::Stopped => println!("Watcher stopped."),
-                watch::RunOutcome::AlreadyRunning { pid } => println!(
-                    "A watcher is already running for this database (pid {}).",
-                    pid.map_or_else(|| "unknown".to_string(), |pid| pid.to_string())
-                ),
-            }
-            Ok(())
-        }
-    }
-}
-
-fn run_models(action: ModelsAction) -> Result<()> {
-    let config = config::Config::load()?;
-    match action {
-        ModelsAction::Status => println!("{}", app::embedding_model_status(&config)),
-        ModelsAction::Download => {
-            let model_dir = app::model_directory(&config);
-            embed::Embedder::new_with_device(
-                &model_dir,
-                &config.embeddings.model,
-                config.embeddings.batch_size,
-                config.embeddings.intra_threads,
-                config.embeddings.device,
-            )?;
-            println!(
-                "Downloaded and loaded {} at {}.",
-                config.embeddings.model,
-                model_dir.display()
-            );
-        }
-    }
-    Ok(())
 }
 
 fn project_dir() -> PathBuf {

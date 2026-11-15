@@ -41,10 +41,5 @@ fn import_statement(node: Node<'_>, content: &str, references: &mut Vec<super::R
 }
 
 fn quoted_specifier(text: &str) -> Option<String> {
-    let start = text.find(['\'', '"', '`'])?;
-    let quote = text[start..].chars().next()?;
-    let rest = &text[start + quote.len_utf8()..];
-    let end = rest.find(quote)?;
-    let specifier = &rest[..end];
-    (!specifier.is_empty()).then(|| specifier.to_string())
+    crate::relations::quoted_prefix(text).filter(|specifier| !specifier.is_empty())
 }
