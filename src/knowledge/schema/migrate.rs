@@ -1,7 +1,8 @@
 use anyhow::Result;
 use rusqlite::Connection;
-use sha2::{Digest, Sha256};
-use std::time::{SystemTime, UNIX_EPOCH};
+
+mod instance;
+pub(in crate::knowledge::schema) use instance::ensure_database_instance_id;
 
 pub(super) fn ensure_analysis_status(conn: &Connection) -> Result<()> {
     let sql: String = conn.query_row(
@@ -126,31 +127,6 @@ pub(super) fn ensure_reference_columns(conn: &Connection) -> Result<()> {
     )?;
     add_column_if_missing(conn, "knowledge_files", "references_hash", "TEXT")?;
     add_column_if_missing(conn, "knowledge_files", "reference_status", "TEXT")
-}
-
-pub(super) fn ensure_database_instance_id(conn: &Connection) -> Result<()> {
-    let id: String = conn.query_row(
-        "SELECT database_id FROM knowledge_embedding_state WHERE state_id = 1",
-        [],
-        |row| row.get(0),
-    )?;
-    if id.is_empty() {
-        let nanos = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_nanos();
-        let seed = format!(
-            "{nanos}:{}:{:?}",
-            std::process::id(),
-            std::thread::current().id()
-        );
-        let instance_id = format!("{:x}", Sha256::digest(seed.as_bytes()));
-        conn.execute(
-            "UPDATE knowledge_embedding_state SET database_id = ?1 WHERE state_id = 1",
-            [&instance_id],
-        )?;
-    }
-    Ok(())
 }
 
 pub(super) fn ensure_embedding_model_id(conn: &Connection) -> Result<()> {

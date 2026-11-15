@@ -5,17 +5,7 @@ use rusqlite::params;
 use std::fs;
 use tempfile::tempdir;
 
-fn indexed_paths(store: &KnowledgeStore) -> Vec<String> {
-    let mut statement = store
-        .conn()
-        .prepare("SELECT rel_path FROM knowledge_files ORDER BY rel_path")
-        .unwrap();
-    statement
-        .query_map([], |row| row.get(0))
-        .unwrap()
-        .collect::<rusqlite::Result<Vec<_>>>()
-        .unwrap()
-}
+mod reindex;
 
 fn chunk_rowids(store: &KnowledgeStore, rel_path: &str) -> Vec<i64> {
     let mut statement = store
@@ -45,10 +35,6 @@ fn symbol_names(store: &KnowledgeStore) -> Vec<String> {
         .unwrap()
 }
 
-fn source_of(store: &KnowledgeStore) -> KnowledgeSourceInfo {
-    store.get_source("test").unwrap().unwrap()
-}
-
 #[test]
 fn paths_add_modify_rename_and_remove_files() {
     let store = open_in_memory().unwrap();
@@ -69,7 +55,7 @@ fn paths_add_modify_rename_and_remove_files() {
         &["b.rs".to_string(), "a.rs".to_string()],
     )
     .unwrap();
-    assert_eq!(indexed_paths(&store), vec!["a.rs", "b.rs"]);
+    assert_eq!(super::indexed_paths(&store), vec!["a.rs", "b.rs"]);
     assert_eq!(symbol_names(&store), vec!["alpha_renamed", "beta"]);
 
     fs::rename(dir.path().join("a.rs"), dir.path().join("c.rs")).unwrap();
@@ -80,11 +66,11 @@ fn paths_add_modify_rename_and_remove_files() {
         &["a.rs".to_string(), "c.rs".to_string()],
     )
     .unwrap();
-    assert_eq!(indexed_paths(&store), vec!["b.rs", "c.rs"]);
+    assert_eq!(super::indexed_paths(&store), vec!["b.rs", "c.rs"]);
 
     fs::remove_file(dir.path().join("b.rs")).unwrap();
     sync_paths(&store, &source, None, &["b.rs".to_string()]).unwrap();
-    assert_eq!(indexed_paths(&store), vec!["c.rs"]);
+    assert_eq!(super::indexed_paths(&store), vec!["c.rs"]);
     assert_eq!(symbol_names(&store), vec!["alpha_renamed"]);
 }
 
@@ -112,7 +98,7 @@ fn sensitive_content_removes_the_indexed_file() {
     )
     .unwrap();
     let source = add_synced_source(&store, "test", dir.path());
-    assert_eq!(indexed_paths(&store), vec!["config.rs"]);
+    assert_eq!(super::indexed_paths(&store), vec!["config.rs"]);
 
     fs::write(
         dir.path().join("config.rs"),
@@ -121,7 +107,7 @@ fn sensitive_content_removes_the_indexed_file() {
     .unwrap();
     sync_paths(&store, &source, None, &["config.rs".to_string()]).unwrap();
     assert!(
-        indexed_paths(&store).is_empty(),
+        super::indexed_paths(&store).is_empty(),
         "sensitive files must not stay indexed"
     );
 }
@@ -154,30 +140,6 @@ fn unreadable_changed_file_is_skipped_and_other_files_stay_indexed() {
     assert_eq!(result.skipped_files.len(), 1);
     assert_eq!(result.skipped_files[0].rel_path, "a.rs");
     assert!(result.skipped_files[0].reason.starts_with("unreadable: "));
-    assert_eq!(indexed_paths(&store), vec!["b.rs"]);
+    assert_eq!(super::indexed_paths(&store), vec!["b.rs"]);
     assert_eq!(symbol_names(&store), vec!["beta"]);
-}
-
-#[test]
-fn reindex_matches_a_full_sync_for_the_same_changes() {
-    let store = open_in_memory().unwrap();
-    let dir = tempdir().unwrap();
-    fs::write(dir.path().join("a.rs"), "pub fn alpha() -> u8 { 1 }\n").unwrap();
-    let source = add_synced_source(&store, "test", dir.path());
-
-    fs::write(
-        dir.path().join("a.rs"),
-        "pub fn alpha() -> u8 { 1 }\npub fn gamma() -> u8 { 3 }\n",
-    )
-    .unwrap();
-    sync_paths(&store, &source, None, &["a.rs".to_string()]).unwrap();
-    let partial_chunks = chunk_rowids(&store, "a.rs").len();
-
-    let full = sync_source(&store, &source_of(&store), None).unwrap();
-    assert_eq!(
-        full.files_updated, 0,
-        "a path reindex must leave nothing for a full sync"
-    );
-    assert_eq!(chunk_rowids(&store, "a.rs").len(), partial_chunks);
-    assert_eq!(symbol_names(&store), vec!["alpha", "gamma"]);
 }

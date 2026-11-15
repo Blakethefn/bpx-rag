@@ -6,14 +6,15 @@ use std::time::Instant;
 use anyhow::{Context, Result};
 use rusqlite::params;
 
-use crate::embed::Embed;
 use crate::knowledge::{KnowledgeSourceInfo, KnowledgeStore};
 
 use super::classify::{ChangePlan, ScanCounts};
 use super::commit::commit_plan;
-use super::files::{prepare_file, read_classified_file, sha256_hex, DbFile, PreparedFile};
-use super::index::embed_pending_batch;
+use super::files::{prepare_file, read_classified_file, sha256_hex, DbFile};
 use super::{EnrichmentFn, SyncResult};
+
+mod embed;
+use embed::embed_prepared;
 
 pub(super) fn apply_plan(
     store: &KnowledgeStore,
@@ -132,38 +133,4 @@ pub(super) fn apply_plan(
         transaction_ms,
         duration_ms: start.elapsed().as_millis() as u64,
     })
-}
-
-fn embed_prepared(
-    prepared_files: &mut [PreparedFile],
-    embedder: Option<&dyn Embed>,
-) -> Result<usize> {
-    let Some(emb) = embedder else {
-        return Ok(0);
-    };
-    let batch_size = emb.max_batch_size().clamp(1, 256);
-    let mut pending = Vec::with_capacity(batch_size);
-    let mut embedding_calls = 0;
-    for file in prepared_files.iter_mut() {
-        file.vectors = vec![Vec::new(); file.chunks.len()];
-    }
-    for file_index in 0..prepared_files.len() {
-        let chunk_count = prepared_files[file_index].chunks.len();
-        for chunk_index in 0..chunk_count {
-            let text = {
-                let chunk = &prepared_files[file_index].chunks[chunk_index];
-                format!("{} {}", chunk.title, chunk.content)
-            };
-            pending.push((file_index, chunk_index, text));
-            if pending.len() == batch_size {
-                embed_pending_batch(emb, prepared_files, &mut pending)?;
-                embedding_calls += 1;
-            }
-        }
-    }
-    if !pending.is_empty() {
-        embed_pending_batch(emb, prepared_files, &mut pending)?;
-        embedding_calls += 1;
-    }
-    Ok(embedding_calls)
 }
