@@ -6,6 +6,10 @@ docs/
 # Local cargo config (contains machine-specific paths)
 .cargo/config.toml
 
+# Agent worktrees. Not part of the published tree.
+.worktrees/
+.worktrees-stage/
+
 # IDE
 .vscode/
 .idea/
