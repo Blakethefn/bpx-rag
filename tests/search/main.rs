@@ -1,31 +1,13 @@
 use std::fs;
 use std::path::Path;
-use std::process::{Command, Output};
+use std::process::Output;
 use tempfile::tempdir;
 
+#[path = "../harness.rs"]
+mod harness;
+
+mod bounds;
 mod mcp;
-
-fn run_cli(
-    project_dir: &Path,
-    config_home: &Path,
-    data_home: &Path,
-    cache_home: &Path,
-    args: &[&str],
-) -> Output {
-    Command::new(std::env::var("CARGO_BIN_EXE_bpx-rag").unwrap())
-        .args(args)
-        .current_dir(project_dir)
-        .env("XDG_CONFIG_HOME", config_home)
-        .env("XDG_DATA_HOME", data_home)
-        .env("XDG_CACHE_HOME", cache_home)
-        .env_remove("HF_HOME")
-        .output()
-        .unwrap()
-}
-
-fn stdout(output: &Output) -> String {
-    String::from_utf8(output.stdout.clone()).unwrap()
-}
 
 fn write_corpus(source: &Path) {
     let filler = "lorem ipsum dolor sit amet ".repeat(35);
@@ -62,7 +44,7 @@ fn indexed_fixture() -> Fixture {
     fs::create_dir_all(&source).unwrap();
     write_corpus(&source);
 
-    let add = run_cli(
+    let add = harness::run_cli(
         &project,
         &config_home,
         &data_home,
@@ -87,7 +69,7 @@ fn indexed_fixture() -> Fixture {
 fn search(fixture: &Fixture, extra: &[&str]) -> Output {
     let mut args = vec!["search", "kestrel", "--source", "docs", "--limit", "3"];
     args.extend_from_slice(extra);
-    run_cli(
+    harness::run_cli(
         &fixture.project,
         &fixture.config_home,
         &fixture.data_home,
@@ -113,11 +95,11 @@ fn default_search_output_is_identical_to_explicit_max_per_file_one() {
         "{}",
         String::from_utf8_lossy(&explicit.stderr)
     );
-    assert_eq!(stdout(&default), stdout(&explicit));
+    assert_eq!(harness::stdout(&default), harness::stdout(&explicit));
     assert!(
-        stdout(&default).contains("file: small.md"),
+        harness::stdout(&default).contains("file: small.md"),
         "one passage per file keeps the other file: {}",
-        stdout(&default)
+        harness::stdout(&default)
     );
 }
 
@@ -132,36 +114,7 @@ fn max_per_file_three_returns_repeated_passages_from_one_file() {
         "{}",
         String::from_utf8_lossy(&output.stderr)
     );
-    let text = stdout(&output);
+    let text = harness::stdout(&output);
     assert_eq!(text.matches("file: big.md").count(), 3, "{text}");
     assert!(!text.contains("file: small.md"), "{text}");
-}
-
-#[test]
-fn max_per_file_zero_is_rejected_by_the_cli() {
-    let fixture = indexed_fixture();
-
-    let output = search(&fixture, &["--max-per-file", "0"]);
-
-    assert!(!output.status.success());
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(stderr.contains("max-per-file"), "{stderr}");
-}
-
-#[test]
-fn max_per_file_boundaries_are_enforced_by_the_cli() {
-    let fixture = indexed_fixture();
-
-    let accepted_low = search(&fixture, &["--max-per-file", "1"]);
-    let accepted_high = search(&fixture, &["--max-per-file", "50"]);
-    let rejected_high = search(&fixture, &["--max-per-file", "51"]);
-
-    assert!(accepted_low.status.success(), "{}", stdout(&accepted_low));
-    assert!(accepted_high.status.success(), "{}", stdout(&accepted_high));
-    assert!(!rejected_high.status.success());
-    let stderr = String::from_utf8_lossy(&rejected_high.stderr);
-    assert!(
-        stderr.contains("max-per-file") && stderr.contains("50"),
-        "{stderr}"
-    );
 }
