@@ -4,18 +4,6 @@ use tempfile::tempdir;
 
 use crate::support::{add_source, make_store};
 
-fn indexed_paths(store: &KnowledgeStore) -> Vec<String> {
-    let mut statement = store
-        .conn()
-        .prepare("SELECT rel_path FROM knowledge_files ORDER BY rel_path")
-        .unwrap();
-    statement
-        .query_map([], |row| row.get(0))
-        .unwrap()
-        .collect::<rusqlite::Result<_>>()
-        .unwrap()
-}
-
 fn set_mode(path: &Path, mode: u32) {
     fs::set_permissions(path, fs::Permissions::from_mode(mode)).unwrap();
 }
@@ -53,7 +41,7 @@ fn unreadable_file_is_skipped_with_a_reason_and_other_files_still_sync() {
     let result = sync_source(&store, &source, None).expect("an unreadable file must not abort");
 
     assert_eq!(result.files_added, 1, "the readable file must be indexed");
-    assert_eq!(indexed_paths(&store), vec!["alpha.rs".to_string()]);
+    assert_eq!(super::indexed_paths(&store), vec!["alpha.rs".to_string()]);
     assert_eq!(result.skipped_files.len(), 1);
     assert_eq!(result.skipped_files[0].rel_path, "locked.txt");
     assert!(
@@ -71,18 +59,21 @@ fn file_that_becomes_unreadable_loses_its_rows_and_is_indexed_again_once_readabl
     fs::write(&notes, "alpha beta gamma\n").unwrap();
     let source = add_source(&store, "unreadable", dir.path());
     sync_source(&store, &source, None).unwrap();
-    assert_eq!(indexed_paths(&store), vec!["notes.txt".to_string()]);
+    assert_eq!(super::indexed_paths(&store), vec!["notes.txt".to_string()]);
 
     let Some(guard) = lock(&notes) else { return };
     let skipped = sync_source(&store, &source, None).unwrap();
-    assert!(indexed_paths(&store).is_empty(), "stale rows survived");
+    assert!(
+        super::indexed_paths(&store).is_empty(),
+        "stale rows survived"
+    );
     assert_eq!(skipped.files_removed, 1);
     assert_eq!(skipped.skipped_files[0].rel_path, "notes.txt");
 
     drop(guard);
     let recovered = sync_source(&store, &source, None).unwrap();
     assert!(recovered.skipped_files.is_empty());
-    assert_eq!(indexed_paths(&store), vec!["notes.txt".to_string()]);
+    assert_eq!(super::indexed_paths(&store), vec!["notes.txt".to_string()]);
 }
 
 #[test]
@@ -100,13 +91,13 @@ fn event_driven_sync_skips_an_unreadable_file_and_reports_it() {
     assert_eq!(skipped.skipped_files.len(), 1);
     assert_eq!(skipped.skipped_files[0].rel_path, "notes.txt");
     assert!(skipped.skipped_files[0].reason.starts_with("unreadable: "));
-    assert_eq!(indexed_paths(&store), vec!["other.txt".to_string()]);
+    assert_eq!(super::indexed_paths(&store), vec!["other.txt".to_string()]);
 
     drop(guard);
     let recovered = sync_paths(&store, &source, None, &["notes.txt".to_string()]).unwrap();
     assert!(recovered.skipped_files.is_empty());
     assert_eq!(
-        indexed_paths(&store),
+        super::indexed_paths(&store),
         vec!["notes.txt".to_string(), "other.txt".to_string()]
     );
 }
@@ -128,7 +119,7 @@ fn event_driven_sync_does_not_report_unreadable_files_it_was_not_asked_about() {
         "{:?}",
         result.skipped_files
     );
-    assert_eq!(indexed_paths(&store), vec!["other.txt".to_string()]);
+    assert_eq!(super::indexed_paths(&store), vec!["other.txt".to_string()]);
 }
 
 #[test]
@@ -145,5 +136,8 @@ fn unreadable_directory_still_fails_the_sync() {
     let result = sync_source(&store, &source, None);
 
     assert!(result.is_err(), "a walk failure must surface");
-    assert!(indexed_paths(&store).is_empty(), "nothing is written");
+    assert!(
+        super::indexed_paths(&store).is_empty(),
+        "nothing is written"
+    );
 }

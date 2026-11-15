@@ -8,6 +8,8 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use tempfile::tempdir;
 
+mod plain;
+
 #[test]
 fn sync_generates_embeddings_when_embedder_present() {
     let store = make_store_with_embedder();
@@ -136,23 +138,4 @@ fn changed_file_during_embedding_aborts_before_stale_content_is_committed() {
     assert!(stored_content.contains("Existing indexed content"));
     assert!(!stored_content.contains("Prepared"));
     assert_eq!(file_count_for_source(&store, source.id), 1);
-}
-
-#[test]
-fn sync_works_without_embedder() {
-    let store = make_store();
-    let dir = tempdir().unwrap();
-    fs::write(dir.path().join("test.md"), "# No Embed\nStill works").unwrap();
-
-    let source = add_source(&store, "test", dir.path());
-    let result = sync_source(&store, &source, None).unwrap();
-
-    assert_eq!(result.files_added, 1);
-    let embed_count: i64 = store
-        .conn()
-        .query_row("SELECT COUNT(*) FROM knowledge_embeddings", [], |row| {
-            row.get(0)
-        })
-        .unwrap();
-    assert_eq!(embed_count, 0, "no embeddings without embedder");
 }

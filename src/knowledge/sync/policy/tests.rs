@@ -1,5 +1,7 @@
-use super::{is_sensitive_path, is_sensitive_relative_path, is_sensitive_source_root};
+use super::{is_sensitive_relative_path, is_sensitive_source_root};
 use std::path::Path;
+
+mod root;
 
 const SENSITIVE_DIRECTORIES: &[&str] = &[
     ".aws",
@@ -139,25 +141,4 @@ fn names_that_only_share_a_prefix_stay_indexable() {
             "{path} is outside the sensitive catalogs"
         );
     }
-}
-
-#[test]
-fn sensitivity_uses_the_path_inside_the_source_root() {
-    let root = Path::new("/data/project");
-    assert!(is_sensitive_path(
-        root,
-        Path::new("/data/project/.ssh/id_rsa")
-    ));
-    assert!(!is_sensitive_path(
-        root,
-        Path::new("/data/project/src/main.rs")
-    ));
-    assert!(
-        !is_sensitive_path(Path::new("/data/.ssh"), Path::new("/data/.ssh/config")),
-        "components of the source root itself are not judged again"
-    );
-    assert!(is_sensitive_path(
-        Path::new("/data/project"),
-        Path::new("/other/.ssh/config")
-    ));
 }

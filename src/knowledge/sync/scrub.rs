@@ -5,19 +5,12 @@ use rusqlite::{params, OptionalExtension};
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
+mod report;
+
 #[derive(Debug, Default)]
 pub struct SensitiveIndexScrubReport {
     pub files_removed: usize,
     pub chunks_removed: usize,
-}
-
-impl SensitiveIndexScrubReport {
-    pub fn summary(&self) -> String {
-        format!(
-            "Sensitive index scrub: removed {} files and {} chunks.",
-            self.files_removed, self.chunks_removed
-        )
-    }
 }
 
 pub fn scrub_sensitive_indexed_files(

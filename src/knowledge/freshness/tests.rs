@@ -1,6 +1,7 @@
 use super::*;
 use crate::knowledge::sync::sync_source;
 use crate::knowledge::KnowledgeSourceInfo;
+use crate::knowledge::KnowledgeStore;
 use rusqlite::params;
 use std::fs;
 use std::path::Path;
