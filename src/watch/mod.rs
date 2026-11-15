@@ -1,14 +1,12 @@
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 
 use crate::embed::Embed;
-use crate::knowledge::lock::FileLock;
 use crate::knowledge::sync::SkippedFile;
 
 const CONFIG_POLL: Duration = Duration::from_secs(1);
@@ -75,35 +73,6 @@ pub enum Holder {
 
 pub type EmbedderLoader = Box<dyn Fn() -> Option<Arc<dyn Embed>> + Send>;
 
-pub fn run_with_loader(
-    db_path: &Path,
-    options: &WatchOptions,
-    stop: &AtomicBool,
-    embedder_loader: EmbedderLoader,
-) -> Result<RunOutcome> {
-    let Some(lease) = acquire_lease(&lease_path(db_path), options.lease_wait)? else {
-        let pid = read_status(db_path)?.map(|status| status.pid);
-        return Ok(RunOutcome::AlreadyRunning { pid });
-    };
-    let mut engine = Engine::new(db_path, options.clone(), embedder_loader)?;
-    engine.run_until(stop)?;
-    drop(lease);
-    Ok(RunOutcome::Stopped)
-}
-
-fn acquire_lease(path: &Path, wait: Duration) -> Result<Option<FileLock>> {
-    let deadline = Instant::now() + wait;
-    loop {
-        if let Some(lease) = FileLock::try_acquire(path)? {
-            return Ok(Some(lease));
-        }
-        if Instant::now() >= deadline {
-            return Ok(None);
-        }
-        std::thread::sleep(Duration::from_millis(10));
-    }
-}
-
 pub fn read_status(db_path: &Path) -> Result<Option<WatchStatus>> {
     let path = status_path(db_path);
     match fs::read(&path) {
@@ -117,23 +86,6 @@ pub fn read_status(db_path: &Path) -> Result<Option<WatchStatus>> {
     }
 }
 
-pub fn holder(db_path: &Path) -> Result<Holder> {
-    match FileLock::try_acquire(&lease_path(db_path))? {
-        Some(lock) => {
-            drop(lock);
-            Ok(Holder::NotRunning)
-        }
-        None => {
-            let pid = read_status(db_path)?.map(|status| status.pid);
-            Ok(Holder::Running { pid })
-        }
-    }
-}
-
-fn lease_path(db_path: &Path) -> PathBuf {
-    sibling(db_path, ".watch.lock")
-}
-
 fn status_path(db_path: &Path) -> PathBuf {
     sibling(db_path, ".watch.status.json")
 }
@@ -145,8 +97,9 @@ fn sibling(db_path: &Path, suffix: &str) -> PathBuf {
 }
 
 mod engine;
+mod lease;
 
-use engine::Engine;
+pub use lease::{holder, run_with_loader};
 
 #[cfg(test)]
 pub(crate) use engine::{RegisterProbe, REGISTER_PROBE};

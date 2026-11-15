@@ -1,3 +1,4 @@
+use super::engine::Engine;
 use super::*;
 use crate::knowledge::lock::{writer_lock_path, FileLock};
 use crate::knowledge::sync::sync_source;
@@ -10,6 +11,7 @@ use std::thread::JoinHandle;
 use std::time::Instant;
 use tempfile::{tempdir, TempDir};
 
+mod lease;
 mod registration;
 mod sync;
 
