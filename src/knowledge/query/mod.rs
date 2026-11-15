@@ -8,6 +8,7 @@ mod fuse;
 mod fuzzy;
 mod layers;
 mod lexical;
+mod limit;
 mod rank;
 mod vector;
 pub(crate) use fuse::search_with_pool;
@@ -15,6 +16,9 @@ pub(crate) use fuzzy::VocabularyCache;
 #[cfg(test)]
 pub use layers::SkipReason;
 pub use layers::{LayerOutcome, LayerPolicy, LayerReport};
+pub(crate) use limit::expanded_candidate_limit;
+use limit::MAX_CANDIDATE_CHUNKS;
+pub use limit::{CANDIDATE_OVERSAMPLE_FACTOR, MAX_PER_FILE};
 
 const IDENTIFIER_LAYER_WEIGHT: f64 = 2.0;
 
@@ -134,19 +138,6 @@ pub fn knowledge_search_report_with_policy(
         weights,
         snippet_bytes,
     )
-}
-
-const MAX_CANDIDATE_CHUNKS: u32 = 1_000;
-
-pub const MAX_PER_FILE: u32 = 50;
-
-pub const CANDIDATE_OVERSAMPLE_FACTOR: u32 = 5;
-
-pub(crate) fn expanded_candidate_limit(limit: u32) -> u32 {
-    limit
-        .saturating_mul(CANDIDATE_OVERSAMPLE_FACTOR)
-        .min(MAX_CANDIDATE_CHUNKS)
-        .max(limit)
 }
 
 #[cfg(test)]

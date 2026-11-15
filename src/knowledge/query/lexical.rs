@@ -1,13 +1,18 @@
 use super::rank::RankedResult;
-use anyhow::Result;
-use rusqlite::Connection;
 
+mod bm25;
 mod identifier;
+mod sanitize;
 #[cfg(test)]
 mod tests;
+mod trigram;
+
+pub(super) use bm25::knowledge_bm25_search;
 pub(in crate::knowledge::query) use identifier::{
     identifier_match_expression, knowledge_identifier_search,
 };
+pub(super) use sanitize::{sanitize_fts_query, sanitize_trigram_query};
+pub(super) use trigram::knowledge_trigram_search;
 
 const CHUNK_COLUMNS: [ChunkColumn; 10] = [
     ChunkColumn::Rowid,
@@ -98,59 +103,6 @@ fn chunk_column_sql(column: ChunkColumn, chunk: &str) -> String {
     }
 }
 
-pub(super) fn knowledge_bm25_search(
-    conn: &Connection,
-    query: &str,
-    limit: u32,
-    meta_where: &str,
-    meta_params: &[String],
-) -> Result<Vec<RankedResult>> {
-    let fts_query = sanitize_fts_query(query);
-    if fts_query.is_empty() {
-        return Ok(Vec::new());
-    }
-
-    let mut params: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
-
-    for p in meta_params {
-        params.push(Box::new(p.clone()));
-    }
-
-    let fts_idx = params.len() + 1;
-    params.push(Box::new(fts_query));
-
-    let meta_clause = if meta_where.is_empty() {
-        String::new()
-    } else {
-        format!(" AND {meta_where}")
-    };
-
-    let columns = lexical_columns("kc", "bm25(knowledge_chunks)");
-    let select = select_list(&columns);
-    let sql = format!(
-        "SELECT {select}
-         FROM knowledge_chunks kc
-         JOIN knowledge_chunk_meta kcm ON kcm.chunk_rowid = kc.rowid
-         JOIN knowledge_files kf ON kf.id = kcm.file_id
-         JOIN knowledge_sources ks ON ks.id = kcm.source_id
-         WHERE knowledge_chunks MATCH ?{fts_idx}{meta_clause}
-         ORDER BY rank
-         LIMIT ?{}",
-        params.len() + 1
-    );
-    params.push(Box::new(limit));
-
-    let param_refs: Vec<&dyn rusqlite::types::ToSql> = params.iter().map(|p| p.as_ref()).collect();
-    let mut stmt = conn.prepare(&sql)?;
-    let results = stmt
-        .query_map(param_refs.as_slice(), |row| {
-            ranked_result_from_row(row, &columns)
-        })?
-        .collect::<rusqlite::Result<Vec<_>>>()?;
-
-    Ok(results)
-}
-
 pub(super) fn ranked_result_from_row(
     row: &rusqlite::Row<'_>,
     columns: &[BoundColumn],
@@ -177,103 +129,4 @@ pub(super) fn ranked_result_from_row(
         file_path: row.get(at(ChunkColumn::FilePath))?,
         rank,
     })
-}
-
-pub(super) fn knowledge_trigram_search(
-    conn: &Connection,
-    query: &str,
-    limit: u32,
-    meta_where: &str,
-    meta_params: &[String],
-) -> Result<Vec<RankedResult>> {
-    if query.len() < 3 {
-        return Ok(Vec::new());
-    }
-
-    let fts_query = sanitize_trigram_query(query);
-    if fts_query.is_empty() {
-        return Ok(Vec::new());
-    }
-
-    let mut params: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
-    for p in meta_params {
-        params.push(Box::new(p.clone()));
-    }
-
-    let fts_idx = params.len() + 1;
-    params.push(Box::new(fts_query));
-
-    let meta_clause = if meta_where.is_empty() {
-        String::new()
-    } else {
-        format!(" AND {meta_where}")
-    };
-
-    let columns = lexical_columns("kct", "bm25(knowledge_chunks_trigram)");
-    let select = select_list(&columns);
-    let sql = format!(
-        "SELECT {select}
-         FROM knowledge_chunks_trigram kct
-         JOIN knowledge_chunk_meta kcm ON kcm.chunk_rowid = kct.rowid
-         JOIN knowledge_files kf ON kf.id = kcm.file_id
-         JOIN knowledge_sources ks ON ks.id = kcm.source_id
-         WHERE knowledge_chunks_trigram MATCH ?{fts_idx}{meta_clause}
-         ORDER BY rank
-         LIMIT ?{}",
-        params.len() + 1
-    );
-    params.push(Box::new(limit));
-
-    let param_refs: Vec<&dyn rusqlite::types::ToSql> = params.iter().map(|p| p.as_ref()).collect();
-    let mut stmt = conn.prepare(&sql)?;
-    let results = stmt
-        .query_map(param_refs.as_slice(), |row| {
-            ranked_result_from_row(row, &columns)
-        })?
-        .collect::<rusqlite::Result<Vec<_>>>()?;
-
-    Ok(results)
-}
-
-pub(super) fn sanitize_fts_query(query: &str) -> String {
-    let cleaned = sanitize_fts_terms(query);
-    let phrase = format!("\"{cleaned}\"");
-    let terms = cleaned
-        .split_whitespace()
-        .take(32)
-        .map(|term| format!("\"{term}\""))
-        .collect::<Vec<_>>();
-    if terms.is_empty() {
-        return String::new();
-    }
-    std::iter::once(phrase)
-        .chain(terms)
-        .collect::<Vec<_>>()
-        .join(" OR ")
-}
-
-pub(super) fn sanitize_fts_terms(query: &str) -> String {
-    let mut cleaned = String::with_capacity(query.len());
-    let mut last_was_space = true;
-    for character in query.chars() {
-        if character.is_alphanumeric() || character == '_' || character == '-' {
-            cleaned.push(character);
-            last_was_space = false;
-        } else if !last_was_space {
-            cleaned.push(' ');
-            last_was_space = true;
-        }
-    }
-    if cleaned.ends_with(' ') {
-        cleaned.pop();
-    }
-    cleaned
-}
-
-pub(super) fn sanitize_trigram_query(query: &str) -> String {
-    let cleaned = sanitize_fts_terms(query);
-    if cleaned.is_empty() {
-        return String::new();
-    }
-    format!("\"{cleaned}\"")
 }
