@@ -136,62 +136,10 @@ pub(super) fn keyword_layers() -> impl Iterator<Item = RetrievalLayer> {
     LAYERS.iter().copied().filter(|layer| layer.keyword)
 }
 
-pub(super) fn merge_results(
-    acc: &mut HashMap<i64, ScoredResult>,
-    results: &[RankedResult],
-    weight: f64,
-    layer: RetrievalLayer,
-) {
-    const K: f64 = 60.0;
-
-    for (rank, result) in results.iter().enumerate() {
-        let rrf_score = weight * (1.0 / (K + rank as f64 + 1.0));
-
-        acc.entry(result.rowid)
-            .and_modify(|sr| {
-                sr.rrf_score += rrf_score;
-                layer.add(&mut sr.why, rrf_score);
-            })
-            .or_insert_with(|| {
-                let mut why = SearchWhy::default();
-                layer.add(&mut why, rrf_score);
-                ScoredResult {
-                    file_id: result.file_id,
-                    source_id: result.source_id,
-                    title: result.title.clone(),
-                    content: result.content.clone(),
-                    source_label: result.source_label.clone(),
-                    file_path: result.file_path.clone(),
-                    line_start: result.line_start,
-                    line_end: result.line_end,
-                    metadata: result.metadata.clone(),
-                    rrf_score,
-                    why,
-                }
-            });
-    }
-}
-
-pub(super) fn truncate_snippet(content: &str, max_bytes: usize) -> String {
-    if content.len() <= max_bytes {
-        return content.to_string();
-    }
-    let boundary = content
-        .char_indices()
-        .take_while(|(index, _)| *index <= max_bytes)
-        .map(|(index, _)| index)
-        .last()
-        .unwrap_or(0);
-    let truncated = &content[..boundary];
-    let cut = truncated
-        .char_indices()
-        .rev()
-        .find(|(_, character)| character.is_whitespace())
-        .map(|(index, _)| index)
-        .filter(|index| *index > 0)
-        .unwrap_or(boundary);
-    format!("{}...", &content[..cut])
-}
+mod merge;
+mod snippet;
+pub(super) use merge::merge_results;
+pub(super) use snippet::truncate_snippet;
 
 #[cfg(test)]
 mod tests;
