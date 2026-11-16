@@ -3,6 +3,8 @@ use std::collections::HashSet;
 use super::super::*;
 use super::{sample_database, vector_for, TEST_DIMENSIONS, TEST_MODEL};
 
+mod replay;
+
 #[test]
 fn saved_sidecar_applies_incremental_embedding_updates_and_deletes() {
     let count = 5000;

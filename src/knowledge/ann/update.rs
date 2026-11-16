@@ -50,10 +50,15 @@ pub(super) fn apply_incremental_changes(changes: IncrementalChanges<'_>) -> Resu
         return Ok(None);
     }
 
-    if index.capacity() < expected_size {
-        index
-            .reserve(expected_size)
-            .map_err(|error| anyhow!("failed to grow HNSW capacity to {expected_size}: {error}"))?;
+    let replay_changes = usize::try_from(change_count)
+        .map_err(|_| anyhow!("invalid negative HNSW change count: {change_count}"))?;
+    let required_capacity = expected_size
+        .checked_add(replay_changes)
+        .ok_or_else(|| anyhow!("HNSW replay capacity overflow"))?;
+    if index.capacity() < required_capacity {
+        index.reserve(required_capacity).map_err(|error| {
+            anyhow!("failed to grow HNSW capacity to {required_capacity}: {error}")
+        })?;
     }
 
     let rowids = changed_rowids(conn, from_generation, to_generation, source_id)?;
