@@ -6,7 +6,7 @@ mod replace;
 mod triggers;
 
 const MARKER: &str = "embedding_coverage_v1";
-const VERSION: &str = "2";
+const VERSION: &str = "3";
 
 pub(in crate::knowledge::schema) fn ensure_embedding_coverage(conn: &Connection) -> Result<()> {
     if ready::coverage_is_current(conn)? {
@@ -32,14 +32,25 @@ pub(in crate::knowledge::schema) fn ensure_embedding_coverage(conn: &Connection)
                 model_id TEXT NOT NULL
             );",
         )?;
+        conn.execute_batch(
+            "CREATE TABLE IF NOT EXISTS knowledge_chunk_meta_coverage_replace (
+                chunk_rowid INTEGER PRIMARY KEY,
+                file_id INTEGER NOT NULL
+            );",
+        )?;
         if !coverage_is_current {
             drop_coverage_triggers(conn)?;
             conn.execute("DELETE FROM knowledge_embedding_coverage_replace", [])?;
+            conn.execute("DELETE FROM knowledge_chunk_meta_coverage_replace", [])?;
             conn.execute("DELETE FROM knowledge_embedding_coverage", [])?;
+            conn.execute_batch(
+                "CREATE INDEX IF NOT EXISTS idx_embeddings_model
+                 ON knowledge_embeddings(model_id);",
+            )?;
             conn.execute_batch(
                 "INSERT INTO knowledge_embedding_coverage(file_id, model_id, embedded_count)
                  SELECT kcm.file_id, ke.model_id, COUNT(*)
-                 FROM knowledge_embeddings ke
+                 FROM knowledge_embeddings ke INDEXED BY idx_embeddings_model
                  JOIN knowledge_chunk_meta kcm ON kcm.chunk_rowid = ke.chunk_rowid
                  GROUP BY kcm.file_id, ke.model_id;",
             )?;
@@ -69,6 +80,10 @@ fn drop_coverage_triggers(conn: &Connection) -> Result<()> {
          DROP TRIGGER IF EXISTS knowledge_embeddings_coverage_delete;
          DROP TRIGGER IF EXISTS knowledge_embeddings_coverage_prepare_replace;
          DROP TRIGGER IF EXISTS knowledge_embeddings_coverage_replace_cleanup;
+         DROP TRIGGER IF EXISTS knowledge_embeddings_coverage_chunkrowid_immutable;
+         DROP TRIGGER IF EXISTS knowledge_chunk_meta_coverage_prepare_replace;
+         DROP TRIGGER IF EXISTS knowledge_chunk_meta_coverage_replace_cleanup;
+         DROP TRIGGER IF EXISTS knowledge_chunk_meta_coverage_chunkrowid_immutable;
          DROP TRIGGER IF EXISTS knowledge_chunk_meta_coverage_insert;
          DROP TRIGGER IF EXISTS knowledge_chunk_meta_coverage_delete;
          DROP TRIGGER IF EXISTS knowledge_chunk_meta_coverage_move;",

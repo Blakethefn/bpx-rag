@@ -1,5 +1,6 @@
 use super::*;
 
+mod meta;
 mod replace;
 
 #[test]

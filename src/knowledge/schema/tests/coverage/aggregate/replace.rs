@@ -1,5 +1,17 @@
 use super::super::*;
 
+mod migration;
+mod updates;
+
+fn pending_replacements(conn: &rusqlite::Connection) -> i64 {
+    conn.query_row(
+        "SELECT COUNT(*) FROM knowledge_embedding_coverage_replace",
+        [],
+        |row| row.get(0),
+    )
+    .unwrap()
+}
+
 #[test]
 fn legacy_replace_embedding_write_keeps_coverage_consistent_with_both_trigger_modes() {
     let conn = schema();
@@ -99,6 +111,35 @@ fn legacy_replace_insert_of_a_new_embedding_increments_existing_aggregate() {
 }
 
 #[test]
+fn ignored_embedding_conflict_keeps_counts_correct_and_next_update_cleans_state() {
+    let conn = schema();
+    let source_id = source(&conn, "legacy-writer");
+    let file_id = file(&conn, source_id, "src/lib.rs");
+    let rowid = chunk(&conn, source_id, file_id);
+    embed(&conn, rowid, "model-a", 1);
+
+    conn.execute(
+        "INSERT OR IGNORE INTO knowledge_embeddings
+            (chunk_rowid, embedding, dim, model_id) VALUES (?1, ?2, 1, 'model-b')",
+        params![rowid, vec![2_u8, 0, 0, 0]],
+    )
+    .unwrap();
+
+    assert_eq!(count(&conn, file_id, "model-a"), 1);
+    assert_eq!(count(&conn, file_id, "model-b"), 0);
+    assert_coverage_matches_canonical(&conn);
+    assert_eq!(pending_replacements(&conn), 1);
+
+    conn.execute(
+        "UPDATE knowledge_embeddings SET embedding = embedding WHERE chunk_rowid = ?1",
+        [rowid],
+    )
+    .unwrap();
+    assert_eq!(pending_replacements(&conn), 0);
+    assert_coverage_matches_canonical(&conn);
+}
+
+#[test]
 fn missing_replace_state_table_rebuilds_coverage_and_restores_it() {
     let conn = schema();
     let source_id = source(&conn, "legacy-writer");
@@ -134,7 +175,7 @@ fn migration_rebuilds_coverage_drift_from_the_previous_trigger_version() {
     )
     .unwrap();
     conn.execute(
-        "UPDATE knowledge_index_meta SET value = '1' WHERE key = 'embedding_coverage_v1'",
+        "UPDATE knowledge_index_meta SET value = '2' WHERE key = 'embedding_coverage_v1'",
         [],
     )
     .unwrap();

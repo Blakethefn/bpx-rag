@@ -20,6 +20,30 @@ pub(super) fn install(conn: &Connection) -> Result<()> {
          AFTER UPDATE ON knowledge_embeddings BEGIN
             DELETE FROM knowledge_embedding_coverage_replace
             WHERE chunk_rowid = NEW.chunk_rowid;
+         END;
+         CREATE TRIGGER IF NOT EXISTS knowledge_chunk_meta_coverage_prepare_replace
+         BEFORE INSERT ON knowledge_chunk_meta
+         WHEN EXISTS (SELECT 1 FROM knowledge_chunk_meta
+                      WHERE chunk_rowid = NEW.chunk_rowid) BEGIN
+            INSERT INTO knowledge_chunk_meta_coverage_replace(chunk_rowid, file_id)
+            SELECT chunk_rowid, file_id FROM knowledge_chunk_meta
+            WHERE chunk_rowid = NEW.chunk_rowid
+            ON CONFLICT(chunk_rowid) DO UPDATE SET file_id = excluded.file_id;
+         END;
+         CREATE TRIGGER IF NOT EXISTS knowledge_chunk_meta_coverage_replace_cleanup
+         AFTER UPDATE ON knowledge_chunk_meta BEGIN
+            DELETE FROM knowledge_chunk_meta_coverage_replace
+            WHERE chunk_rowid = NEW.chunk_rowid;
+         END;
+         CREATE TRIGGER IF NOT EXISTS knowledge_embeddings_coverage_chunkrowid_immutable
+         BEFORE UPDATE OF chunk_rowid ON knowledge_embeddings
+         WHEN OLD.chunk_rowid <> NEW.chunk_rowid BEGIN
+            SELECT RAISE(ABORT, 'knowledge_embeddings.chunk_rowid is immutable');
+         END;
+         CREATE TRIGGER IF NOT EXISTS knowledge_chunk_meta_coverage_chunkrowid_immutable
+         BEFORE UPDATE OF chunk_rowid ON knowledge_chunk_meta
+         WHEN OLD.chunk_rowid <> NEW.chunk_rowid BEGIN
+            SELECT RAISE(ABORT, 'knowledge_chunk_meta.chunk_rowid is immutable');
          END;",
     )?;
     Ok(())
