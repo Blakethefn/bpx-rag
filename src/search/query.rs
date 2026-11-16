@@ -83,7 +83,7 @@ pub fn run_query(
             .unwrap_or(std::cmp::Ordering::Equal)
     });
     results.truncate(request.limit as usize);
-    if !explicit_profile && config.search.relation_neighbors > 0 {
+    if !explicit_profile && !scoped && config.search.relation_neighbors > 0 {
         results = attach_relation_neighbors(
             knowledge,
             results,
@@ -104,7 +104,11 @@ pub fn run_query(
         .profile
         .secondary_snippet_override()
         .unwrap_or(config.search.secondary_snippet_bytes);
-    let related = related_files_for(knowledge, &results, config.search.top_result_count)?;
+    let related = if scoped {
+        Vec::new()
+    } else {
+        related_files_for(knowledge, &results, config.search.top_result_count)?
+    };
     let freshness = check_results(knowledge, &results)?;
     Ok(format_results(FormatInput {
         original_query: request.query,

@@ -2,9 +2,11 @@ use anyhow::Result;
 use rusqlite::Connection;
 
 mod ready;
+mod replace;
+mod triggers;
 
 const MARKER: &str = "embedding_coverage_v1";
-const VERSION: &str = "1";
+const VERSION: &str = "2";
 
 pub(in crate::knowledge::schema) fn ensure_embedding_coverage(conn: &Connection) -> Result<()> {
     if ready::coverage_is_current(conn)? {
@@ -23,8 +25,16 @@ pub(in crate::knowledge::schema) fn ensure_embedding_coverage(conn: &Connection)
             CREATE INDEX IF NOT EXISTS idx_embedding_coverage_model_file
                 ON knowledge_embedding_coverage(model_id, file_id);",
         )?;
+        conn.execute_batch(
+            "CREATE TABLE IF NOT EXISTS knowledge_embedding_coverage_replace (
+                chunk_rowid INTEGER PRIMARY KEY,
+                file_id INTEGER,
+                model_id TEXT NOT NULL
+            );",
+        )?;
         if !coverage_is_current {
             drop_coverage_triggers(conn)?;
+            conn.execute("DELETE FROM knowledge_embedding_coverage_replace", [])?;
             conn.execute("DELETE FROM knowledge_embedding_coverage", [])?;
             conn.execute_batch(
                 "INSERT INTO knowledge_embedding_coverage(file_id, model_id, embedded_count)
@@ -38,7 +48,8 @@ pub(in crate::knowledge::schema) fn ensure_embedding_coverage(conn: &Connection)
                 [MARKER, VERSION],
             )?;
         }
-        install_coverage_triggers(conn)?;
+        triggers::install(conn)?;
+        replace::install(conn)?;
         Ok(())
     })();
     match result {
@@ -56,102 +67,11 @@ fn drop_coverage_triggers(conn: &Connection) -> Result<()> {
         "DROP TRIGGER IF EXISTS knowledge_embeddings_coverage_insert;
          DROP TRIGGER IF EXISTS knowledge_embeddings_coverage_update;
          DROP TRIGGER IF EXISTS knowledge_embeddings_coverage_delete;
+         DROP TRIGGER IF EXISTS knowledge_embeddings_coverage_prepare_replace;
+         DROP TRIGGER IF EXISTS knowledge_embeddings_coverage_replace_cleanup;
          DROP TRIGGER IF EXISTS knowledge_chunk_meta_coverage_insert;
          DROP TRIGGER IF EXISTS knowledge_chunk_meta_coverage_delete;
          DROP TRIGGER IF EXISTS knowledge_chunk_meta_coverage_move;",
-    )?;
-    Ok(())
-}
-
-fn install_coverage_triggers(conn: &Connection) -> Result<()> {
-    conn.execute_batch(
-        "CREATE TRIGGER IF NOT EXISTS knowledge_embeddings_coverage_insert
-         AFTER INSERT ON knowledge_embeddings BEGIN
-            INSERT INTO knowledge_embedding_coverage
-                (file_id, model_id, embedded_count)
-            SELECT file_id, NEW.model_id, 1 FROM knowledge_chunk_meta
-            WHERE chunk_rowid = NEW.chunk_rowid
-            ON CONFLICT(file_id, model_id) DO UPDATE
-                SET embedded_count = embedded_count + 1;
-         END;
-         CREATE TRIGGER IF NOT EXISTS knowledge_embeddings_coverage_update
-         AFTER UPDATE OF chunk_rowid, model_id ON knowledge_embeddings
-         WHEN OLD.chunk_rowid <> NEW.chunk_rowid OR OLD.model_id <> NEW.model_id BEGIN
-            UPDATE knowledge_embedding_coverage
-            SET embedded_count = embedded_count - 1
-            WHERE file_id = (SELECT file_id FROM knowledge_chunk_meta
-                             WHERE chunk_rowid = OLD.chunk_rowid)
-              AND model_id = OLD.model_id AND embedded_count > 0;
-            DELETE FROM knowledge_embedding_coverage WHERE embedded_count = 0;
-            INSERT OR IGNORE INTO knowledge_embedding_coverage
-                (file_id, model_id, embedded_count)
-            SELECT file_id, NEW.model_id, 0 FROM knowledge_chunk_meta
-            WHERE chunk_rowid = NEW.chunk_rowid;
-            UPDATE knowledge_embedding_coverage
-            SET embedded_count = embedded_count + 1
-            WHERE file_id = (SELECT file_id FROM knowledge_chunk_meta
-                             WHERE chunk_rowid = NEW.chunk_rowid)
-              AND model_id = NEW.model_id;
-         END;
-         CREATE TRIGGER IF NOT EXISTS knowledge_embeddings_coverage_delete
-         AFTER DELETE ON knowledge_embeddings BEGIN
-            UPDATE knowledge_embedding_coverage
-            SET embedded_count = embedded_count - 1
-            WHERE file_id = (SELECT file_id FROM knowledge_chunk_meta
-                             WHERE chunk_rowid = OLD.chunk_rowid)
-              AND model_id = OLD.model_id AND embedded_count > 0;
-            DELETE FROM knowledge_embedding_coverage WHERE embedded_count = 0;
-         END;
-         CREATE TRIGGER IF NOT EXISTS knowledge_chunk_meta_coverage_insert
-         AFTER INSERT ON knowledge_chunk_meta
-         WHEN EXISTS (SELECT 1 FROM knowledge_embeddings
-                      WHERE chunk_rowid = NEW.chunk_rowid) BEGIN
-            INSERT INTO knowledge_embedding_coverage
-                (file_id, model_id, embedded_count)
-            SELECT NEW.file_id, model_id, COUNT(*) FROM knowledge_embeddings
-            WHERE chunk_rowid = NEW.chunk_rowid
-            GROUP BY model_id
-            ON CONFLICT(file_id, model_id) DO UPDATE
-                SET embedded_count = embedded_count + excluded.embedded_count;
-         END;
-         CREATE TRIGGER IF NOT EXISTS knowledge_chunk_meta_coverage_delete
-         AFTER DELETE ON knowledge_chunk_meta
-         WHEN EXISTS (SELECT 1 FROM knowledge_embeddings
-                      WHERE chunk_rowid = OLD.chunk_rowid) BEGIN
-            UPDATE knowledge_embedding_coverage
-            SET embedded_count = embedded_count - (
-                SELECT COUNT(*) FROM knowledge_embeddings ke
-                WHERE ke.chunk_rowid = OLD.chunk_rowid
-                  AND ke.model_id = knowledge_embedding_coverage.model_id
-            )
-            WHERE file_id = OLD.file_id AND embedded_count > 0;
-            DELETE FROM knowledge_embedding_coverage WHERE embedded_count = 0;
-         END;
-         CREATE TRIGGER IF NOT EXISTS knowledge_chunk_meta_coverage_move
-         AFTER UPDATE OF file_id ON knowledge_chunk_meta
-         WHEN OLD.file_id <> NEW.file_id
-           AND EXISTS (SELECT 1 FROM knowledge_embeddings
-                       WHERE chunk_rowid = NEW.chunk_rowid) BEGIN
-            UPDATE knowledge_embedding_coverage
-            SET embedded_count = embedded_count - (
-                SELECT COUNT(*) FROM knowledge_embeddings ke
-                WHERE ke.chunk_rowid = NEW.chunk_rowid
-                  AND ke.model_id = knowledge_embedding_coverage.model_id
-            )
-            WHERE file_id = OLD.file_id AND embedded_count > 0;
-            DELETE FROM knowledge_embedding_coverage WHERE embedded_count = 0;
-            INSERT OR IGNORE INTO knowledge_embedding_coverage
-                (file_id, model_id, embedded_count)
-            SELECT NEW.file_id, model_id, 0 FROM knowledge_embeddings
-            WHERE chunk_rowid = NEW.chunk_rowid;
-            UPDATE knowledge_embedding_coverage
-            SET embedded_count = embedded_count + (
-                SELECT COUNT(*) FROM knowledge_embeddings ke
-                WHERE ke.chunk_rowid = NEW.chunk_rowid
-                  AND ke.model_id = knowledge_embedding_coverage.model_id
-            )
-            WHERE file_id = NEW.file_id;
-         END;",
     )?;
     Ok(())
 }

@@ -61,6 +61,31 @@ fn default_search_adds_the_file_a_top_hit_imports() {
 }
 
 #[test]
+fn scoped_search_does_not_add_out_of_scope_graph_neighbors() {
+    let store = rust_relation_store();
+    let output = run_query(
+        QueryRequest {
+            knowledge_filter: Some("file:lib.rs"),
+            ..default_request("kestrel")
+        },
+        &Config::default(),
+        &store,
+        false,
+    )
+    .unwrap();
+
+    assert!(output.contains("file: lib.rs"), "{output}");
+    assert!(
+        !output.contains("file: util.rs"),
+        "a scoped search must not add a graph neighbor outside its file filter: {output}"
+    );
+    assert!(
+        !output.contains("related: util.rs"),
+        "a scoped search must not annotate a related file outside its file filter: {output}"
+    );
+}
+
+#[test]
 fn relation_neighbors_can_be_turned_off() {
     let store = rust_relation_store();
     let mut config = Config::default();

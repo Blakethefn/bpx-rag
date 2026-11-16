@@ -1,5 +1,7 @@
 use super::*;
 
+mod replace;
+
 #[test]
 fn file_source_directory_and_deletion_coverage_matches_canonical_counts() {
     let conn = schema();
