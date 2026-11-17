@@ -1,4 +1,6 @@
-use super::{IndexScope, RETRIEVAL_ANN_THRESHOLD, index_scope};
+mod candidates;
+
+use super::{index_scope, IndexScope, RETRIEVAL_ANN_THRESHOLD};
 
 #[test]
 fn small_unrestricted_scope_uses_exact_vector_scoring() {

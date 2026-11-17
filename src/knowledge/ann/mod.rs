@@ -179,4 +179,6 @@ pub(super) fn source_generation(conn: &Connection, source_id: i64) -> Result<i64
 }
 
 #[cfg(test)]
+mod bench;
+#[cfg(test)]
 mod tests;

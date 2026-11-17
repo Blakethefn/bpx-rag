@@ -81,7 +81,7 @@ fn h2_exact_vector_decode_scaling() {
         synthetic_corpus(&store, chunks);
         let query = unit_vector(7);
         let samples = time_runs(3, 15, || {
-            knowledge_vector_search(store.conn(), &query, 10, "", &[], MODEL_ID, None)
+            knowledge_vector_search(store.conn(), &query, 10, &[], MODEL_ID, None)
                 .expect("exact vector search");
         });
         report("h2_exact_vector_search", chunks, &samples);

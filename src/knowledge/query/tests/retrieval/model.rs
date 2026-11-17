@@ -76,7 +76,6 @@ fn explicit_empty_vector_candidates_return_no_results() {
         store.conn(),
         &[1.0, 0.0],
         10,
-        "",
         &[],
         "sentence-transformers/all-MiniLM-L6-v2",
         Some(&[]),

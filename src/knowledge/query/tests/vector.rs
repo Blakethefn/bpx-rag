@@ -2,6 +2,23 @@ use super::super::vector::knowledge_vector_search;
 use super::{make_store, seed_chunk};
 use rusqlite::params;
 
+mod scope;
+
+fn seed_vector(store: &crate::knowledge::KnowledgeStore, rowid: i64, vector: &[f32]) {
+    store
+        .conn()
+        .execute(
+            "INSERT INTO knowledge_embeddings (chunk_rowid, embedding, dim, model_id)
+             VALUES (?1, ?2, ?3, 'test-model')",
+            params![
+                rowid,
+                crate::embed::embedding_to_bytes(vector),
+                vector.len() as i64
+            ],
+        )
+        .unwrap();
+}
+
 #[test]
 fn vector_search_errors_on_non_integer_line_number_instead_of_zero() {
     let store = make_store();
@@ -30,7 +47,7 @@ fn vector_search_errors_on_non_integer_line_number_instead_of_zero() {
         )
         .unwrap();
 
-    let result = knowledge_vector_search(store.conn(), &[1.0, 0.0], 5, "", &[], "test-model", None);
+    let result = knowledge_vector_search(store.conn(), &[1.0, 0.0], 5, &[], "test-model", None);
 
     assert!(result.is_err(), "line numbers must not default to 0");
 }
@@ -56,7 +73,7 @@ fn vector_search_rejects_embedding_with_wrong_byte_length() {
         )
         .unwrap();
 
-    let result = knowledge_vector_search(store.conn(), &[1.0, 0.0], 5, "", &[], "test-model", None);
+    let result = knowledge_vector_search(store.conn(), &[1.0, 0.0], 5, &[], "test-model", None);
 
     assert!(
         result.is_err(),
@@ -96,8 +113,7 @@ fn vector_search_rejects_non_finite_stored_embedding_instead_of_panicking() {
             .unwrap();
     }
 
-    let result =
-        knowledge_vector_search(store.conn(), &[1.0, 0.0], 60, "", &[], "test-model", None);
+    let result = knowledge_vector_search(store.conn(), &[1.0, 0.0], 60, &[], "test-model", None);
 
     assert!(
         result.is_err(),

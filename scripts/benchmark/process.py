@@ -9,6 +9,8 @@ import subprocess
 import time
 from pathlib import Path
 
+SAFE_HDD_BENCH_ROOT = Path("/media/blakethefn/2000HDD1/dev/project-assets/bpcontext/bench").resolve()
+
 
 def process_stats(pid):
     root = Path(f"/proc/{pid}")
@@ -22,7 +24,12 @@ def process_stats(pid):
             key, _, value = line.partition(":")
             if key in {"VmHWM", "VmRSS"}:
                 status_values[key] = int(value.strip().split()[0])
-        return io_values.get("read_bytes", 0), status_values.get("VmHWM", 0), status_values.get("VmRSS", 0)
+        return (
+            io_values.get("read_bytes", 0),
+            io_values.get("write_bytes", 0),
+            status_values.get("VmHWM", 0),
+            status_values.get("VmRSS", 0),
+        )
     except (FileNotFoundError, PermissionError, ProcessLookupError, ValueError):
         return None
 
@@ -39,6 +46,29 @@ def warm_files(paths):
     return total
 
 
+def drop_file_cache(paths, isolated_root):
+    if not hasattr(os, "posix_fadvise") or not hasattr(os, "POSIX_FADV_DONTNEED"):
+        raise RuntimeError("file-specific cache advice is unavailable on this platform")
+    root = Path(isolated_root).resolve()
+    if not root.is_relative_to(SAFE_HDD_BENCH_ROOT):
+        raise ValueError(f"cache eviction is restricted to {SAFE_HDD_BENCH_ROOT}")
+    total = files_count = 0
+    for value in paths:
+        path = Path(value).resolve()
+        if not path.is_relative_to(root):
+            raise ValueError(f"cache advice path escapes isolated root: {path}")
+        files = [path] if path.is_file() else (item for item in path.rglob("*") if item.is_file())
+        for file_path in files:
+            descriptor = os.open(file_path, os.O_RDONLY)
+            try:
+                total += os.fstat(descriptor).st_size
+                os.posix_fadvise(descriptor, 0, 0, os.POSIX_FADV_DONTNEED)
+                files_count += 1
+            finally:
+                os.close(descriptor)
+    return files_count, total
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output-dir", required=True, type=Path)
@@ -47,6 +77,8 @@ def main():
     parser.add_argument("--config-home", required=True)
     parser.add_argument("--hf-home")
     parser.add_argument("--warm-path", action="append", default=[], help="read this file or tree before starting the measured process")
+    parser.add_argument("--drop-cache-path", action="append", default=[], help="advise eviction for this file/tree inside --isolated-root")
+    parser.add_argument("--isolated-root", help="required safety boundary for --drop-cache-path")
     parser.add_argument("command", nargs=argparse.REMAINDER)
     args = parser.parse_args()
     command = args.command[1:] if args.command[:1] == ["--"] else args.command
@@ -57,7 +89,10 @@ def main():
     paths = {suffix: args.output_dir / f"{args.label}.{suffix}" for suffix in ("stdout", "stderr", "json")}
     if any(path.exists() for path in paths.values()):
         parser.error(f"output already exists for label {args.label}")
+    if args.drop_cache_path and not args.isolated_root:
+        parser.error("--drop-cache-path requires --isolated-root")
     prewarmed_bytes = warm_files(args.warm_path)
+    evicted_files, evicted_bytes = drop_file_cache(args.drop_cache_path, args.isolated_root) if args.drop_cache_path else (0, 0)
     env = os.environ.copy()
     env.update({"XDG_DATA_HOME": args.data_home, "XDG_CONFIG_HOME": args.config_home})
     if args.hf_home:
@@ -66,13 +101,14 @@ def main():
     started = time.perf_counter()
     with paths["stdout"].open("wb") as stdout, paths["stderr"].open("wb") as stderr:
         process = subprocess.Popen(command, stdout=stdout, stderr=stderr, env=env)
-        read_bytes = peak_hwm_kb = peak_rss_kb = 0
+        read_bytes = write_bytes = peak_hwm_kb = peak_rss_kb = 0
         while process.poll() is None:
             values = process_stats(process.pid)
             if values:
                 read_bytes = max(read_bytes, values[0])
-                peak_hwm_kb = max(peak_hwm_kb, values[1])
-                peak_rss_kb = max(peak_rss_kb, values[2])
+                write_bytes = max(write_bytes, values[1])
+                peak_hwm_kb = max(peak_hwm_kb, values[2])
+                peak_rss_kb = max(peak_rss_kb, values[3])
             time.sleep(0.02)
         return_code = process.returncode
     elapsed_ms = (time.perf_counter() - started) * 1000
@@ -82,7 +118,10 @@ def main():
         "return_code": return_code,
         "elapsed_ms": round(elapsed_ms, 3),
         "prewarmed_bytes": prewarmed_bytes,
+        "cache_advice_files": evicted_files,
+        "cache_advice_bytes": evicted_bytes,
         "proc_read_bytes": read_bytes if read_bytes else None,
+        "proc_write_bytes": write_bytes if write_bytes else None,
         "filesystem_input_blocks": usage.ru_inblock,
         "peak_hwm_kb": max(peak_hwm_kb, int(usage.ru_maxrss)),
         "peak_rss_kb": peak_rss_kb,

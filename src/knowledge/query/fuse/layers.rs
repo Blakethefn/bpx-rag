@@ -114,8 +114,7 @@ pub(super) fn search_layers(
                     conn,
                     &query_embedding,
                     candidate_limit,
-                    meta_where,
-                    meta_params,
+                    predicates,
                     emb.model_id(),
                     candidates.as_deref(),
                 )?;
