@@ -68,9 +68,16 @@ pub(super) fn commit_plan(
                 }
                 None => {
                     conn.execute(
-                        "INSERT INTO knowledge_files (source_id, rel_path, content_hash, size_bytes)
-                         VALUES (?1, ?2, ?3, ?4)",
-                        params![source.id, file.rel_path, file.hash, file.size_bytes],
+                        "INSERT INTO knowledge_files
+                            (source_id, rel_path, extension, content_hash, size_bytes)
+                         VALUES (?1, ?2, ?3, ?4, ?5)",
+                        params![
+                            source.id,
+                            file.rel_path,
+                            crate::knowledge::filter::file_extension(&file.rel_path),
+                            file.hash,
+                            file.size_bytes
+                        ],
                     )?;
                     conn.last_insert_rowid()
                 }

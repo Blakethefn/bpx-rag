@@ -1,3 +1,11 @@
+pub(crate) fn file_extension(path: &str) -> String {
+    std::path::Path::new(path)
+        .extension()
+        .and_then(|extension| extension.to_str())
+        .map(str::to_ascii_lowercase)
+        .unwrap_or_default()
+}
+
 pub(super) fn validate_relative_path(path: &str) -> bool {
     !path.is_empty()
         && !path.starts_with('/')

@@ -1,12 +1,13 @@
 use anyhow::Result;
 use rusqlite::types::ToSql;
 
-use crate::knowledge::filter::{FilterPredicate, file_scope_sql, predicates_to_sql};
+use crate::knowledge::filter::{file_scope_sql, predicates_to_sql, FilterPredicate};
 
 use super::RagApp;
 
 #[cfg(test)]
 mod bench;
+mod language;
 #[cfg(test)]
 mod tests;
 
@@ -40,6 +41,11 @@ impl RagApp {
         let Some(embedder) = self.knowledge.embedder() else {
             return Ok(None);
         };
+        if let Some(coverage) =
+            language::embedding_coverage(self.knowledge.conn(), embedder.model_id(), predicates)?
+        {
+            return Ok(Some(coverage));
+        }
         let (sql, scope_values) = match file_scope_sql(predicates, 1) {
             Some((scope_where, values)) => {
                 let scope_clause = if scope_where.is_empty() {

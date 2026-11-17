@@ -39,6 +39,7 @@ pub(crate) fn apply_schema(conn: &Connection) -> Result<()> {
 fn ensure_schema(conn: &Connection) -> Result<()> {
     catalog::catalog(conn)?;
     vectors::vectors(conn)?;
+    migrate::ensure_file_extension(conn)?;
     graph::graph(conn)?;
     ensure_analysis_status(conn)?;
     ensure_embedding_state_row(conn)?;

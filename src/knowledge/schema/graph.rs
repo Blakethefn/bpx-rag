@@ -29,6 +29,12 @@ pub(super) fn graph(conn: &Connection) -> Result<()> {
         CREATE INDEX IF NOT EXISTS idx_chunk_meta_file ON knowledge_chunk_meta(file_id);
         CREATE INDEX IF NOT EXISTS idx_files_source ON knowledge_files(source_id);
         CREATE INDEX IF NOT EXISTS idx_files_rel_path ON knowledge_files(rel_path);
+        CREATE INDEX IF NOT EXISTS idx_files_extension ON knowledge_files(extension);
+        CREATE INDEX IF NOT EXISTS idx_chunk_meta_language
+            ON knowledge_chunk_meta(
+                CASE WHEN json_valid(metadata)
+                     THEN lower(json_extract(metadata, '$.frontmatter.language')) END
+            );
         CREATE INDEX IF NOT EXISTS idx_links_source ON knowledge_links(source_file_id);
         CREATE INDEX IF NOT EXISTS idx_links_target ON knowledge_links(target_file_id);
         CREATE INDEX IF NOT EXISTS idx_symbols_name ON knowledge_symbols(name);

@@ -7,6 +7,7 @@ mod filter;
 mod fuzzy;
 mod identifier;
 mod layer;
+mod lexical;
 mod result;
 mod retrieval;
 mod rows;

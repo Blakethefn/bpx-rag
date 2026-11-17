@@ -3,6 +3,7 @@ use rusqlite::Connection;
 
 use super::super::rank::RankedResult;
 use super::sanitize::sanitize_fts_query;
+use super::scope::scoped_rowid_range;
 use super::{lexical_columns, ranked_result_from_row, select_list};
 
 pub(in super::super) fn knowledge_bm25_search(
@@ -25,6 +26,23 @@ pub(in super::super) fn knowledge_bm25_search(
 
     let fts_idx = params.len() + 1;
     params.push(Box::new(fts_query));
+    let rowid_range = scoped_rowid_range(conn, meta_where, meta_params)?;
+    let rowid_clause = rowid_range.map(|_| {
+        format!(
+            " AND kc.rowid BETWEEN ?{} AND ?{}",
+            params.len() + 1,
+            params.len() + 2
+        )
+    });
+    let metadata_join = if rowid_range.is_some() {
+        "CROSS JOIN"
+    } else {
+        "JOIN"
+    };
+    if let Some((start, end)) = rowid_range {
+        params.push(Box::new(start));
+        params.push(Box::new(end));
+    }
 
     let meta_clause = if meta_where.is_empty() {
         String::new()
@@ -37,12 +55,13 @@ pub(in super::super) fn knowledge_bm25_search(
     let sql = format!(
         "SELECT {select}
          FROM knowledge_chunks kc
-         JOIN knowledge_chunk_meta kcm ON kcm.chunk_rowid = kc.rowid
+         {metadata_join} knowledge_chunk_meta kcm ON kcm.chunk_rowid = kc.rowid
          JOIN knowledge_files kf ON kf.id = kcm.file_id
          JOIN knowledge_sources ks ON ks.id = kcm.source_id
-         WHERE knowledge_chunks MATCH ?{fts_idx}{meta_clause}
+         WHERE knowledge_chunks MATCH ?{fts_idx}{meta_clause}{}
          ORDER BY rank
          LIMIT ?{}",
+        rowid_clause.as_deref().unwrap_or_default(),
         params.len() + 1
     );
     params.push(Box::new(limit));

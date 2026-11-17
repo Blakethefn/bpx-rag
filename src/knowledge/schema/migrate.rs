@@ -3,9 +3,11 @@ use rusqlite::Connection;
 
 mod changes;
 mod coverage;
+mod extension;
 mod instance;
 pub(super) use changes::ensure_embedding_change_tracking;
 pub(super) use coverage::ensure_embedding_coverage;
+pub(super) use extension::ensure_file_extension;
 pub(in crate::knowledge::schema) use instance::ensure_database_instance_id;
 
 pub(super) fn ensure_analysis_status(conn: &Connection) -> Result<()> {

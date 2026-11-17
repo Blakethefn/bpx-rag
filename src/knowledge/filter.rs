@@ -1,9 +1,10 @@
-use anyhow::{Result, anyhow};
+use anyhow::{anyhow, Result};
 
 mod path;
 mod scope;
 mod tokens;
 
+pub(crate) use path::file_extension;
 pub(crate) use scope::file_scope_sql;
 
 #[derive(Debug, Clone, PartialEq)]

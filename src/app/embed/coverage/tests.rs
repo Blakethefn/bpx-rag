@@ -81,3 +81,94 @@ fn coverage_tracks_embedded_and_missing_vectors_within_path_scope() {
     assert_eq!((coverage.total, coverage.current_model), (1, 1));
     assert_eq!(coverage.notice(true), None);
 }
+
+#[test]
+fn language_coverage_counts_paths_and_frontmatter_within_the_same_scope() {
+    let mut knowledge = open_in_memory().unwrap();
+    knowledge.set_embedder(Arc::new(MockEmbedder::new()));
+    let source_id = knowledge
+        .add_source("repo", "/synthetic/repo", &[], &[])
+        .unwrap();
+    let other_source = knowledge
+        .add_source("other", "/synthetic/other", &[], &[])
+        .unwrap();
+    let app = RagApp {
+        config: Config::default(),
+        knowledge,
+        embedding_notice: None,
+        embedder_loaded: true,
+    };
+    add_chunk(&app, source_id, "docs/extension.MD", true);
+    add_chunk(&app, source_id, "docs/frontmatter.txt", false);
+    add_chunk(&app, source_id, "docs/custom.txt", false);
+    add_chunk(&app, source_id, "outside/path.md", true);
+    add_chunk(&app, other_source, "docs/foreign.md", true);
+    app.knowledge
+        .conn()
+        .execute(
+            "UPDATE knowledge_chunk_meta SET metadata = ?1 WHERE file_id = (
+                SELECT id FROM knowledge_files WHERE rel_path = ?2
+             )",
+            params![
+                r#"{"frontmatter":{"language":"Markdown"}}"#,
+                "docs/frontmatter.txt"
+            ],
+        )
+        .unwrap();
+    app.knowledge
+        .conn()
+        .execute(
+            "UPDATE knowledge_chunk_meta SET metadata = ?1 WHERE file_id = (
+                SELECT id FROM knowledge_files WHERE rel_path = ?2
+             )",
+            params![
+                r#"{"frontmatter":{"language":"python-language!"}}"#,
+                "docs/custom.txt"
+            ],
+        )
+        .unwrap();
+
+    let predicates = scope_predicates(Some("source:repo dir:docs language:md"), None).unwrap();
+    let coverage = app.embedding_coverage(&predicates).unwrap().unwrap();
+    assert_eq!((coverage.total, coverage.current_model), (2, 1));
+
+    let custom =
+        scope_predicates(Some("source:repo dir:docs language:python-language!"), None).unwrap();
+    let coverage = app.embedding_coverage(&custom).unwrap().unwrap();
+    assert_eq!((coverage.total, coverage.current_model), (1, 0));
+}
+
+#[test]
+fn language_coverage_keeps_makefile_shared_header_and_unknown_extension_matches() {
+    let mut knowledge = open_in_memory().unwrap();
+    knowledge.set_embedder(Arc::new(MockEmbedder::new()));
+    let source_id = knowledge
+        .add_source("repo", "/synthetic/repo", &[], &[])
+        .unwrap();
+    let app = RagApp {
+        config: Config::default(),
+        knowledge,
+        embedding_notice: None,
+        embedder_loaded: true,
+    };
+    add_chunk(&app, source_id, "Makefile", true);
+    add_chunk(&app, source_id, "nested/GNUMakefile", false);
+    add_chunk(&app, source_id, "include/shared.h", true);
+    add_chunk(&app, source_id, "scripts/config.nix", true);
+
+    for (language, expected) in [
+        ("make", (2, 1)),
+        ("c", (1, 1)),
+        ("cpp", (1, 1)),
+        ("nix", (1, 1)),
+    ] {
+        let filter = format!("source:repo language:{language}");
+        let predicates = scope_predicates(Some(&filter), None).unwrap();
+        let coverage = app.embedding_coverage(&predicates).unwrap().unwrap();
+        assert_eq!(
+            (coverage.total, coverage.current_model),
+            expected,
+            "{language}"
+        );
+    }
+}

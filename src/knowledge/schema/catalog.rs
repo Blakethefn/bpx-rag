@@ -20,6 +20,7 @@ pub(super) fn catalog(conn: &Connection) -> Result<()> {
             id           INTEGER PRIMARY KEY AUTOINCREMENT,
             source_id    INTEGER NOT NULL REFERENCES knowledge_sources(id) ON DELETE CASCADE,
             rel_path     TEXT NOT NULL,
+            extension    TEXT NOT NULL DEFAULT '',
             content_hash TEXT NOT NULL,
             size_bytes   INTEGER NOT NULL,
             indexed_at   TEXT NOT NULL DEFAULT (datetime('now')),

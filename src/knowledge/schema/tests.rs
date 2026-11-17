@@ -4,6 +4,7 @@ mod analysis;
 mod catalog;
 mod coverage;
 mod embed;
+mod extension;
 mod identifier;
 mod lock;
 

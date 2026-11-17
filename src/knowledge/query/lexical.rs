@@ -3,6 +3,7 @@ use super::rank::RankedResult;
 mod bm25;
 mod identifier;
 mod sanitize;
+mod scope;
 #[cfg(test)]
 mod tests;
 mod trigram;
