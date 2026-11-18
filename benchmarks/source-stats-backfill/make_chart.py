@@ -72,15 +72,8 @@ for tick, r in zip(ax.get_yticklabels(), rows):
         tick.set_fontweight('bold')
         tick.set_color(INK)
 ax.tick_params(axis='y', length=0, pad=10)
-ax.set_xscale('log')
-lo = 10 ** math.floor(math.log10(min(values)))
-hi = 10 ** math.ceil(math.log10(max(values) * 1.3))
-ax.set_xlim(lo, hi)
-ticks = [10 ** k for k in range(math.floor(math.log10(lo)), math.ceil(math.log10(hi)) + 1)]
-ax.set_xticks(ticks)
-ax.set_xticklabels([f'{t:g}' for t in ticks])
-ax.minorticks_off()
-ax.set_xlabel('Seconds, log scale (median of runs)', fontsize=10, color=MUTED, labelpad=10)
+ax.set_xlim(0, max(values) * 1.18)
+ax.set_xlabel('Seconds (median of runs)', fontsize=10, color=MUTED, labelpad=10)
 ax.xaxis.grid(True, color=GRID, linewidth=0.8)
 ax.set_axisbelow(True)
 for spine in ax.spines.values():
@@ -94,7 +87,7 @@ for (yp, _), v in zip(bars, values):
         label = f'{v * 1000:.1f} ms'
     else:
         label = f'{v * 1e6:.0f} µs'
-    ax.text(v * 1.25, yp, label, ha='left', va='center', fontweight='bold', fontsize=10.5)
+    ax.text(v + max(values) * 0.015, yp, label, ha='left', va='center', fontweight='bold', fontsize=10.5)
 
 fig.text(0.22, 0.83, 'Backfill duration', fontsize=12, fontweight='bold')
 
@@ -120,8 +113,8 @@ fig.text(0.06, 0.13,
          f'{runs} timed runs per variant per condition, alternating order, one process, one working copy. '
          'Each run is rolled back.', fontsize=9, color=MUTED)
 fig.text(0.06, 0.09,
-         'Log scale: bar length shows relative size, not proportion. '
-         'Small-dataset warm times are near the timer noise floor.', fontsize=9, color=MUTED)
+         'On this linear scale the 1k bars are too short to see. Their labels carry the values, and the warm times are near the timer noise floor.',
+         fontsize=9, color=MUTED)
 fig.text(0.06, 0.05,
          'Cold runs evict the working copy from the page cache before each run. '
          'Results depend on the storage device, cache size, and row layout of the machine that ran them.',
