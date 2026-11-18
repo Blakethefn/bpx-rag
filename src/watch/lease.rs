@@ -4,7 +4,7 @@ use std::time::{Duration, Instant};
 
 use anyhow::Result;
 
-use crate::knowledge::lock::FileLock;
+use crate::knowledge::lock::{self, FileLock};
 
 use super::engine::Engine;
 use super::{read_status, EmbedderLoader, Holder, RunOutcome, WatchOptions};
@@ -15,21 +15,11 @@ pub fn run_with_loader(
     stop: &AtomicBool,
     embedder_loader: EmbedderLoader,
 ) -> Result<RunOutcome> {
-    let runtime_dir = match super::runtime::directory(db_path) {
-        Ok(directory) => directory,
-        Err(error) => {
-            return Ok(RunOutcome::Disabled {
-                warning: format!(
-                    "background file watching is disabled in read-only or sandboxed mode: {error}"
-                ),
-            });
-        }
-    };
-    let lease = match acquire_lease(&lease_path(db_path, &runtime_dir), options.lease_wait) {
+    let lease = match acquire_lease(&lease_path(db_path), options.lease_wait) {
         Ok(Some(lease)) => lease,
         Ok(None) => {
-        let pid = read_status(db_path)?.map(|status| status.pid);
-        return Ok(RunOutcome::AlreadyRunning { pid });
+            let pid = read_status(db_path)?.map(|status| status.pid);
+            return Ok(RunOutcome::AlreadyRunning { pid });
         }
         Err(error) if super::runtime::permission_denied(&error) => {
             return Ok(RunOutcome::Disabled {
@@ -58,34 +48,21 @@ fn acquire_lease(path: &Path, wait: Duration) -> Result<Option<FileLock>> {
 }
 
 pub fn holder(db_path: &Path) -> Result<Holder> {
-    let runtime_dir = match super::runtime::directory(db_path) {
-        Ok(directory) => directory,
-        Err(error) => {
-            return Ok(Holder::Disabled {
-                warning: format!(
-                    "background file watching is disabled in read-only or sandboxed mode: {error}"
-                ),
-            });
+    match lock::is_held(&lease_path(db_path)) {
+        Ok(false) => Ok(Holder::NotRunning),
+        Ok(true) => {
+            let pid = read_status(db_path)?.map(|status| status.pid);
+            Ok(Holder::Running { pid })
         }
-    };
-    match try_acquire(&lease_path(db_path, &runtime_dir)) {
         Err(error) if super::runtime::permission_denied(&error) => Ok(Holder::Disabled {
             warning: super::engine::disabled_warning(&error),
         }),
         Err(error) => Err(error),
-        Ok(Some(lock)) => {
-            drop(lock);
-            Ok(Holder::NotRunning)
-        }
-        Ok(None) => {
-            let pid = read_status(db_path)?.map(|status| status.pid);
-            Ok(Holder::Running { pid })
-        }
     }
 }
 
-pub(super) fn lease_path(db_path: &Path, runtime_dir: &Path) -> PathBuf {
-    super::runtime::file_path(db_path, runtime_dir, ".watch.lock")
+pub(super) fn lease_path(db_path: &Path) -> PathBuf {
+    super::sibling(db_path, ".watch.lock")
 }
 
 fn try_acquire(path: &Path) -> Result<Option<FileLock>> {

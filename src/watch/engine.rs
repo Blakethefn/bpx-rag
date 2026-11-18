@@ -43,7 +43,6 @@ pub(in crate::watch) struct Watched {
 
 pub(in crate::watch) struct Engine {
     db_path: PathBuf,
-    runtime_dir: PathBuf,
     options: WatchOptions,
     store: KnowledgeStore,
     embedder_loader: Option<EmbedderLoader>,
@@ -62,11 +61,9 @@ impl Engine {
         embedder_loader: EmbedderLoader,
     ) -> Result<Self> {
         let store = KnowledgeStore::open_at(db_path)?;
-        let runtime_dir = super::runtime::directory(db_path)?;
         let (events_tx, events_rx) = mpsc::channel();
         Ok(Self {
             db_path: db_path.to_path_buf(),
-            runtime_dir,
             options,
             store,
             embedder_loader: Some(embedder_loader),
@@ -131,7 +128,7 @@ impl Engine {
                 .collect(),
         };
         if let Err(error) = write_atomically(
-            &super::status_path(&self.db_path, &self.runtime_dir),
+            &super::status_path(&self.db_path),
             &status,
         ) {
             if super::runtime::permission_denied(&error) && self.disabled_warning.is_none() {

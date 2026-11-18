@@ -18,12 +18,10 @@ impl FileLock {
 
     pub fn try_acquire(path: &Path) -> Result<Option<Self>> {
         let file = open_lock_file(path)?;
-        match file.try_lock() {
-            Ok(()) => Ok(Some(Self { file })),
-            Err(std::fs::TryLockError::WouldBlock) => Ok(None),
-            Err(std::fs::TryLockError::Error(error)) => {
-                Err(error).with_context(|| format!("failed to lock {}", path.display()))
-            }
+        if try_lock_free(&file, path)? {
+            Ok(Some(Self { file }))
+        } else {
+            Ok(None)
         }
     }
 }
@@ -31,6 +29,30 @@ impl FileLock {
 impl Drop for FileLock {
     fn drop(&mut self) {
         let _ = self.file.unlock();
+    }
+}
+
+/// Reports whether another handle holds the lock, without creating the file.
+pub fn is_held(path: &Path) -> Result<bool> {
+    let file = match OpenOptions::new().read(true).open(path) {
+        Ok(file) => file,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(false),
+        Err(error) => {
+            return Err(error)
+                .with_context(|| format!("failed to open lock file {}", path.display()));
+        }
+    };
+    Ok(!try_lock_free(&file, path)?)
+}
+
+/// Single place that interprets `try_lock`. Returns true when the lock was taken.
+fn try_lock_free(file: &File, path: &Path) -> Result<bool> {
+    match file.try_lock() {
+        Ok(()) => Ok(true),
+        Err(std::fs::TryLockError::WouldBlock) => Ok(false),
+        Err(std::fs::TryLockError::Error(error)) => {
+            Err(error).with_context(|| format!("failed to lock {}", path.display()))
+        }
     }
 }
 

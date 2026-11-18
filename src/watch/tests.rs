@@ -30,9 +30,7 @@ fn run_without_vectors(db: &Path, options: &WatchOptions, stop: &AtomicBool) -> 
 }
 
 fn lease_path(db: &Path) -> PathBuf {
-    let mut name = db.as_os_str().to_owned();
-    name.push(".watch.lock");
-    PathBuf::from(name)
+    super::lease::lease_path(db)
 }
 
 struct Fixture {

@@ -28,6 +28,21 @@ fn acquire_waits_for_the_holder_to_release() {
 }
 
 #[test]
+fn is_held_reports_a_live_holder_without_creating_the_file() {
+    let dir = tempdir().unwrap();
+    let path = dir.path().join("missing.lock");
+    assert!(!is_held(&path).unwrap());
+    assert!(
+        !path.exists(),
+        "a status read must not create the lock file"
+    );
+    let held = FileLock::acquire(&path).unwrap();
+    assert!(is_held(&path).unwrap());
+    drop(held);
+    assert!(!is_held(&path).unwrap());
+}
+
+#[test]
 fn writer_lock_sits_beside_the_database() {
     assert_eq!(
         writer_lock_path(Path::new("/data/knowledge.db")),

@@ -76,8 +76,7 @@ pub enum Holder {
 pub type EmbedderLoader = Box<dyn Fn() -> Option<Arc<dyn Embed>> + Send>;
 
 pub fn read_status(db_path: &Path) -> Result<Option<WatchStatus>> {
-    let directory = runtime::directory(db_path)?;
-    let path = status_path(db_path, &directory);
+    let path = status_path(db_path);
     match fs::read(&path) {
         Ok(bytes) => {
             let status = serde_json::from_slice(&bytes)
@@ -89,8 +88,8 @@ pub fn read_status(db_path: &Path) -> Result<Option<WatchStatus>> {
     }
 }
 
-pub(super) fn status_path(db_path: &Path, directory: &Path) -> std::path::PathBuf {
-    runtime::file_path(db_path, directory, ".watch.status.json")
+pub(super) fn status_path(db_path: &Path) -> std::path::PathBuf {
+    sibling(db_path, ".watch.status.json")
 }
 
 pub(super) fn sibling(path: &Path, suffix: &str) -> PathBuf {
