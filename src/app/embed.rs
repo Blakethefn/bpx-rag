@@ -1,71 +1,83 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 use serde_json::json;
 
-use crate::config::Config;
+use crate::config::{Config, EmbeddingDevice};
 use crate::embed::{self, Embed, Embedder};
 
 use super::RagApp;
 
 mod coverage;
 mod model;
+mod runtime;
 
 pub use model::{embedding_model_status, load_watch_embedder};
+#[cfg(test)]
+pub(in crate::app) use runtime::{gpu_skip_reason_for, load_with_fallback};
+pub(in crate::app) use runtime::{
+    initialize_once, load_cached_embedder, ready_state, EmbedderState,
+};
 
 impl RagApp {
     pub(in crate::app) fn ensure_embedder(&mut self) {
-        if self.embedder_loaded {
-            return;
-        }
-        if !self.config.embeddings.enabled {
-            self.embedding_notice = Some("Embeddings are disabled in config.".into());
-            return;
-        }
-        let model_dir = model_directory(&self.config);
-        if !embed::model_files_present(&model_dir, &self.config.embeddings.model) {
-            self.embedding_notice = Some(format!(
-                "Semantic retrieval is unavailable; install the local model with `bpx-rag models download` ({}).",
-                model_dir.display()
-            ));
-            return;
-        }
-        match Embedder::load_cached_with_device(
-            &model_dir,
-            &self.config.embeddings.model,
-            self.config.embeddings.batch_size,
-            self.config.embeddings.intra_threads,
-            self.config.embeddings.device,
-        ) {
-            Ok(embedder) => self.install_embedder(embedder),
-            Err(error) => {
-                self.embedding_notice = Some(format!(
-                    "The local embedding model could not load; using keyword retrieval: {error}"
-                ));
+        let mut state = self
+            .embedder_state
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        match &*state {
+            EmbedderState::GpuReady | EmbedderState::CpuReady => return,
+            EmbedderState::Unavailable(notice) => {
+                self.embedding_notice = Some(notice.clone());
+                return;
             }
+            EmbedderState::Uninitialized => {}
+        }
+
+        let initialized = initialize_once(&mut state, || {
+            self.load_configured_embedder()
+                .map_err(|error| error.to_string())
+        });
+        drop(state);
+        match initialized {
+            Ok(Some((embedder, device))) => self.install_embedder(embedder, device),
+            Ok(None) => {}
+            Err(error) => self.embedding_notice = Some(error),
         }
     }
 
-    pub(in crate::app) fn install_embedder(&mut self, embedder: Embedder) {
+    fn load_configured_embedder(&self) -> Result<(Embedder, EmbeddingDevice)> {
+        if !self.config.embeddings.enabled {
+            return Err(anyhow!("Embeddings are disabled in config."));
+        }
+        let model_dir = model_directory(&self.config);
+        if !embed::model_files_present(&model_dir, &self.config.embeddings.model) {
+            return Err(anyhow!(
+                "Semantic retrieval is unavailable; install the local model with `bpx-rag models download` ({}).",
+                model_dir.display()
+            ));
+        }
+        load_cached_embedder(&self.config, &model_dir)
+    }
+
+    pub(in crate::app) fn install_embedder(&mut self, embedder: Embedder, device: EmbeddingDevice) {
         let shared: Arc<dyn Embed> = Arc::new(embedder);
         self.knowledge.set_embedder(shared);
         self.knowledge
             .set_query_embedding_cache_capacity(self.config.embeddings.query_cache_entries);
         self.embedding_notice = None;
-        self.embedder_loaded = true;
+        *self
+            .embedder_state
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = ready_state(device);
     }
 
     pub fn download_embedding_model(&mut self) -> Result<String> {
         let model_dir = model_directory(&self.config);
-        let embedder = Embedder::new_with_device(
-            &model_dir,
-            &self.config.embeddings.model,
-            self.config.embeddings.batch_size,
-            self.config.embeddings.intra_threads,
-            self.config.embeddings.device,
-        )?;
-        self.install_embedder(embedder);
+        Embedder::download_model(&model_dir, &self.config.embeddings.model)?;
+        let (embedder, device) = load_cached_embedder(&self.config, &model_dir)?;
+        self.install_embedder(embedder, device);
         Ok(format!(
             "Model {} is ready at {}.",
             self.config.embeddings.model,
@@ -85,6 +97,9 @@ pub fn model_directory(config: &Config) -> PathBuf {
             PathBuf::from(&config.embeddings.model_dir).join(&config.embeddings.model)
         })
 }
+
+#[cfg(test)]
+mod tests;
 
 pub(super) fn embedding_notice(config: &Config) -> Option<String> {
     if !config.embeddings.enabled {

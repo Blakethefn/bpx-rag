@@ -1,3 +1,5 @@
+use std::sync::Mutex;
+
 use anyhow::Result;
 
 use crate::config::Config;
@@ -24,7 +26,7 @@ pub struct RagApp {
     config: Config,
     knowledge: KnowledgeStore,
     embedding_notice: Option<String>,
-    embedder_loaded: bool,
+    embedder_state: Mutex<embed::EmbedderState>,
 }
 
 #[derive(Debug, Clone)]
@@ -61,7 +63,7 @@ impl RagApp {
             config,
             knowledge,
             embedding_notice,
-            embedder_loaded: false,
+            embedder_state: Mutex::new(embed::EmbedderState::Uninitialized),
         })
     }
 

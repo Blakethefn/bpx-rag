@@ -41,8 +41,12 @@ fn start_watcher() {
             &stop,
             Box::new(crate::app::load_watch_embedder),
         );
-        if let Err(error) = outcome {
-            eprintln!("[bpx-rag] watch stopped: {error:#}");
+        match outcome {
+            Ok(crate::watch::RunOutcome::Disabled { warning }) => {
+                eprintln!("[bpx-rag] warning: {warning}");
+            }
+            Ok(_) => {}
+            Err(error) => eprintln!("[bpx-rag] watch stopped: {error:#}"),
         }
     });
 }

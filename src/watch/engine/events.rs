@@ -13,7 +13,7 @@ pub(super) use batch::locked_sync;
 pub(super) use watcher::register;
 
 #[cfg(test)]
-pub(crate) use watcher::{RegisterProbe, REGISTER_PROBE};
+pub(crate) use watcher::{RegisterProbe, REGISTER_PERMISSION_FAIL, REGISTER_PROBE};
 
 impl Engine {
     pub(super) fn drain_events(&mut self) {
@@ -37,8 +37,14 @@ impl Engine {
                     }
                 }
                 Err(error) => {
+                    let error = anyhow::Error::new(error);
                     entry.need_full = true;
                     entry.last_error = Some(format!("watch event error: {error}"));
+                    if super::super::runtime::permission_denied(&error)
+                        && self.disabled_warning.is_none()
+                    {
+                        self.disabled_warning = Some(super::disabled_warning(&error));
+                    }
                 }
             }
             entry.first_event.get_or_insert(now);

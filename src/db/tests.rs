@@ -14,6 +14,18 @@ fn open_db_restricts_the_database_file_to_its_owner() {
     assert_eq!(mode, 0o600, "database file must be owner-only");
 }
 
+#[test]
+fn new_database_uses_sixteen_kibibyte_pages() {
+    let dir = tempdir().unwrap();
+    let path = dir.path().join("store.db");
+    let conn = open_db(&path).unwrap();
+
+    let page_size: i64 = conn
+        .query_row("PRAGMA page_size", [], |row| row.get(0))
+        .unwrap();
+    assert_eq!(page_size, 16384);
+}
+
 #[cfg(unix)]
 #[test]
 fn create_private_dir_is_owner_only() {

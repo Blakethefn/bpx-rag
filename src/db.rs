@@ -50,7 +50,8 @@ pub fn open_db(path: &Path) -> Result<Connection> {
             .with_context(|| format!("Failed to restrict {}", path.display()))?;
     }
     conn.execute_batch(
-        "PRAGMA journal_mode = WAL;
+        "PRAGMA page_size = 16384;
+         PRAGMA journal_mode = WAL;
          PRAGMA synchronous = NORMAL;
          PRAGMA foreign_keys = ON;
          PRAGMA busy_timeout = 5000;",

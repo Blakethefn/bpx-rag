@@ -33,10 +33,11 @@ impl Default for WatchOptions {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RunOutcome {
     Stopped,
     AlreadyRunning { pid: Option<u32> },
+    Disabled { warning: String },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -65,16 +66,18 @@ pub struct WatchStatus {
     pub sources: Vec<SourceStatus>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Holder {
     Running { pid: Option<u32> },
     NotRunning,
+    Disabled { warning: String },
 }
 
 pub type EmbedderLoader = Box<dyn Fn() -> Option<Arc<dyn Embed>> + Send>;
 
 pub fn read_status(db_path: &Path) -> Result<Option<WatchStatus>> {
-    let path = status_path(db_path);
+    let directory = runtime::directory(db_path)?;
+    let path = status_path(db_path, &directory);
     match fs::read(&path) {
         Ok(bytes) => {
             let status = serde_json::from_slice(&bytes)
@@ -86,23 +89,35 @@ pub fn read_status(db_path: &Path) -> Result<Option<WatchStatus>> {
     }
 }
 
-fn status_path(db_path: &Path) -> PathBuf {
-    sibling(db_path, ".watch.status.json")
+pub(super) fn status_path(db_path: &Path, directory: &Path) -> std::path::PathBuf {
+    runtime::file_path(db_path, directory, ".watch.status.json")
 }
 
-fn sibling(db_path: &Path, suffix: &str) -> PathBuf {
-    let mut name = db_path.as_os_str().to_owned();
+pub(super) fn sibling(path: &Path, suffix: &str) -> PathBuf {
+    let mut name = path.as_os_str().to_owned();
     name.push(suffix);
     PathBuf::from(name)
 }
 
 mod engine;
 mod lease;
+mod runtime;
 
 pub use lease::{holder, run_with_loader};
 
+pub(crate) fn permission_warning(error: &anyhow::Error) -> Option<String> {
+    runtime::permission_denied(error).then(|| {
+        format!(
+            "background file watching is disabled in read-only or sandboxed mode: {error:#}"
+        )
+    })
+}
+
 #[cfg(test)]
-pub(crate) use engine::{RegisterProbe, REGISTER_PROBE};
+pub(crate) use engine::{RegisterProbe, REGISTER_PERMISSION_FAIL, REGISTER_PROBE};
+
+#[cfg(test)]
+pub(crate) use lease::LEASE_PERMISSION_FAIL;
 
 #[cfg(test)]
 mod tests;

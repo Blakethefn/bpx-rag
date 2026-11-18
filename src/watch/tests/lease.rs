@@ -41,3 +41,20 @@ fn a_lease_that_stays_held_is_still_reported_as_already_running_after_the_wait()
         "the wait must elapse before reporting"
     );
 }
+
+#[test]
+fn permission_denied_lock_disables_watching_with_a_warning() {
+    let fixture = fixture();
+    LEASE_PERMISSION_FAIL.with(|failure| failure.set(true));
+    let stop = AtomicBool::new(false);
+    let started = Instant::now();
+
+    let outcome = run_without_vectors(&fixture.db, &fast_options(), &stop).unwrap();
+
+    let RunOutcome::Disabled { warning } = outcome else {
+        panic!("permission failure must disable the watcher: {outcome:?}");
+    };
+    assert!(warning.contains("read-only or sandboxed mode"), "{warning}");
+    assert!(started.elapsed() < Duration::from_secs(1));
+    assert!(!lease_path(&fixture.db).exists());
+}

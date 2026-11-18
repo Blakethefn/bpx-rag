@@ -124,6 +124,9 @@ pub(super) fn commit_plan(
     let links_created = match inner {
         Ok(links_created) => {
             conn.execute_batch("COMMIT")?;
+            if changed {
+                conn.execute_batch("PRAGMA optimize;")?;
+            }
             links_created
         }
         Err(e) => {

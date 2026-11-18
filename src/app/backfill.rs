@@ -89,6 +89,9 @@ impl RagApp {
             report.embedded_chunks += written;
             report.skipped_chunks += skipped;
         }
+        if report.embedded_chunks > 0 {
+            conn.execute_batch("PRAGMA optimize;")?;
+        }
         let remaining = count_remaining(conn, embedder.model_id(), source_id)?;
         report.remaining_chunks = remaining as usize;
         Ok(report)

@@ -51,6 +51,7 @@ fn ensure_schema(conn: &Connection) -> Result<()> {
     ensure_database_instance_id(conn)?;
     migrate::ensure_embedding_change_tracking(conn)?;
     migrate::ensure_embedding_coverage(conn)?;
+    migrate::ensure_source_stats(conn)?;
     crate::knowledge::identifiers::ensure_identifier_index(conn)?;
     conn.execute_batch(
         "CREATE INDEX IF NOT EXISTS idx_embeddings_model ON knowledge_embeddings(model_id);",

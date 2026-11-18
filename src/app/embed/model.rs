@@ -1,9 +1,9 @@
 use std::sync::Arc;
 
 use crate::config::Config;
-use crate::embed::{self, Embed, Embedder};
+use crate::embed::{self, Embed};
 
-use super::model_directory;
+use super::{load_cached_embedder, model_directory};
 
 pub fn load_watch_embedder() -> Option<Arc<dyn Embed>> {
     let config = match Config::load() {
@@ -20,14 +20,8 @@ pub fn load_watch_embedder() -> Option<Arc<dyn Embed>> {
     if !embed::model_files_present(&model_dir, &config.embeddings.model) {
         return None;
     }
-    match Embedder::load_cached_with_device(
-        &model_dir,
-        &config.embeddings.model,
-        config.embeddings.batch_size,
-        config.embeddings.intra_threads,
-        config.embeddings.device,
-    ) {
-        Ok(embedder) => Some(Arc::new(embedder)),
+    match load_cached_embedder(&config, &model_dir) {
+        Ok((embedder, _device)) => Some(Arc::new(embedder)),
         Err(error) => {
             eprintln!("[bpx-rag] watch: embedding model could not load; indexing without vectors: {error:#}");
             None

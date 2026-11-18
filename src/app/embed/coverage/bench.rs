@@ -5,6 +5,7 @@ use crate::embed::{Embed, tests::MockEmbedder};
 use crate::knowledge::filter::scope_predicates;
 use crate::knowledge::open_in_memory;
 use std::sync::Arc;
+use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
 fn seed(size: usize) -> RagApp {
@@ -69,7 +70,7 @@ fn seed(size: usize) -> RagApp {
         config,
         knowledge,
         embedding_notice: None,
-        embedder_loaded: true,
+        embedder_state: Mutex::new(super::super::EmbedderState::CpuReady),
     }
 }
 

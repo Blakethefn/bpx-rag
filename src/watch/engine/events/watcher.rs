@@ -35,10 +35,20 @@ pub(crate) struct RegisterProbe {
 thread_local! {
     pub(crate) static REGISTER_PROBE: std::cell::RefCell<Option<Arc<RegisterProbe>>> =
         const { std::cell::RefCell::new(None) };
+    pub(crate) static REGISTER_PERMISSION_FAIL: std::cell::Cell<bool> = const {
+        std::cell::Cell::new(false)
+    };
 }
 
 #[cfg(test)]
 fn register_failpoint() -> Result<()> {
+    let permission_failure = REGISTER_PERMISSION_FAIL.with(|failure| failure.replace(false));
+    if permission_failure {
+        return Err(notify::Error::io(std::io::Error::from(
+            std::io::ErrorKind::PermissionDenied,
+        ))
+        .into());
+    }
     let Some(probe) = REGISTER_PROBE.with(|probe| probe.borrow().clone()) else {
         return Ok(());
     };

@@ -5,6 +5,7 @@ use crate::support::add_synced_source;
 use rusqlite::{params, Connection};
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::Mutex;
 use tempfile::{tempdir, TempDir};
 
 mod batches;
@@ -27,7 +28,7 @@ impl Fixture {
             config,
             knowledge: KnowledgeStore::open_at(&db_path).unwrap(),
             embedding_notice: None,
-            embedder_loaded: true,
+            embedder_state: Mutex::new(crate::app::embed::EmbedderState::CpuReady),
         };
         Self {
             app,

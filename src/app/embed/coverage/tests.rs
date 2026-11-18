@@ -5,6 +5,7 @@ use crate::knowledge::filter::scope_predicates;
 use crate::knowledge::open_in_memory;
 use rusqlite::params;
 use std::sync::Arc;
+use std::sync::Mutex;
 
 fn add_chunk(app: &RagApp, source_id: i64, path: &str, embedded: bool) {
     let conn = app.knowledge.conn();
@@ -59,7 +60,7 @@ fn coverage_tracks_embedded_and_missing_vectors_within_path_scope() {
         config: Config::default(),
         knowledge,
         embedding_notice: None,
-        embedder_loaded: true,
+        embedder_state: Mutex::new(super::super::EmbedderState::CpuReady),
     };
     add_chunk(&app, source_id, "docs/embedded.md", true);
     add_chunk(&app, source_id, "docs/missing.md", false);
@@ -96,7 +97,7 @@ fn language_coverage_counts_paths_and_frontmatter_within_the_same_scope() {
         config: Config::default(),
         knowledge,
         embedding_notice: None,
-        embedder_loaded: true,
+        embedder_state: Mutex::new(super::super::EmbedderState::CpuReady),
     };
     add_chunk(&app, source_id, "docs/extension.MD", true);
     add_chunk(&app, source_id, "docs/frontmatter.txt", false);
@@ -149,7 +150,7 @@ fn language_coverage_keeps_makefile_shared_header_and_unknown_extension_matches(
         config: Config::default(),
         knowledge,
         embedding_notice: None,
-        embedder_loaded: true,
+        embedder_state: Mutex::new(super::super::EmbedderState::CpuReady),
     };
     add_chunk(&app, source_id, "Makefile", true);
     add_chunk(&app, source_id, "nested/GNUMakefile", false);

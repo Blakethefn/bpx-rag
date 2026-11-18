@@ -24,6 +24,7 @@ pub(crate) fn run_watch(action: WatchAction) -> Result<()> {
                     "A watcher is already running for this database (pid {}).",
                     pid.map_or_else(|| "unknown".to_string(), |pid| pid.to_string())
                 ),
+                crate::watch::RunOutcome::Disabled { warning } => println!("Warning: {warning}"),
             }
             Ok(())
         }

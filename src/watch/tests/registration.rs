@@ -75,6 +75,29 @@ fn registration_failure_sets_error_retries_with_backoff_and_recovers() {
 }
 
 #[test]
+fn permission_denied_registration_disables_watching_without_retrying() {
+    let fixture = fixture();
+    REGISTER_PERMISSION_FAIL.with(|failure| failure.set(true));
+    let mut engine = Engine::new(&fixture.db, fast_options(), Box::new(|| None)).unwrap();
+    let started = Instant::now();
+    let outcome = engine
+        .run_until(&AtomicBool::new(false))
+        .unwrap();
+
+    let RunOutcome::Disabled { warning } = outcome else {
+        panic!("permission failure must disable the watcher: {outcome:?}");
+    };
+    assert!(warning.contains("read-only or sandboxed mode"), "{warning}");
+    assert!(started.elapsed() < Duration::from_secs(1));
+    assert_eq!(engine.watched["test"].state, SourceState::Error);
+    assert!(engine.watched["test"].retry_at.is_none());
+
+    engine.retry_due();
+    assert_eq!(engine.watched["test"].state, SourceState::Error);
+    assert!(engine.watched["test"].retry_at.is_none());
+}
+
+#[test]
 fn registration_backoff_is_capped_at_the_maximum() {
     let fixture = fixture();
     let probe = install_probe(u32::MAX);

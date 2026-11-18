@@ -60,19 +60,43 @@ impl Engine {
     }
 
     fn start_source(&mut self, label: &str) {
+        if self.disabled_warning.is_some() {
+            return;
+        }
         self.ensure_embedder();
-        let Some(entry) = self.watched.get_mut(label) else {
+        let Some(root) = self.watched.get(label).map(|entry| entry.root.clone()) else {
             return;
         };
-        if entry.registration.is_none() {
-            match register(label, &entry.root, self.events_tx.clone()) {
-                Ok(watcher) => entry.registration = Some(watcher),
+        let registration = self
+            .watched
+            .get(label)
+            .is_some_and(|entry| entry.registration.is_none())
+            .then(|| register(label, &root, self.events_tx.clone()));
+        if let Some(result) = registration {
+            match result {
+                Ok(watcher) => {
+                    if let Some(entry) = self.watched.get_mut(label) {
+                        entry.registration = Some(watcher);
+                    }
+                }
+                Err(error) if super::super::runtime::permission_denied(&error) => {
+                    self.disabled_warning = Some(super::disabled_warning(&error));
+                    if let Some(entry) = self.watched.get_mut(label) {
+                        entry.state = SourceState::Error;
+                        entry.last_error = self.disabled_warning.clone();
+                        entry.retry_at = None;
+                    }
+                    self.write_status();
+                    return;
+                }
                 Err(error) => {
-                    fail(
-                        entry,
-                        format!("watch registration failed: {error:#}"),
-                        &self.options,
-                    );
+                    if let Some(entry) = self.watched.get_mut(label) {
+                        fail(
+                            entry,
+                            format!("watch registration failed: {error:#}"),
+                            &self.options,
+                        );
+                    }
                     self.write_status();
                     return;
                 }
@@ -111,6 +135,9 @@ impl Engine {
     }
 
     pub(in crate::watch) fn retry_due(&mut self) {
+        if self.disabled_warning.is_some() {
+            return;
+        }
         let due: Vec<String> = self
             .watched
             .iter()
