@@ -1,0 +1,76 @@
+{
+  "benchmark": "source-stats-backfill",
+  "harness": "harness.py",
+  "dataset": {
+    "sources": 50,
+    "files": 11837,
+    "chunks": 124880,
+    "embedding_rows": 124880,
+    "database_bytes": 1968582656
+  },
+  "environment": {
+    "system": "Linux",
+    "machine": "x86_64",
+    "python": "3.12.3",
+    "sqlite": "3.45.1",
+    "cpu_count": 12
+  },
+  "conditions": {
+    "cold": {
+      "cache_controlled": true,
+      "runs_per_variant": 3,
+      "variants": {
+        "before": {
+          "seconds": [
+            81.68,
+            80.545,
+            86.428
+          ],
+          "median": 81.68,
+          "min": 80.545,
+          "max": 86.428
+        },
+        "after": {
+          "seconds": [
+            6.044,
+            6.11,
+            6.081
+          ],
+          "median": 6.081,
+          "min": 6.044,
+          "max": 6.11
+        }
+      },
+      "ratio_of_medians": 13.43,
+      "outputs_match": true
+    },
+    "warm": {
+      "cache_controlled": true,
+      "runs_per_variant": 3,
+      "variants": {
+        "before": {
+          "seconds": [
+            0.332,
+            0.122,
+            0.123
+          ],
+          "median": 0.123,
+          "min": 0.122,
+          "max": 0.332
+        },
+        "after": {
+          "seconds": [
+            0.008,
+            0.008,
+            0.008
+          ],
+          "median": 0.008,
+          "min": 0.008,
+          "max": 0.008
+        }
+      },
+      "ratio_of_medians": 14.65,
+      "outputs_match": true
+    }
+  }
+}

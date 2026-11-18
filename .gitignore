@@ -38,3 +38,7 @@ scripts/bpx-rag-cuda.env
 /CLAUDE.md
 /claude.md
 /CLAUDE.local.md
+
+# Benchmark agent style guides. Local only, not published with the benchmarks.
+benchmarks/AGENTS.md
+benchmarks/CLAUDE.md
