@@ -56,7 +56,7 @@ Embedding batches default to 16 chunks and ONNX uses the available logical CPUs;
 
 ### Optional NVIDIA CUDA inference
 
-CPU is the default. To enable CUDA, build with `--features gpu-cuda`, set `embeddings.device = "cuda"`, and make the CUDA and cuDNN runtime libraries discoverable by the process. The CUDA execution provider is configured to fail clearly when it cannot register.
+CPU is the default. To enable CUDA, build with `--features gpu-cuda`, set `embeddings.device = "cuda"`, and make the CUDA and cuDNN runtime libraries discoverable by the process. If CUDA is selected but cannot be used, the embedder falls back to CPU ONNX and prints `[bpx-rag] CUDA initialization skipped (...); trying CPU ONNX.` or `[bpx-rag] CUDA initialization failed (...); using CPU ONNX.` to stderr. The CUDA choice is made once per process, so the GPU is not retried until the process restarts. Set `BPX_NO_GPU=1` to skip CUDA in a `gpu-cuda` build. If CPU loading also fails, the embedder retries after 30 seconds, up to three attempts in total. After that it stays unavailable until the process restarts or `bpx-rag models download` succeeds, and search uses keyword layers only.
 
 The pinned ONNX Runtime CUDA provider requires CUDA 13.2 or newer and cuDNN 9.23 or newer. Set `ORT_CACHE_DIR` to a location on a drive with room for the provider binaries when building, for example in the ignored `.cargo/config.toml`. Run CUDA-enabled commands through `scripts/bpx-rag-cuda`. It reads the CUDA runtime directory from `BPX_RAG_CUDA_RUNTIME_DIR` and the binary from `BPX_RAG_BINARY`. Put those machine-specific paths in the untracked `scripts/bpx-rag-cuda.env`. Existing configurations without a `device` field continue to use CPU.
 
@@ -66,7 +66,7 @@ Build the optional provider with:
 cargo build --release --features gpu-cuda
 ```
 
-**A configuration with `device = "cuda"` needs a `gpu-cuda` build.** A build without the feature cannot honor it. Searches still succeed and exit 0, but the embedding model does not load, so retrieval silently becomes keyword-only (BM25, trigram, fuzzy, and identifier layers, with no vector layer). The only signs are a trailing `Embedding status:` note that says `CUDA was selected, but this binary lacks CUDA support; rebuild with `--features gpu-cuda``, and `device: cuda requested, but this binary was built without `gpu-cuda`` in `bpx-rag models status`. `bpx-rag search --explain` puts a `Warning: vector retrieval is not running ...` line first, and its `layers:` line says `vector skipped (no embedder attached)` where a working build says `vector ran`. Before you point a client at a new binary, run `search --explain` with the production config and confirm the `layers:` line shows `vector ran`. A CPU build that reads a CUDA config is a deployment error, not a supported fallback; set `device = "cpu"` for CPU builds.
+**A configuration with `device = "cuda"` on a build without `gpu-cuda` runs embeddings on CPU.** The binary prints the skip message above and vector retrieval still runs, using the same model on CPU. Confirm with `bpx-rag search --explain`: its `layers:` line should show `vector ran`. Set `device = "cpu"` in configs for CPU-only machines so the intent is explicit.
 
 ## CLI
 
@@ -164,6 +164,7 @@ Syntax-aware Tree-sitter chunking supports 29 source grammars. Parse-error and o
 - Changes made on another machine, or through a network or FUSE mount that does not deliver local filesystem events, are not seen. This includes NFS, SMB/CIFS, and Windows-mounted drives. Watch mode reconciles each source with a full sync when it starts, but it misses later edits made outside the local kernel. Run `bpx-rag sync` on such sources, or leave watch mode off for them.
 - inotify has per-user limits on instances (`fs.inotify.max_user_instances`, default 128) and watches (`fs.inotify.max_user_watches`). Desktop applications and editors share the instance limit. When it is used up, or a tree exceeds the watch limit, registration fails with `watch registration failed`, for example `Too many open files`. The source stays in an error state and is retried with backoff. `watch status` shows the error.
 - The writer lock and the watcher lease use `flock`. Network filesystems may not enforce it, so keep the data directory on a local filesystem.
+- The watcher lease and status file sit beside the database: `knowledge.db.watch.lock` and `knowledge.db.watch.status.json`. A process that cannot create or open the lease there, for example a sandbox with a read-only database directory, does not watch. `watch status` shows a warning for it. `watch status` still reads the lease, so it reports a watcher that is running elsewhere.
 - Only one watcher runs per database.
 - Watch mode is off by default for every source. `bpx-rag watch enable <source>` records that it should be kept in sync. `watch on` is still accepted. Neither command starts the watcher.
 
@@ -180,6 +181,10 @@ Processes that predate this version can keep using the database afterward. Their
 A database whose sources already have symbol rows (built by the release before this one) is upgraded conservatively. The migration cannot prove that those rows still match each file's content, because an older writer may have changed a file without updating its symbols. It therefore adds the new `symbols_hash` column empty and does not trust the existing rows. The rows stay in the database, but `bpx-rag symbol` and `bpx_symbol` return no matches from a source until that source syncs. They report `Symbol index pending for source '<label>': N file(s) not yet symbol-indexed` instead, and `bpx-rag status` reports the same count.
 
 Run one `bpx-rag sync --source <source>` per source after the upgrade (or `bpx-rag sync` for all). `--label` is still accepted. Sync rebuilds each file's symbols from the content it reads. It does not re-chunk or re-embed unchanged files.
+
+### Source statistics after upgrading
+
+The first open with this version creates the `source_stats` table, its triggers, and a covering index, then fills `source_stats` from the existing rows. This runs once and holds the database's write lock. It took about 3.5 seconds for 124,880 chunks in 50 sources on a copy of the production database. Later opens skip it. `bpx-rag status` reads per-source counts from this table instead of scanning every chunk. Stop the processes listed above before the first open, as with the earlier upgrade. The chunk triggers must not be replaced with `INSERT OR REPLACE`, because the replace path recounts the whole source for each row.
 
 ### Rolling back
 
