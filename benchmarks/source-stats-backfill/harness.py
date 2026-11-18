@@ -151,10 +151,10 @@ def dataset_shape(source: Path) -> dict:
 
 def summarize(values):
     return {
-        "seconds": [round(v, 3) for v in values],
-        "median": round(statistics.median(values), 3),
-        "min": round(min(values), 3),
-        "max": round(max(values), 3),
+        "seconds": [round(v, 6) for v in values],
+        "median": round(statistics.median(values), 6),
+        "min": round(min(values), 6),
+        "max": round(max(values), 6),
     }
 
 

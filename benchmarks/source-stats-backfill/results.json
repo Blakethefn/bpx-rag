@@ -1,13 +1,6 @@
 {
   "benchmark": "source-stats-backfill",
   "harness": "harness.py",
-  "dataset": {
-    "sources": 50,
-    "files": 11837,
-    "chunks": 124880,
-    "embedding_rows": 124880,
-    "database_bytes": 1968582656
-  },
   "environment": {
     "system": "Linux",
     "machine": "x86_64",
@@ -15,62 +8,140 @@
     "sqlite": "3.45.1",
     "cpu_count": 12
   },
-  "conditions": {
-    "cold": {
-      "cache_controlled": true,
-      "runs_per_variant": 3,
-      "variants": {
-        "before": {
-          "seconds": [
-            81.68,
-            80.545,
-            86.428
-          ],
-          "median": 81.68,
-          "min": 80.545,
-          "max": 86.428
-        },
-        "after": {
-          "seconds": [
-            6.044,
-            6.11,
-            6.081
-          ],
-          "median": 6.081,
-          "min": 6.044,
-          "max": 6.11
-        }
+  "datasets": {
+    "small": {
+      "dataset": {
+        "sources": 50,
+        "files": 100,
+        "chunks": 1000,
+        "embedding_rows": 1000,
+        "database_bytes": 4304896
       },
-      "ratio_of_medians": 13.43,
-      "outputs_match": true
+      "conditions": {
+        "cold": {
+          "cache_controlled": true,
+          "runs_per_variant": 3,
+          "variants": {
+            "before": {
+              "seconds": [
+                0.161188,
+                0.010904,
+                0.010878
+              ],
+              "median": 0.010904,
+              "min": 0.010878,
+              "max": 0.161188
+            },
+            "after": {
+              "seconds": [
+                0.004491,
+                0.003578,
+                0.003571
+              ],
+              "median": 0.003578,
+              "min": 0.003571,
+              "max": 0.004491
+            }
+          },
+          "ratio_of_medians": 3.05,
+          "outputs_match": true
+        },
+        "warm": {
+          "cache_controlled": true,
+          "runs_per_variant": 3,
+          "variants": {
+            "before": {
+              "seconds": [
+                0.001496,
+                0.001368,
+                0.001274
+              ],
+              "median": 0.001368,
+              "min": 0.001274,
+              "max": 0.001496
+            },
+            "after": {
+              "seconds": [
+                0.000264,
+                0.000254,
+                0.000256
+              ],
+              "median": 0.000256,
+              "min": 0.000254,
+              "max": 0.000264
+            }
+          },
+          "ratio_of_medians": 5.34,
+          "outputs_match": true
+        }
+      }
     },
-    "warm": {
-      "cache_controlled": true,
-      "runs_per_variant": 3,
-      "variants": {
-        "before": {
-          "seconds": [
-            0.332,
-            0.122,
-            0.123
-          ],
-          "median": 0.123,
-          "min": 0.122,
-          "max": 0.332
-        },
-        "after": {
-          "seconds": [
-            0.008,
-            0.008,
-            0.008
-          ],
-          "median": 0.008,
-          "min": 0.008,
-          "max": 0.008
-        }
+    "large": {
+      "dataset": {
+        "sources": 50,
+        "files": 10000,
+        "chunks": 1000000,
+        "embedding_rows": 1000000,
+        "database_bytes": 4205481984
       },
-      "ratio_of_medians": 14.65,
-      "outputs_match": true
+      "conditions": {
+        "cold": {
+          "cache_controlled": true,
+          "runs_per_variant": 3,
+          "variants": {
+            "before": {
+              "seconds": [
+                22.056,
+                22.563,
+                21.305
+              ],
+              "median": 22.056,
+              "min": 21.305,
+              "max": 22.563
+            },
+            "after": {
+              "seconds": [
+                0.463,
+                0.257,
+                0.59
+              ],
+              "median": 0.463,
+              "min": 0.257,
+              "max": 0.59
+            }
+          },
+          "ratio_of_medians": 47.64,
+          "outputs_match": true
+        },
+        "warm": {
+          "cache_controlled": true,
+          "runs_per_variant": 3,
+          "variants": {
+            "before": {
+              "seconds": [
+                20.254414,
+                20.517069,
+                21.924672
+              ],
+              "median": 20.517069,
+              "min": 20.254414,
+              "max": 21.924672
+            },
+            "after": {
+              "seconds": [
+                0.401798,
+                0.03151,
+                0.47017
+              ],
+              "median": 0.401798,
+              "min": 0.03151,
+              "max": 0.47017
+            }
+          },
+          "ratio_of_medians": 51.06,
+          "outputs_match": true
+        }
+      }
     }
   }
 }
