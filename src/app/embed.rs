@@ -1,5 +1,6 @@
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::time::Instant;
 
 use anyhow::{anyhow, Result};
 use serde_json::json;
@@ -26,16 +27,7 @@ impl RagApp {
             .embedder_state
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        match &*state {
-            EmbedderState::GpuReady | EmbedderState::CpuReady => return,
-            EmbedderState::Unavailable(notice) => {
-                self.embedding_notice = Some(notice.clone());
-                return;
-            }
-            EmbedderState::Uninitialized => {}
-        }
-
-        let initialized = initialize_once(&mut state, || {
+        let initialized = initialize_once(&mut state, Instant::now, || {
             self.load_configured_embedder()
                 .map_err(|error| error.to_string())
         });

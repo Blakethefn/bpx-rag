@@ -1,13 +1,22 @@
+use std::time::{Duration, Instant};
+
 use anyhow::{anyhow, Result};
 
 use crate::config::{Config, EmbeddingDevice};
 use crate::embed::Embedder;
 
+pub(in crate::app) const RETRY_COOLDOWN: Duration = Duration::from_secs(30);
+pub(in crate::app) const MAX_ATTEMPTS: u32 = 3;
+
 pub(in crate::app) enum EmbedderState {
     Uninitialized,
     GpuReady,
     CpuReady,
-    Unavailable(String),
+    Unavailable {
+        error: String,
+        failed_at: Instant,
+        attempts: u32,
+    },
 }
 
 pub(in crate::app) fn load_cached_embedder(
@@ -44,13 +53,13 @@ pub(in crate::app) fn load_cached_embedder(
 fn gpu_skip_reason() -> Option<String> {
     let disabled = std::env::var("BPX_NO_GPU").is_ok_and(|value| value == "1");
     let visible = std::env::var("CUDA_VISIBLE_DEVICES").ok();
-    let device_node_accessible =
+    let device_node_present =
         !cfg!(target_os = "linux") || std::path::Path::new("/dev/nvidia0").exists();
     gpu_skip_reason_for(
         disabled,
         visible.as_deref(),
         cfg!(feature = "gpu-cuda"),
-        device_node_accessible,
+        device_node_present,
     )
 }
 
@@ -58,7 +67,7 @@ pub(in crate::app) fn gpu_skip_reason_for(
     disabled: bool,
     visible_devices: Option<&str>,
     cuda_compiled: bool,
-    device_node_accessible: bool,
+    device_node_present: bool,
 ) -> Option<String> {
     if disabled {
         return Some("BPX_NO_GPU=1".into());
@@ -69,8 +78,8 @@ pub(in crate::app) fn gpu_skip_reason_for(
     if !cuda_compiled {
         return Some("this binary was built without gpu-cuda support".into());
     }
-    if !device_node_accessible {
-        return Some("/dev/nvidia0 is not accessible".into());
+    if !device_node_present {
+        return Some("/dev/nvidia0 is not present".into());
     }
     None
 }
@@ -99,23 +108,42 @@ pub(in crate::app) fn load_with_fallback<T>(
         })
 }
 
+/// Initializes the embedder once it is ready. A failed attempt is retried
+/// only after `RETRY_COOLDOWN` (measured from when the failure is recorded)
+/// and at most `MAX_ATTEMPTS` times in total.
 pub(in crate::app) fn initialize_once<T>(
     state: &mut EmbedderState,
+    clock: impl Fn() -> Instant,
     initialize: impl FnOnce() -> Result<(T, EmbeddingDevice), String>,
 ) -> Result<Option<(T, EmbeddingDevice)>, String> {
-    match state {
-        EmbedderState::GpuReady | EmbedderState::CpuReady => Ok(None),
-        EmbedderState::Unavailable(error) => Err(error.clone()),
-        EmbedderState::Uninitialized => match initialize() {
-            Ok((embedder, device)) => {
-                *state = ready_state(device);
-                Ok(Some((embedder, device)))
+    let attempts = match state {
+        EmbedderState::GpuReady | EmbedderState::CpuReady => return Ok(None),
+        EmbedderState::Unavailable {
+            error,
+            failed_at,
+            attempts,
+        } => {
+            let cooling_down = clock().saturating_duration_since(*failed_at) < RETRY_COOLDOWN;
+            if cooling_down || *attempts >= MAX_ATTEMPTS {
+                return Err(error.clone());
             }
-            Err(error) => {
-                *state = EmbedderState::Unavailable(error.clone());
-                Err(error)
-            }
-        },
+            *attempts
+        }
+        EmbedderState::Uninitialized => 0,
+    };
+    match initialize() {
+        Ok((embedder, device)) => {
+            *state = ready_state(device);
+            Ok(Some((embedder, device)))
+        }
+        Err(error) => {
+            *state = EmbedderState::Unavailable {
+                error: error.clone(),
+                failed_at: clock(),
+                attempts: attempts + 1,
+            };
+            Err(error)
+        }
     }
 }
 
