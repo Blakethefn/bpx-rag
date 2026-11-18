@@ -1,9 +1,9 @@
 """Render source-stats-backfill.png from results.json.
 
+Each dataset gets its own panel and its own linear x-axis.
 Usage: python3 make_chart.py   (writes source-stats-backfill.png next to this file)
 """
 import json
-import math
 from pathlib import Path
 
 import matplotlib
@@ -32,90 +32,90 @@ order = [k for k in ("small", "large") if k in datasets]
 runs = datasets[order[0]]["conditions"]["cold"]["runs_per_variant"]
 sources = datasets[order[0]]["dataset"]["sources"]
 
-rows = []  # (label, median seconds or None for a header, color, group)
-for key in order:
+
+def fmt(v):
+    if v >= 10:
+        return f"{v:.1f} s"
+    if v >= 0.1:
+        return f"{v:.2f} s"
+    if v >= 0.001:
+        return f"{v * 1000:.1f} ms"
+    return f"{v * 1e6:.0f} µs"
+
+
+def bars_for(key):
     ds = datasets[key]
-    rows.append((DATASET_LABELS.get(key, key), None, None, key))
+    out = []
     for cond in ("cold", "warm"):
         cname = "cold cache" if cond == "cold" else "warm cache"
         variants = ds["conditions"][cond]["variants"]
-        rows.append((f"Before · {cname}", variants["before"]["median"], NEUTRAL, key))
-        rows.append((f"After · {cname}", variants["after"]["median"], ACCENT, key))
+        out.append((f"Before · {cname}", variants["before"]["median"], NEUTRAL))
+        out.append((f"After · {cname}", variants["after"]["median"], ACCENT))
+    return out
 
-fig = plt.figure(figsize=(12.6, 7.4), facecolor='white')
-gs = fig.add_gridspec(1, 2, width_ratios=[1.55, 1], wspace=0.34,
-                      left=0.22, right=0.96, top=0.77, bottom=0.24)
-ax = fig.add_subplot(gs[0, 0])
-ax2 = fig.add_subplot(gs[0, 1])
 
-fig.text(0.06, 0.95, 'source_stats benchmark', fontsize=19, fontweight='bold', color=INK)
-fig.text(0.06, 0.905, f'Synthetic databases, {sources} sources each · small and large dataset',
+def draw(ax, key):
+    bars = bars_for(key)
+    values = [b[1] for b in bars]
+    ax.barh(range(len(bars)), values, height=0.6, color=[b[2] for b in bars], edgecolor='none')
+    ax.invert_yaxis()
+    ax.set_yticks(range(len(bars)), [b[0] for b in bars])
+    ax.tick_params(axis='y', length=0, pad=10)
+    top = max(values)
+    ax.set_xlim(0, top * 1.22)
+    ax.set_xlabel('Seconds (median of runs)', fontsize=10, color=MUTED, labelpad=6)
+    ax.xaxis.grid(True, color=GRID, linewidth=0.8)
+    ax.set_axisbelow(True)
+    for spine in ax.spines.values():
+        spine.set_visible(False)
+    for i, v in enumerate(values):
+        ax.text(v + top * 0.015, i, fmt(v), ha='left', va='center', fontweight='bold', fontsize=10.5)
+    ds = datasets[key]["dataset"]
+    ax.set_title(f"{ds['chunks']:,} chunks",
+                 loc='left', fontsize=12, fontweight='bold', color=INK, pad=8)
+
+
+fig = plt.figure(figsize=(12.6, 8.2), facecolor='white')
+fig.text(0.06, 0.955, 'source_stats benchmark', fontsize=19, fontweight='bold', color=INK)
+fig.text(0.06, 0.915, f'Synthetic databases, {sources} sources each · each dataset on its own x-axis',
          fontsize=11, color=MUTED)
 
-y_positions = []
-y = 0
-prev_group = None
-for label, value, color, group in rows:
-    if prev_group is not None and group != prev_group:
-        y += 0.5  # gap between dataset groups
-    y_positions.append(y)
-    prev_group = group
-    y += 1
+# Two stacked panels on the left, each with its own x-axis
+panel_rects = {
+    order[0]: [0.23, 0.60, 0.42, 0.23],
+    order[-1]: [0.23, 0.205, 0.42, 0.23],
+}
+for key in order:
+    ax = fig.add_axes(panel_rects[key])
+    draw(ax, key)
 
-bars = [(yp, r) for yp, r in zip(y_positions, rows) if r[1] is not None]
-values = [r[1] for _, r in bars]
-ax.barh([yp for yp, _ in bars], values, height=0.6, color=[r[2] for _, r in bars], edgecolor='none')
-ax.invert_yaxis()
-ax.set_yticks(y_positions, [r[0] for r in rows])
-for tick, r in zip(ax.get_yticklabels(), rows):
-    if r[1] is None:
-        tick.set_fontweight('bold')
-        tick.set_color(INK)
-ax.tick_params(axis='y', length=0, pad=10)
-ax.set_xlim(0, max(values) * 1.18)
-ax.set_xlabel('Seconds (median of runs)', fontsize=10, color=MUTED, labelpad=10)
-ax.xaxis.grid(True, color=GRID, linewidth=0.8)
-ax.set_axisbelow(True)
-for spine in ax.spines.values():
-    spine.set_visible(False)
-for (yp, _), v in zip(bars, values):
-    if v >= 10:
-        label = f'{v:.1f} s'
-    elif v >= 0.1:
-        label = f'{v:.2f} s'
-    elif v >= 0.001:
-        label = f'{v * 1000:.1f} ms'
-    else:
-        label = f'{v * 1e6:.0f} µs'
-    ax.text(v + max(values) * 0.015, yp, label, ha='left', va='center', fontweight='bold', fontsize=10.5)
-
-fig.text(0.22, 0.83, 'Backfill duration', fontsize=12, fontweight='bold')
-
+# Right: speedup per dataset and cache condition
+ax2 = fig.add_axes([0.72, 0.215, 0.25, 0.62])
 ax2.set_axis_off()
-ax2.text(0, 1.10, 'Speedup, after vs before', transform=ax2.transAxes,
+ax2.text(0, 1.06, 'Speedup, after vs before', transform=ax2.transAxes,
          fontsize=12, fontweight='bold', ha='left', color=INK)
-panel = []
+entries = []
 for key in order:
     name = DATASET_LABELS.get(key, key)
     for cond in ("cold", "warm"):
         c = datasets[key]["conditions"][cond]
-        panel.append((f"{c['ratio_of_medians']:.0f}×" if c['ratio_of_medians'] >= 10
-                      else f"{c['ratio_of_medians']:.1f}×",
-                      f"{name} · {'cold' if cond == 'cold' else 'warm'} cache · median of runs"))
-positions = [0.86, 0.64, 0.42, 0.20]
-for (big, small_label), ypos in zip(panel, positions):
+        ratio = c["ratio_of_medians"]
+        big = f"{ratio:.0f}×" if ratio >= 10 else f"{ratio:.1f}×"
+        entries.append((big, f"{name} · {'cold' if cond == 'cold' else 'warm'} cache · median of runs"))
+positions = [0.90, 0.70, 0.46, 0.26]
+for (big, label), ypos in zip(entries, positions):
     ax2.text(0, ypos, big, fontsize=26, fontweight='bold', transform=ax2.transAxes, va='top', color=ACCENT)
-    ax2.text(0, ypos - 0.13, small_label, fontsize=9.5, transform=ax2.transAxes, va='top', color=MUTED)
-ax2.text(0, -0.05, 'Both variants produced identical\nsource_stats rows in every run.',
+    ax2.text(0, ypos - 0.12, label, fontsize=9.5, transform=ax2.transAxes, va='top', color=MUTED)
+ax2.text(0, -0.02, 'Both variants produced identical\nsource_stats rows in every run.',
          fontsize=9.5, transform=ax2.transAxes, va='top', color=MUTED)
 
-fig.text(0.06, 0.13,
+fig.text(0.06, 0.115,
          f'{runs} timed runs per variant per condition, alternating order, one process, one working copy. '
          'Each run is rolled back.', fontsize=9, color=MUTED)
-fig.text(0.06, 0.09,
-         'On this linear scale the 1k bars are too short to see. Their labels carry the values, and the warm times are near the timer noise floor.',
+fig.text(0.06, 0.08,
+         'The 1k warm times are near the timer noise floor, so treat their ratio with care.',
          fontsize=9, color=MUTED)
-fig.text(0.06, 0.05,
+fig.text(0.06, 0.045,
          'Cold runs evict the working copy from the page cache before each run. '
          'Results depend on the storage device, cache size, and row layout of the machine that ran them.',
          fontsize=9, color=MUTED)
