@@ -49,15 +49,20 @@ ax.invert_yaxis()
 ax.set_yticks(list(y), names)
 ax.tick_params(axis='y', length=0, pad=12)
 top = max(values)
-ax.set_xlim(0, top * 1.18)
-ax.set_xlabel('Seconds (median of runs)', fontsize=10, color=MUTED, labelpad=10)
+bottom = min(values) / 4
+ax.set_xscale('log')
+ax.set_xlim(bottom, top * 3)
+ax.set_xticks([0.01, 0.1, 1, 10, 100])
+ax.set_xticklabels(['0.01', '0.1', '1', '10', '100'])
+ax.minorticks_off()
+ax.set_xlabel('Seconds, log scale (median of runs)', fontsize=10, color=MUTED, labelpad=10)
 ax.xaxis.grid(True, color=GRID, linewidth=0.8)
 ax.set_axisbelow(True)
 for spine in ax.spines.values():
     spine.set_visible(False)
 for i, v in enumerate(values):
     label = f'{v:.1f} s' if v >= 10 else f'{v:.2f} s'
-    ax.text(v + top * 0.02, i, label, ha='left', va='center', fontweight='bold', fontsize=11)
+    ax.text(v * 1.2, i, label, ha='left', va='center', fontweight='bold', fontsize=11)
 
 fig.text(0.20, 0.79, 'Backfill duration', fontsize=12, fontweight='bold')
 fig.text(0.58, 0.79, f"≈{cold['ratio_of_medians']:.0f}× faster, cold · ≈{warm['ratio_of_medians']:.0f}× warm",
@@ -80,6 +85,9 @@ fig.text(0.12, 0.105,
          f'{runs} timed runs per variant per condition, alternating order, one process, one working copy. '
          'Each run is rolled back.', fontsize=9, color=MUTED)
 fig.text(0.12, 0.065,
+         'Log scale: bar length shows relative size, not proportion.',
+         fontsize=9, color=MUTED)
+fig.text(0.12, 0.025,
          'Cold runs evict the working copy from the page cache before each run. '
          'Results depend on the storage device and cache size of the machine that ran them.',
          fontsize=9, color=MUTED)
