@@ -36,13 +36,25 @@ pub(in crate::knowledge::schema) fn ensure_source_stats(conn: &Connection) -> Re
                 "DELETE FROM source_stats;
                  INSERT INTO source_stats(source_id, chunk_count, embedded_count, total_bytes, last_indexed_at)
                  SELECT s.id,
-                    (SELECT COUNT(*) FROM knowledge_chunk_meta m WHERE m.source_id = s.id),
-                    (SELECT COUNT(*) FROM knowledge_embeddings e
-                     JOIN knowledge_chunk_meta m ON m.chunk_rowid = e.chunk_rowid
-                     WHERE m.source_id = s.id),
-                    COALESCE((SELECT SUM(size_bytes) FROM knowledge_files f WHERE f.source_id = s.id), 0),
-                    (SELECT MAX(indexed_at) FROM knowledge_files f WHERE f.source_id = s.id)
-                 FROM knowledge_sources s;",
+                    COALESCE(c.chunk_count, 0),
+                    COALESCE(e.embedded_count, 0),
+                    COALESCE(f.total_bytes, 0),
+                    f.last_indexed_at
+                 FROM knowledge_sources s
+                 LEFT JOIN (
+                    SELECT source_id, COUNT(*) AS chunk_count
+                    FROM knowledge_chunk_meta GROUP BY source_id
+                 ) c ON c.source_id = s.id
+                 LEFT JOIN (
+                    SELECT f.source_id, SUM(cov.embedded_count) AS embedded_count
+                    FROM knowledge_embedding_coverage cov
+                    JOIN knowledge_files f ON f.id = cov.file_id
+                    GROUP BY f.source_id
+                 ) e ON e.source_id = s.id
+                 LEFT JOIN (
+                    SELECT source_id, SUM(size_bytes) AS total_bytes, MAX(indexed_at) AS last_indexed_at
+                    FROM knowledge_files GROUP BY source_id
+                 ) f ON f.source_id = s.id;",
             )?;
             install(conn)?;
             conn.execute(
@@ -64,6 +76,11 @@ pub(in crate::knowledge::schema) fn ensure_source_stats(conn: &Connection) -> Re
     Ok(())
 }
 
+/// Installs the source_stats triggers.
+///
+/// Do not switch the knowledge_chunk_meta or knowledge_embeddings writes to
+/// INSERT OR REPLACE. The replace branch recounts every chunk in the source
+/// per replaced row, so a bulk replace becomes O(n^2).
 fn install(conn: &Connection) -> Result<()> {
     conn.execute_batch(
         "CREATE TRIGGER IF NOT EXISTS source_stats_source_insert
